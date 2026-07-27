@@ -104,8 +104,8 @@ const MODULES = {
     toDb: (r) => ({ data: r.data, tipo: r.tipo, linha_dre: r.linha, descricao: r.descricao, valor: r.valor }),
     fromDb: (r) => ({ id: r.id, data: r.data, tipo: r.tipo, linha: r.linha_dre, descricao: r.descricao, valor: r.valor }) },
   convenios: { table: "atendimentos_convenio", order: "data.desc",
-    toDb: (r) => ({ data: r.data, convenio: r.convenio, quantidade: r.quantidade, valor: r.valor }),
-    fromDb: (r) => ({ id: r.id, data: r.data, convenio: r.convenio, quantidade: r.quantidade, valor: r.valor }) },
+    toDb: (r) => ({ data: r.data, convenio: r.convenio, quantidade: r.quantidade, valor: r.valor, valor_unitario: r.valorUnitario, aliquota_imposto: r.aliquotaImposto, valor_liquido: r.valorLiquido }),
+    fromDb: (r) => ({ id: r.id, data: r.data, convenio: r.convenio, quantidade: r.quantidade, valor: r.valor, valorUnitario: r.valor_unitario, aliquotaImposto: r.aliquota_imposto, valorLiquido: r.valor_liquido }) },
   vacinas: { table: "estoque_vacinas", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, qtd_estoque: r.qtdEstoque, qtd_vendida_mes: r.qtdVendidaMes, qtd_minima: r.qtdMinima, valor_compra: r.valorCompra, valor_venda: r.valorVenda }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, qtdEstoque: r.qtd_estoque, qtdVendidaMes: r.qtd_vendida_mes, qtdMinima: r.qtd_minima, valorCompra: r.valor_compra, valorVenda: r.valor_venda }) },
@@ -658,17 +658,40 @@ function FinanceiroModulo() {
 
 function ConveniosModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("convenios");
-  const fields = [{ key: "data", label: "Data", type: "date", default: todayISO() }, { key: "convenio", label: "Convênio", type: "select", options: CONVENIOS }, { key: "quantidade", label: "Qtd. atendimentos", type: "number" }, { key: "valor", label: "Valor repassado (R$)", type: "currency" }];
-  const columns = [{ key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "convenio", label: "Convênio" }, { key: "quantidade", label: "Atendimentos" }, { key: "valor", label: "Valor", render: (r) => fmtBRL(r.valor) }];
-  const porConvenio = useMemo(() => { const map = {}; data.forEach((r) => { if (!map[r.convenio]) map[r.convenio] = { convenio: r.convenio, quantidade: 0, valor: 0 }; map[r.convenio].quantidade += Number(r.quantidade); map[r.convenio].valor += Number(r.valor); }); return Object.values(map).sort((a, b) => b.valor - a.valor); }, [data]);
-  const totalAtend = data.reduce((s, r) => s + Number(r.quantidade), 0), totalValor = data.reduce((s, r) => s + Number(r.valor), 0); const lider = porConvenio[0];
+  const fields = [
+    { key: "data", label: "Data", type: "date", default: todayISO() },
+    { key: "convenio", label: "Convênio", type: "select", options: CONVENIOS },
+    { key: "quantidade", label: "Qtd. atendimentos", type: "number" },
+    { key: "valorUnitario", label: "Valor por atendimento (R$)", type: "currency" },
+    { key: "aliquotaImposto", label: "Imposto (%)", type: "number", required: false, default: 0 },
+  ];
+  const computar = (r) => {
+    const valorBruto = Number(r.quantidade || 0) * Number(r.valorUnitario || 0);
+    const valorImposto = valorBruto * (Number(r.aliquotaImposto || 0) / 100);
+    return { valor: valorBruto, valorLiquido: valorBruto - valorImposto };
+  };
+  const onAddComputado = (record) => add({ ...record, ...computar(record) });
+  const onUpdateComputado = (id, record) => update(id, { ...record, ...computar(record) });
+  const columns = [
+    { key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "convenio", label: "Convênio" }, { key: "quantidade", label: "Atendimentos" },
+    { key: "valorUnitario", label: "Valor unit.", render: (r) => fmtBRL(r.valorUnitario) },
+    { key: "valor", label: "Valor bruto", render: (r) => fmtBRL(r.valor) },
+    { key: "aliquotaImposto", label: "Imposto", render: (r) => fmtPct(r.aliquotaImposto) },
+    { key: "valorLiquido", label: "Valor líquido", render: (r) => <span style={{ color: T.green, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(r.valorLiquido)}</span> },
+  ];
+  const porConvenio = useMemo(() => { const map = {}; data.forEach((r) => { if (!map[r.convenio]) map[r.convenio] = { convenio: r.convenio, quantidade: 0, valor: 0 }; map[r.convenio].quantidade += Number(r.quantidade); map[r.convenio].valor += Number(r.valorLiquido ?? r.valor); }); return Object.values(map).sort((a, b) => b.valor - a.valor); }, [data]);
+  const totalAtend = data.reduce((s, r) => s + Number(r.quantidade), 0);
+  const totalBruto = data.reduce((s, r) => s + Number(r.valor), 0);
+  const totalLiquido = data.reduce((s, r) => s + Number(r.valorLiquido ?? r.valor), 0);
+  const totalImposto = totalBruto - totalLiquido;
+  const lider = porConvenio[0];
   return (
     <ModuleShell icon={HeartHandshake} title="Atendimentos por Convênio" subtitle="Bradesco Saúde, Unimed, IPSM, AMMP, Orizon, Sancoop e particular" tone="teal" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Registrar atendimentos" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
-      kpis={[{ label: "Atendimentos", value: fmtNum(totalAtend), icon: Activity, tone: "teal" }, { label: "Valor repassado", value: fmtBRL(totalValor), tone: "green" }, { label: "Convênio líder", value: lider ? lider.convenio : "—", tone: "coral" }, { label: "Ticket médio", value: fmtBRL(totalAtend ? totalValor / totalAtend : 0) }]}
+      dailyFields={fields} dailyCta="Registrar atendimentos" fields={fields} columns={columns} rows={data} onAdd={onAddComputado} onUpdate={onUpdateComputado} onDelete={remove} onBulkImport={bulkAdd}
+      kpis={[{ label: "Atendimentos", value: fmtNum(totalAtend), icon: Activity, tone: "teal" }, { label: "Valor bruto", value: fmtBRL(totalBruto) }, { label: "Impostos", value: fmtBRL(totalImposto), tone: "amber" }, { label: "Valor líquido", value: fmtBRL(totalLiquido), tone: "green" }]}
       charts={<div className="grid md:grid-cols-2 gap-5">
         <ChartCard title="Atendimentos por convênio"><BarChart data={porConvenio} layout="vertical" margin={{ left: 10 }}><CartesianGrid strokeDasharray="3 3" stroke={T.border} horizontal={false} /><XAxis type="number" tick={{ fontSize: 11, fill: T.muted }} /><YAxis type="category" dataKey="convenio" width={110} tick={{ fontSize: 11, fill: T.muted }} /><Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="quantidade" fill={T.teal} radius={[0, 4, 4, 0]} /></BarChart></ChartCard>
-        <ChartCard title="Faturamento por convênio"><PieChart><Pie data={porConvenio} dataKey="valor" nameKey="convenio" innerRadius={55} outerRadius={85} paddingAngle={2}>{porConvenio.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Pie><Tooltip formatter={(v) => fmtBRL(v)} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart></ChartCard>
+        <ChartCard title="Valor líquido por convênio"><PieChart><Pie data={porConvenio} dataKey="valor" nameKey="convenio" innerRadius={55} outerRadius={85} paddingAngle={2}>{porConvenio.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Pie><Tooltip formatter={(v) => fmtBRL(v)} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart></ChartCard>
       </div>} />
   );
 }
