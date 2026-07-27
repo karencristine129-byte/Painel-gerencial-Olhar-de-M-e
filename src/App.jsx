@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, createContext, useContext } from "react";
+import Papa from "papaparse";
+import * as XLSX from "xlsx";
 import {
   BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -8,6 +10,7 @@ import {
   Receipt, Users, Megaphone, FlaskConical, Plus, Pencil, Trash2, X,
   AlertTriangle, TrendingUp, TrendingDown, Activity, Building2,
   CalendarDays, Sparkles, ChevronDown, LogOut, Loader2, Lock,
+  Upload, FileSpreadsheet, Printer, Download, FileText, CheckCircle2, ClipboardList,
 } from "lucide-react";
 
 /* ============================== SUPABASE (REST direto, sem SDK) ============================== */
@@ -102,6 +105,9 @@ const MODULES = {
   procedimentos: { table: "procedimentos_especiais", order: "data.desc",
     toDb: (r) => ({ tipo: r.tipo, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor }),
     fromDb: (r) => ({ id: r.id, tipo: r.tipo, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor }) },
+  faturamento: { table: "faturamento_guias", order: "data_protocolo.desc",
+    toDb: (r) => ({ convenio: r.convenio, numero_guia: r.numeroGuia, tipo: r.tipo, data_protocolo: r.dataProtocolo, valor: r.valor, status: r.status, data_pagamento: r.dataPagamento || null }),
+    fromDb: (r) => ({ id: r.id, convenio: r.convenio, numeroGuia: r.numero_guia, tipo: r.tipo, dataProtocolo: r.data_protocolo, valor: r.valor, status: r.status, dataPagamento: r.data_pagamento }) },
 };
 
 /* ============================== CONTEXTOS ============================== */
@@ -291,6 +297,143 @@ function EditModal({ title, fields, initial, onSave, onClose }) {
     </div>
   );
 }
+/* ============================== IMPORTAÇÃO DE PLANILHA ============================== */
+function parseSpreadsheetFile(file) {
+  return new Promise((resolve, reject) => {
+    const ext = file.name.split(".").pop().toLowerCase();
+    if (ext === "csv") {
+      Papa.parse(file, { header: true, skipEmptyLines: true, complete: (res) => resolve(res.data), error: reject });
+    } else {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const wb = XLSX.read(e.target.result, { type: "array", cellDates: true });
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          resolve(XLSX.utils.sheet_to_json(sheet, { defval: "" }));
+        } catch (err) { reject(err); }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    }
+  });
+}
+function guessHeader(headers, field) {
+  const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+  const target = norm(field.label);
+  const targetKey = norm(field.key);
+  return headers.find((h) => { const n = norm(h); return n === target || n === targetKey || n.includes(targetKey) || targetKey.includes(n); }) || "";
+}
+function convertImportValue(f, raw) {
+  if (raw === undefined || raw === null || raw === "") return f.default !== undefined ? f.default : "";
+  if (f.type === "number" || f.type === "currency") {
+    if (typeof raw === "number") return raw;
+    let s = String(raw).replace(/[^\d,.\-]/g, "");
+    if (s.includes(",") && s.includes(".")) s = s.replace(/\./g, "").replace(",", ".");
+    else if (s.includes(",")) s = s.replace(",", ".");
+    return Number(s) || 0;
+  }
+  if (f.type === "date") {
+    if (raw instanceof Date) return raw.toISOString().slice(0, 10);
+    const s = String(raw).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const br = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (br) { let [, d, m, y] = br; if (y.length === 2) y = "20" + y; return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`; }
+    const dt = new Date(s); return isNaN(dt) ? todayISO() : dt.toISOString().slice(0, 10);
+  }
+  if (f.type === "select") {
+    const s = String(raw).trim();
+    const found = f.options.find((o) => o.toLowerCase() === s.toLowerCase());
+    return found || s;
+  }
+  return String(raw).trim();
+}
+
+function ImportModal({ fields, onImport, onClose }) {
+  const [step, setStep] = useState(1);
+  const [headers, setHeaders] = useState([]);
+  const [rawRows, setRawRows] = useState([]);
+  const [mapping, setMapping] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState(null);
+  const [resultado, setResultado] = useState(null);
+
+  const handleFile = async (file) => {
+    setErro(null);
+    try {
+      const data = await parseSpreadsheetFile(file);
+      if (!data.length) { setErro("A planilha parece vazia."); return; }
+      const hs = Object.keys(data[0]);
+      setHeaders(hs); setRawRows(data);
+      const guess = {}; fields.forEach((f) => { guess[f.key] = guessHeader(hs, f); });
+      setMapping(guess);
+      setStep(2);
+    } catch (e) { setErro("Não foi possível ler o arquivo: " + e.message); }
+  };
+
+  const confirmarImportacao = async () => {
+    setBusy(true);
+    const records = rawRows.map((row) => {
+      const rec = {};
+      fields.forEach((f) => { rec[f.key] = convertImportValue(f, mapping[f.key] ? row[mapping[f.key]] : ""); });
+      return rec;
+    });
+    const res = await onImport(records);
+    setResultado(res);
+    setBusy(false);
+    setStep(3);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "#13203099" }} onClick={onClose}>
+      <div className="rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" style={{ background: T.card }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 sticky top-0" style={{ background: T.card, borderBottom: `1px solid ${T.border}` }}>
+          <h3 className="font-bold flex items-center gap-2" style={{ color: T.text, fontFamily: "'Sora', sans-serif" }}><FileSpreadsheet size={16} /> Importar planilha</h3>
+          <button onClick={onClose}><X size={18} style={{ color: T.muted }} /></button>
+        </div>
+        <div className="p-5">
+          {step === 1 && (
+            <div className="flex flex-col gap-3">
+              <p className="text-sm" style={{ color: T.muted }}>Envie um arquivo <strong>.csv</strong> ou <strong>.xlsx</strong> — na próxima tela você escolhe qual coluna da sua planilha corresponde a cada campo daqui, então funciona com a planilha que você já usa.</p>
+              <label className="flex flex-col items-center justify-center gap-2 rounded-xl p-8 cursor-pointer" style={{ border: `2px dashed ${T.border}`, background: "#FBFAF6" }}>
+                <Upload size={22} style={{ color: T.muted }} />
+                <span className="text-sm font-medium" style={{ color: T.text }}>Clique para escolher o arquivo</span>
+                <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => e.target.files[0] && handleFile(e.target.files[0])} />
+              </label>
+              {erro && <p className="text-sm" style={{ color: T.red }}>{erro}</p>}
+            </div>
+          )}
+          {step === 2 && (
+            <div className="flex flex-col gap-3">
+              <p className="text-sm" style={{ color: T.muted }}>{rawRows.length} linha(s) encontrada(s). Confirme de qual coluna vem cada informação:</p>
+              {fields.map((f) => (
+                <Field key={f.key} label={f.label}>
+                  <select className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={mapping[f.key] || ""} onChange={(e) => setMapping((p) => ({ ...p, [f.key]: e.target.value }))}>
+                    <option value="">— não importar —</option>
+                    {headers.map((h) => <option key={h} value={h}>{h}</option>)}
+                  </select>
+                </Field>
+              ))}
+              {erro && <p className="text-sm" style={{ color: T.red }}>{erro}</p>}
+              <div className="flex justify-end gap-2 mt-2">
+                <Btn variant="ghost" onClick={() => setStep(1)}>Voltar</Btn>
+                <Btn disabled={busy} onClick={confirmarImportacao}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Importar {rawRows.length} registro(s)</Btn>
+              </div>
+            </div>
+          )}
+          {step === 3 && resultado && (
+            <div className="flex flex-col gap-3 items-start">
+              <div className="flex items-center gap-2" style={{ color: T.green }}><CheckCircle2 size={18} /><span className="font-semibold text-sm">{resultado.ok} registro(s) importado(s) com sucesso.</span></div>
+              {resultado.falhas.length > 0 && <div className="text-sm" style={{ color: T.red }}>{resultado.falhas.length} linha(s) não puderam ser importadas (verifique se os valores de status/categoria batem com as opções aceitas).</div>}
+              <Btn onClick={onClose}>Concluir</Btn>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function RecordsTable({ columns, rows, onEdit, onDelete }) {
   if (!rows.length) return <div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhum registro ainda. Use o lançamento de hoje, acima, para começar.</div>;
   return (
@@ -311,23 +454,23 @@ function RecordsTable({ columns, rows, onEdit, onDelete }) {
 }
 
 /* Hook: CRUD real no Supabase, isolado pela unidade selecionada */
-function useRecords(moduleKey) {
+function useRecords(moduleKey, enabled = true) {
   const { session } = useAuth();
   const { unidadeId } = useUnidade();
   const cfg = MODULES[moduleKey];
   const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [erro, setErro] = useState(null);
 
   const reload = useCallback(async () => {
-    if (!unidadeId) return;
+    if (!unidadeId || !enabled) { setLoading(false); return; }
     setLoading(true); setErro(null);
     try {
       const rows = await sbRest(`${cfg.table}?unidade_id=eq.${unidadeId}&select=*&order=${cfg.order}`, { token: session.access_token });
       setData((rows || []).map(cfg.fromDb));
     } catch (e) { setErro(e.message); }
     setLoading(false);
-  }, [unidadeId, cfg.table]);
+  }, [unidadeId, cfg.table, enabled]);
 
   useEffect(() => { reload(); }, [reload]);
 
@@ -337,6 +480,21 @@ function useRecords(moduleKey) {
       await reload();
     } catch (e) { alert("Não foi possível salvar: " + e.message); }
   };
+  const bulkAdd = async (records) => {
+    const rows = records.map((r) => ({ ...cfg.toDb(r), unidade_id: unidadeId }));
+    let ok = 0; const falhas = [];
+    try {
+      await sbRest(cfg.table, { method: "POST", token: session.access_token, body: rows });
+      ok = rows.length;
+    } catch (e) {
+      for (const row of rows) {
+        try { await sbRest(cfg.table, { method: "POST", token: session.access_token, body: row }); ok++; }
+        catch (e2) { falhas.push(e2.message); }
+      }
+    }
+    await reload();
+    return { ok, falhas };
+  };
   const update = async (id, record) => {
     try { await sbRest(`${cfg.table}?id=eq.${id}`, { method: "PATCH", token: session.access_token, body: cfg.toDb(record) }); await reload(); }
     catch (e) { alert("Não foi possível salvar: " + e.message); }
@@ -345,7 +503,7 @@ function useRecords(moduleKey) {
     try { await sbRest(`${cfg.table}?id=eq.${id}`, { method: "DELETE", token: session.access_token }); await reload(); }
     catch (e) { alert("Não foi possível remover: " + e.message); }
   };
-  return { data, add, update, remove, loading, erro };
+  return { data, add, bulkAdd, update, remove, loading, erro };
 }
 
 function normalizeForm(fields, form) {
@@ -356,11 +514,26 @@ function normalizeForm(fields, form) {
 function ChartCard({ title, height = 260, children }) {
   return <Card className="mb-5"><p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>{title}</p><div style={{ width: "100%", height }}><ResponsiveContainer>{children}</ResponsiveContainer></div></Card>;
 }
-function ModuleShell({ icon, title, subtitle, tone, dailyFields, dailyCta, fields, columns, rows, onAdd, onUpdate, onDelete, kpis, charts, extra, loading, erro }) {
+function exportToCSV(fields, rows, filename) {
+  const data = rows.map((r) => { const out = {}; fields.forEach((f) => { out[f.label] = r[f.key]; }); return out; });
+  const csv = Papa.unparse(data);
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = `${filename}.csv`; a.click(); URL.revokeObjectURL(url);
+}
+
+function ModuleShell({ icon, title, subtitle, tone, dailyFields, dailyCta, fields, columns, rows, onAdd, onUpdate, onDelete, onBulkImport, kpis, charts, extra, loading, erro }) {
   const [editing, setEditing] = useState(null);
+  const [importing, setImporting] = useState(false);
   return (
     <div>
-      <SectionHeader icon={icon} title={title} subtitle={subtitle} tone={tone} />
+      <div className="flex items-start justify-between gap-3 flex-wrap mb-6">
+        <SectionHeader icon={icon} title={title} subtitle={subtitle} tone={tone} />
+        <div className="flex gap-2">
+          <Btn small variant="ghost" icon={Download} onClick={() => exportToCSV(fields, rows, title.toLowerCase().replace(/\s+/g, "-"))}>Exportar CSV</Btn>
+          {onBulkImport && <Btn small variant="ghost" icon={Upload} onClick={() => setImporting(true)}>Importar planilha</Btn>}
+        </div>
+      </div>
       {erro && <Card className="mb-5" style={{ borderColor: `${T.red}55` }}><span className="text-sm" style={{ color: T.red }}>Erro ao carregar dados: {erro}</span></Card>}
       {kpis && kpis.length > 0 && <div className="grid gap-3 mb-6" style={{ gridTemplateColumns: `repeat(${Math.min(kpis.length, 4)}, minmax(0,1fr))` }}>{kpis.map((k, i) => <KpiCard key={i} {...k} />)}</div>}
       <DailyEntryPanel tone={tone} fields={dailyFields} cta={dailyCta} onSubmit={(form) => onAdd(normalizeForm(fields, form))} />
@@ -371,13 +544,14 @@ function ModuleShell({ icon, title, subtitle, tone, dailyFields, dailyCta, field
           <RecordsTable columns={columns} rows={rows} onEdit={setEditing} onDelete={(r) => { if (confirm("Remover este registro?")) onDelete(r.id); }} />}
       </Card>
       {editing && <EditModal title="Editar registro" fields={fields} initial={editing} onClose={() => setEditing(null)} onSave={async (form) => { await onUpdate(editing.id, normalizeForm(fields, form)); setEditing(null); }} />}
+      {importing && onBulkImport && <ImportModal fields={fields} onImport={onBulkImport} onClose={() => setImporting(false)} />}
     </div>
   );
 }
 
 /* ============================== MÓDULOS ============================== */
 function FinanceiroModulo() {
-  const { data, add, update, remove, loading, erro } = useRecords("financeiro");
+  const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("financeiro");
   const fields = [
     { key: "data", label: "Data", type: "date", default: todayISO() },
     { key: "tipo", label: "Tipo", type: "select", options: ["entrada", "saida"] },
@@ -409,7 +583,7 @@ function FinanceiroModulo() {
   );
   return (
     <ModuleShell icon={Wallet} title="Financeiro" subtitle="Fluxo de caixa, entradas, saídas e DRE consolidado" tone="coral" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Registrar movimento" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove}
+      dailyFields={fields} dailyCta="Registrar movimento" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Entradas", value: fmtBRL(entradas), tone: "green", icon: TrendingUp }, { label: "Saídas", value: fmtBRL(saidas), tone: "red", icon: TrendingDown },
         { label: "Resultado do período", value: fmtBRL(saldo), tone: saldo >= 0 ? "green" : "red", icon: Activity }, { label: "Margem líquida", value: fmtPct(margem), tone: margem >= 0 ? "green" : "red" }]}
       charts={<div className="grid md:grid-cols-2 gap-5">
@@ -425,14 +599,14 @@ function FinanceiroModulo() {
 }
 
 function ConveniosModulo() {
-  const { data, add, update, remove, loading, erro } = useRecords("convenios");
+  const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("convenios");
   const fields = [{ key: "data", label: "Data", type: "date", default: todayISO() }, { key: "convenio", label: "Convênio", type: "select", options: CONVENIOS }, { key: "quantidade", label: "Qtd. atendimentos", type: "number" }, { key: "valor", label: "Valor repassado (R$)", type: "currency" }];
   const columns = [{ key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "convenio", label: "Convênio" }, { key: "quantidade", label: "Atendimentos" }, { key: "valor", label: "Valor", render: (r) => fmtBRL(r.valor) }];
   const porConvenio = useMemo(() => { const map = {}; data.forEach((r) => { if (!map[r.convenio]) map[r.convenio] = { convenio: r.convenio, quantidade: 0, valor: 0 }; map[r.convenio].quantidade += Number(r.quantidade); map[r.convenio].valor += Number(r.valor); }); return Object.values(map).sort((a, b) => b.valor - a.valor); }, [data]);
   const totalAtend = data.reduce((s, r) => s + Number(r.quantidade), 0), totalValor = data.reduce((s, r) => s + Number(r.valor), 0); const lider = porConvenio[0];
   return (
     <ModuleShell icon={HeartHandshake} title="Atendimentos por Convênio" subtitle="Bradesco Saúde, Unimed, IPSM, AMMP, Orizon, Sancoop e particular" tone="teal" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Registrar atendimentos" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove}
+      dailyFields={fields} dailyCta="Registrar atendimentos" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Atendimentos", value: fmtNum(totalAtend), icon: Activity, tone: "teal" }, { label: "Valor repassado", value: fmtBRL(totalValor), tone: "green" }, { label: "Convênio líder", value: lider ? lider.convenio : "—", tone: "coral" }, { label: "Ticket médio", value: fmtBRL(totalAtend ? totalValor / totalAtend : 0) }]}
       charts={<div className="grid md:grid-cols-2 gap-5">
         <ChartCard title="Atendimentos por convênio"><BarChart data={porConvenio} layout="vertical" margin={{ left: 10 }}><CartesianGrid strokeDasharray="3 3" stroke={T.border} horizontal={false} /><XAxis type="number" tick={{ fontSize: 11, fill: T.muted }} /><YAxis type="category" dataKey="convenio" width={110} tick={{ fontSize: 11, fill: T.muted }} /><Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="quantidade" fill={T.teal} radius={[0, 4, 4, 0]} /></BarChart></ChartCard>
@@ -442,14 +616,14 @@ function ConveniosModulo() {
 }
 
 function VacinasModulo() {
-  const { data, add, update, remove, loading, erro } = useRecords("vacinas");
+  const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("vacinas");
   const fields = [{ key: "nome", label: "Nome da vacina", type: "text" }, { key: "qtdEstoque", label: "Qtd. em estoque", type: "number" }, { key: "qtdVendidaMes", label: "Vendida no mês", type: "number" }, { key: "qtdMinima", label: "Estoque mínimo", type: "number" }, { key: "valorCompra", label: "Valor compra (un.)", type: "currency" }, { key: "valorVenda", label: "Valor revenda (un.)", type: "currency" }];
   const columns = [{ key: "nome", label: "Vacina" }, { key: "qtdEstoque", label: "Em estoque", render: (r) => <span className="flex items-center gap-1.5">{r.qtdEstoque}{r.qtdEstoque < r.qtdMinima && <AlertTriangle size={12} style={{ color: T.red }} />}</span> }, { key: "qtdVendidaMes", label: "Vendidas/mês" }, { key: "valorCompra", label: "Compra (un.)", render: (r) => fmtBRL(r.valorCompra) }, { key: "valorVenda", label: "Venda (un.)", render: (r) => fmtBRL(r.valorVenda) }, { key: "margem", label: "Margem", render: (r) => <span style={{ color: T.green }}>{fmtPct(r.valorVenda ? ((r.valorVenda - r.valorCompra) / r.valorVenda) * 100 : 0)}</span> }];
   const valorEstoqueCompra = data.reduce((s, r) => s + r.qtdEstoque * r.valorCompra, 0), valorEstoqueVenda = data.reduce((s, r) => s + r.qtdEstoque * r.valorVenda, 0), receitaVendasMes = data.reduce((s, r) => s + r.qtdVendidaMes * r.valorVenda, 0);
   const abaixoMinimo = data.filter((r) => r.qtdEstoque < r.qtdMinima);
   return (
     <ModuleShell icon={Syringe} title="Estoque de Vacinas" subtitle="Vendas, estoque atual, valor de compra e de revenda" tone="teal" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Atualizar/cadastrar vacina" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove}
+      dailyFields={fields} dailyCta="Atualizar/cadastrar vacina" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Estoque (custo)", value: fmtBRL(valorEstoqueCompra) }, { label: "Estoque (revenda)", value: fmtBRL(valorEstoqueVenda), tone: "green" }, { label: "Receita de vendas/mês", value: fmtBRL(receitaVendasMes), tone: "coral" }, { label: "Abaixo do mínimo", value: abaixoMinimo.length, tone: abaixoMinimo.length ? "red" : "green" }]}
       charts={<ChartCard title="Estoque atual x estoque mínimo, por vacina"><BarChart data={data}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="nome" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-15} textAnchor="end" height={60} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="qtdEstoque" name="Em estoque" fill={T.amber} radius={[4, 4, 0, 0]} /><Bar dataKey="qtdMinima" name="Mínimo" fill={`${T.amber}55`} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>}
       extra={abaixoMinimo.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.red}55` }}><div className="flex items-center gap-2 mb-1"><AlertTriangle size={15} style={{ color: T.red }} /><span className="font-semibold text-sm" style={{ color: T.red }}>Reposição necessária</span></div><p className="text-sm" style={{ color: T.muted }}>{abaixoMinimo.map((r) => r.nome).join(", ")} — abaixo do estoque mínimo.</p></Card>} />
@@ -457,34 +631,34 @@ function VacinasModulo() {
 }
 
 function InsumosModulo() {
-  const { data, add, update, remove, loading, erro } = useRecords("insumos");
+  const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("insumos");
   const fields = [{ key: "nome", label: "Item", type: "text" }, { key: "categoria", label: "Categoria", type: "select", options: ["Material médico", "EPI", "Limpeza", "Escritório", "Outros"] }, { key: "qtd", label: "Qtd. atual", type: "number" }, { key: "qtdMinima", label: "Qtd. mínima", type: "number" }, { key: "unidade", label: "Unidade", type: "text", placeholder: "caixa, litro…" }, { key: "valorUnitario", label: "Valor unitário (R$)", type: "currency" }];
   const columns = [{ key: "nome", label: "Item" }, { key: "categoria", label: "Categoria" }, { key: "qtd", label: "Qtd.", render: (r) => <span className="flex items-center gap-1.5">{r.qtd} {r.unidade}{r.qtd < r.qtdMinima && <AlertTriangle size={12} style={{ color: T.red }} />}</span> }, { key: "qtdMinima", label: "Mínimo" }, { key: "valorUnitario", label: "Valor unit.", render: (r) => fmtBRL(r.valorUnitario) }, { key: "total", label: "Valor total", render: (r) => fmtBRL(r.qtd * r.valorUnitario) }];
   const valorTotal = data.reduce((s, r) => s + r.qtd * r.valorUnitario, 0); const critico = data.filter((r) => r.qtd < r.qtdMinima);
   return (
     <ModuleShell icon={Package} title="Estoque de Insumos" subtitle="Materiais médicos, EPIs, limpeza e escritório" tone="teal" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Atualizar/cadastrar item" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove}
+      dailyFields={fields} dailyCta="Atualizar/cadastrar item" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Itens cadastrados", value: data.length }, { label: "Valor em estoque", value: fmtBRL(valorTotal) }, { label: "Ponto crítico", value: critico.length, tone: critico.length ? "red" : "green" }, { label: "Categorias", value: new Set(data.map((r) => r.categoria)).size }]}
       charts={<ChartCard title="Itens críticos (atual x mínimo)"><BarChart data={critico.length ? critico : data}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="nome" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-15} textAnchor="end" height={60} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="qtd" name="Atual" fill={T.amber} radius={[4, 4, 0, 0]} /><Bar dataKey="qtdMinima" name="Mínimo" fill={`${T.amber}55`} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>} />
   );
 }
 
 function ProducaoModulo() {
-  const { data, add, update, remove, loading, erro } = useRecords("producao");
+  const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("producao");
   const fields = [{ key: "profissional", label: "Profissional", type: "text" }, { key: "mes", label: "Mês (AAAA-MM)", type: "text", placeholder: todayISO().slice(0, 7), default: todayISO().slice(0, 7) }, { key: "atendimentos", label: "Atendimentos", type: "number" }, { key: "receita", label: "Receita gerada (R$)", type: "currency" }, { key: "custo", label: "Custo/repasse (R$)", type: "currency" }];
   const columns = [{ key: "profissional", label: "Profissional" }, { key: "mes", label: "Mês" }, { key: "atendimentos", label: "Atendimentos" }, { key: "receita", label: "Receita", render: (r) => fmtBRL(r.receita) }, { key: "custo", label: "Custo", render: (r) => fmtBRL(r.custo) }, { key: "rentabilidade", label: "Rentabilidade", render: (r) => { const rent = r.receita - r.custo; return <span style={{ color: rent >= 0 ? T.green : T.red, fontFamily: "'IBM Plex Mono', monospace" }}>{fmtBRL(rent)}</span>; } }, { key: "margem", label: "Margem", render: (r) => fmtPct(r.receita ? ((r.receita - r.custo) / r.receita) * 100 : 0) }];
   const chartData = data.map((r) => ({ profissional: r.profissional.replace(/^Dr[a]?\.\s*/, ""), receita: r.receita, custo: r.custo, rentabilidade: r.receita - r.custo }));
   const totalReceita = data.reduce((s, r) => s + r.receita, 0), totalCusto = data.reduce((s, r) => s + r.custo, 0); const maisRentavel = [...data].sort((a, b) => (b.receita - b.custo) - (a.receita - a.custo))[0];
   return (
     <ModuleShell icon={Stethoscope} title="Produção Médica" subtitle="Produção e rentabilidade por profissional" tone="teal" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Registrar produção" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove}
+      dailyFields={fields} dailyCta="Registrar produção" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Receita gerada", value: fmtBRL(totalReceita), tone: "green" }, { label: "Custo/repasse", value: fmtBRL(totalCusto), tone: "red" }, { label: "Rentabilidade", value: fmtBRL(totalReceita - totalCusto), tone: (totalReceita - totalCusto) >= 0 ? "green" : "red" }, { label: "Mais rentável", value: maisRentavel ? maisRentavel.profissional.split(" ").slice(0, 2).join(" ") : "—", tone: "coral" }]}
       charts={<ChartCard title="Rentabilidade por profissional"><BarChart data={chartData}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="profissional" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="receita" name="Receita" fill={T.teal} radius={[4, 4, 0, 0]} /><Bar dataKey="custo" name="Custo" fill={`${T.teal}55`} radius={[4, 4, 0, 0]} /><Bar dataKey="rentabilidade" name="Rentabilidade" fill={T.green} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>} />
   );
 }
 
 function ContasModulo() {
-  const { data, add, update, remove, loading, erro } = useRecords("contas");
+  const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("contas");
   const fields = [{ key: "descricao", label: "Descrição", type: "text" }, { key: "categoria", label: "Categoria", type: "select", options: ["Fornecedores", "Aluguel", "Salários", "Impostos", "Serviços", "Outros"] }, { key: "valor", label: "Valor (R$)", type: "currency" }, { key: "vencimento", label: "Vencimento", type: "date", default: todayISO() }, { key: "status", label: "Status", type: "select", options: ["Pendente", "Pago", "Atrasado"] }, { key: "dataPagamento", label: "Data de pagamento", type: "date", required: false }];
   const columns = [{ key: "descricao", label: "Descrição" }, { key: "categoria", label: "Categoria" }, { key: "valor", label: "Valor", render: (r) => fmtBRL(r.valor) }, { key: "vencimento", label: "Vencimento", render: (r) => fmtDate(r.vencimento) }, { key: "status", label: "Status", render: (r) => <Badge tone={r.status === "Pago" ? "green" : r.status === "Atrasado" ? "red" : "amber"}>{r.status}</Badge> }];
   const pendentes = data.filter((r) => r.status !== "Pago"), pagos = data.filter((r) => r.status === "Pago"); const atrasados = data.filter((r) => r.status === "Atrasado" || (r.status === "Pendente" && r.vencimento < todayISO()));
@@ -493,15 +667,49 @@ function ContasModulo() {
   const porCategoria = useMemo(() => { const map = {}; pendentes.forEach((r) => { map[r.categoria] = (map[r.categoria] || 0) + r.valor; }); return Object.entries(map).map(([categoria, valor]) => ({ categoria, valor })); }, [pendentes]);
   return (
     <ModuleShell icon={Receipt} title="Contas a Pagar" subtitle="Contas pendentes e pagas, mês a mês" tone="coral" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Lançar conta" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove}
+      dailyFields={fields} dailyCta="Lançar conta" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Total pendente", value: fmtBRL(totalPendente), tone: "amber" }, { label: "Total pago", value: fmtBRL(totalPago), tone: "green" }, { label: "Atrasadas", value: atrasados.length, tone: atrasados.length ? "red" : "green" }, { label: "Vencendo em 7 dias", value: proximos.length, tone: proximos.length ? "amber" : "green" }]}
       charts={<ChartCard title="Valor pendente por categoria"><BarChart data={porCategoria}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="categoria" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="valor" fill={T.coral} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>}
       extra={proximos.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><div className="flex items-center gap-2 mb-2"><AlertTriangle size={15} style={{ color: T.amber }} /><span className="font-semibold text-sm" style={{ color: T.text }}>Vencimentos nos próximos 7 dias</span></div><div className="flex flex-col gap-1.5">{proximos.map((r) => (<div key={r.id} className="flex justify-between text-sm"><span style={{ color: T.muted }}>{r.descricao} — {fmtDate(r.vencimento)}</span><span style={{ color: T.text, fontFamily: "'IBM Plex Mono', monospace" }}>{fmtBRL(r.valor)}</span></div>))}</div></Card>} />
   );
 }
 
+function FaturamentoModulo() {
+  const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("faturamento");
+  const fields = [
+    { key: "convenio", label: "Convênio", type: "select", options: CONVENIOS },
+    { key: "numeroGuia", label: "Nº da guia", type: "text", required: false },
+    { key: "tipo", label: "Tipo", type: "select", options: ["Consulta", "Plantão", "Exame", "SADT", "Outro"] },
+    { key: "dataProtocolo", label: "Data de protocolo", type: "date", default: todayISO() },
+    { key: "valor", label: "Valor (R$)", type: "currency" },
+    { key: "status", label: "Status", type: "select", options: ["Protocolada", "Faturada", "Paga", "Vencida"] },
+    { key: "dataPagamento", label: "Data de pagamento", type: "date", required: false },
+  ];
+  const columns = [
+    { key: "convenio", label: "Convênio" }, { key: "numeroGuia", label: "Nº guia" }, { key: "tipo", label: "Tipo" },
+    { key: "dataProtocolo", label: "Protocolo", render: (r) => fmtDate(r.dataProtocolo) },
+    { key: "valor", label: "Valor", render: (r) => fmtBRL(r.valor) },
+    { key: "status", label: "Status", render: (r) => { const tone = { Protocolada: "muted", Faturada: "amber", Paga: "green", Vencida: "red" }[r.status]; return <Badge tone={tone}>{r.status}</Badge>; } },
+  ];
+  const porStatus = useMemo(() => { const map = {}; data.forEach((r) => { if (!map[r.status]) map[r.status] = { status: r.status, valor: 0, qtd: 0 }; map[r.status].valor += r.valor; map[r.status].qtd += 1; }); const ordem = ["Protocolada", "Faturada", "Paga", "Vencida"]; return ordem.filter((s) => map[s]).map((s) => map[s]); }, [data]);
+  const totalProtocolado = data.reduce((s, r) => s + r.valor, 0);
+  const totalPago = data.filter((r) => r.status === "Paga").reduce((s, r) => s + r.valor, 0);
+  const totalVencido = data.filter((r) => r.status === "Vencida").reduce((s, r) => s + r.valor, 0);
+  const totalFaturado = data.filter((r) => r.status === "Faturada").reduce((s, r) => s + r.valor, 0);
+  const porConvenio = useMemo(() => { const map = {}; data.forEach((r) => { map[r.convenio] = (map[r.convenio] || 0) + r.valor; }); return Object.entries(map).map(([convenio, valor]) => ({ convenio, valor })).sort((a, b) => b.valor - a.valor); }, [data]);
+  return (
+    <ModuleShell icon={ClipboardList} title="Faturamento de Convênios" subtitle="Guias protocoladas, faturadas, pagas e vencidas" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Registrar guia" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
+      kpis={[{ label: "Total protocolado", value: fmtBRL(totalProtocolado) }, { label: "Faturado", value: fmtBRL(totalFaturado), tone: "amber" }, { label: "Pago", value: fmtBRL(totalPago), tone: "green" }, { label: "Vencido", value: fmtBRL(totalVencido), tone: totalVencido ? "red" : "green" }]}
+      charts={<div className="grid md:grid-cols-2 gap-5">
+        <ChartCard title="Valor por status da guia"><BarChart data={porStatus}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="status" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="valor" radius={[4, 4, 0, 0]}>{porStatus.map((s, i) => <Cell key={i} fill={{ Protocolada: T.muted, Faturada: T.amber, Paga: T.green, Vencida: T.red }[s.status]} />)}</Bar></BarChart></ChartCard>
+        <ChartCard title="Valor por convênio"><PieChart><Pie data={porConvenio} dataKey="valor" nameKey="convenio" innerRadius={55} outerRadius={85} paddingAngle={2}>{porConvenio.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Pie><Tooltip formatter={(v) => fmtBRL(v)} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart></ChartCard>
+      </div>} />
+  );
+}
+
 function PessoalModulo() {
-  const { data, add, update, remove, loading, erro } = useRecords("pessoal");
+  const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("pessoal");
   const fields = [{ key: "nome", label: "Colaborador(a)", type: "text" }, { key: "cargo", label: "Cargo", type: "text" }, { key: "equipe", label: "Equipe", type: "select", options: ["Recepção", "Financeiro", "Marketing", "Enfermagem", "Administrativo", "Outra"] }, { key: "mes", label: "Mês (AAAA-MM)", type: "text", default: todayISO().slice(0, 7) }, { key: "metaMensal", label: "Meta mensal (agendados)", type: "number" }, { key: "ligacoes", label: "Ligações atendidas", type: "number" }, { key: "mensagens", label: "Mensagens respondidas", type: "number" }, { key: "agendados", label: "Pacientes agendados", type: "number" }];
   const withPct = data.map((r) => ({ ...r, pct: r.metaMensal ? (r.agendados / r.metaMensal) * 100 : (r.ligacoes + r.mensagens > 0 ? 100 : 0) }));
   const columns = [{ key: "nome", label: "Colaborador(a)" }, { key: "equipe", label: "Equipe" }, { key: "ligacoes", label: "Ligações" }, { key: "mensagens", label: "Mensagens" }, { key: "agendados", label: "Agendados" }, { key: "pct", label: "Meta atingida", render: (r) => (<div className="flex items-center gap-2 min-w-[110px]"><Progress pct={r.pct} /><span className="text-xs font-semibold" style={{ color: T.text, fontFamily: "'IBM Plex Mono', monospace" }}>{fmtPct(r.pct)}</span></div>) }];
@@ -509,7 +717,7 @@ function PessoalModulo() {
   const destaque = [...withPct].sort((a, b) => b.pct - a.pct)[0]; const mediaGeral = withPct.length ? withPct.reduce((s, r) => s + r.pct, 0) / withPct.length : 0;
   return (
     <ModuleShell icon={Users} title="Departamento Pessoal" subtitle="Produtividade individual, metas e desempenho por equipe" tone="purple" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Registrar desempenho" fields={fields} columns={columns} rows={withPct} onAdd={add} onUpdate={update} onDelete={remove}
+      dailyFields={fields} dailyCta="Registrar desempenho" fields={fields} columns={columns} rows={withPct} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Colaboradores", value: data.length }, { label: "Meta média", value: fmtPct(mediaGeral), tone: mediaGeral >= 90 ? "green" : mediaGeral >= 70 ? "amber" : "red" }, { label: "Destaque do mês", value: destaque ? destaque.nome : "—", tone: "purple" }, { label: "Equipe líder", value: porEquipe[0] ? porEquipe[0].equipe : "—" }]}
       charts={<div className="grid md:grid-cols-2 gap-5">
         <ChartCard title="Meta atingida por colaborador(a)"><BarChart data={withPct} layout="vertical" margin={{ left: 10 }}><CartesianGrid strokeDasharray="3 3" stroke={T.border} horizontal={false} /><XAxis type="number" tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v}%`} /><YAxis type="category" dataKey="nome" width={130} tick={{ fontSize: 11, fill: T.muted }} /><Tooltip formatter={(v) => `${v.toFixed(0)}%`} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="pct" radius={[0, 4, 4, 0]}>{withPct.map((r, i) => <Cell key={i} fill={r.pct >= 100 ? T.green : r.pct >= 70 ? T.amber : T.red} />)}</Bar></BarChart></ChartCard>
@@ -519,7 +727,7 @@ function PessoalModulo() {
 }
 
 function MarketingModulo() {
-  const { data, add, update, remove, loading, erro } = useRecords("marketing");
+  const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("marketing");
   const fields = [{ key: "data", label: "Data", type: "date", default: todayISO() }, { key: "nome", label: "Nome do lead", type: "text" }, { key: "canal", label: "Canal", type: "select", options: ["Instagram", "Facebook", "WhatsApp", "Google", "Indicação", "Outro"] }, { key: "status", label: "Status", type: "select", options: ["Novo", "Contatado", "Agendado", "Convertido", "Perdido"] }];
   const columns = [{ key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "nome", label: "Lead" }, { key: "canal", label: "Canal" }, { key: "status", label: "Status", render: (r) => { const tone = { Novo: "ink", Contatado: "amber", Agendado: "amber", Convertido: "green", Perdido: "red" }[r.status]; return <Badge tone={tone}>{r.status}</Badge>; } }];
   const porCanal = useMemo(() => { const map = {}; data.forEach((r) => { map[r.canal] = (map[r.canal] || 0) + 1; }); return Object.entries(map).map(([canal, total]) => ({ canal, total })).sort((a, b) => b.total - a.total); }, [data]);
@@ -527,7 +735,7 @@ function MarketingModulo() {
   const convertidos = data.filter((r) => r.status === "Convertido").length; const taxaConversao = data.length ? (convertidos / data.length) * 100 : 0; const agendadosPendentes = data.filter((r) => r.status === "Agendado").length;
   return (
     <ModuleShell icon={Megaphone} title="Marketing — Leads" subtitle="Leads recebidos via redes sociais e canais digitais" tone="rose" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Registrar lead" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove}
+      dailyFields={fields} dailyCta="Registrar lead" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Leads no período", value: data.length }, { label: "Taxa de conversão", value: fmtPct(taxaConversao), tone: taxaConversao >= 20 ? "green" : "amber" }, { label: "Canal líder", value: porCanal[0] ? porCanal[0].canal : "—", tone: "rose" }, { label: "Agendados aguardando", value: agendadosPendentes, tone: "amber" }]}
       charts={<div className="grid md:grid-cols-2 gap-5">
         <ChartCard title="Funil de status dos leads"><BarChart data={porStatus}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="status" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="total" radius={[4, 4, 0, 0]}>{porStatus.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Bar></BarChart></ChartCard>
@@ -537,14 +745,14 @@ function MarketingModulo() {
 }
 
 function ProcedimentosModulo() {
-  const { data, add, update, remove, loading, erro } = useRecords("procedimentos");
+  const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("procedimentos");
   const fields = [{ key: "tipo", label: "Tipo de procedimento", type: "select", options: ["Teste Genético", "Fototerapia"] }, { key: "paciente", label: "Paciente (iniciais/idade)", type: "text" }, { key: "data", label: "Data", type: "date", default: todayISO() }, { key: "status", label: "Status", type: "select", options: ["Solicitado", "Em Andamento", "Concluído", "Cancelado"] }, { key: "valor", label: "Valor (R$)", type: "currency" }];
   const columns = [{ key: "tipo", label: "Tipo", render: (r) => <Badge tone={r.tipo === "Teste Genético" ? "purple" : "teal"}>{r.tipo}</Badge> }, { key: "paciente", label: "Paciente" }, { key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "status", label: "Status", render: (r) => { const tone = { Solicitado: "muted", "Em Andamento": "amber", "Concluído": "green", Cancelado: "red" }[r.status]; return <Badge tone={tone}>{r.status}</Badge>; } }, { key: "valor", label: "Valor", render: (r) => fmtBRL(r.valor) }];
   const porTipo = useMemo(() => { const map = {}; data.forEach((r) => { if (!map[r.tipo]) map[r.tipo] = { tipo: r.tipo, total: 0, receita: 0 }; map[r.tipo].total += 1; map[r.tipo].receita += r.valor; }); return Object.values(map); }, [data]);
   const concluidos = data.filter((r) => r.status === "Concluído"), pendentes = data.filter((r) => r.status === "Solicitado" || r.status === "Em Andamento"); const receitaTotal = concluidos.reduce((s, r) => s + r.valor, 0);
   return (
     <ModuleShell icon={FlaskConical} title="Testes Genéticos e Fototerapia" subtitle="Procedimentos especiais por paciente" tone="teal" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Registrar procedimento" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove}
+      dailyFields={fields} dailyCta="Registrar procedimento" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Procedimentos", value: data.length }, { label: "Concluídos", value: concluidos.length, tone: "green" }, { label: "Em andamento", value: pendentes.length, tone: "amber" }, { label: "Receita (concluídos)", value: fmtBRL(receitaTotal), tone: "teal" }]}
       charts={<ChartCard title="Volume por tipo de procedimento"><BarChart data={porTipo}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="tipo" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="total" name="Qtd." fill={T.teal} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>} />
   );
@@ -553,7 +761,9 @@ function ProcedimentosModulo() {
 /* ============================== VISÃO GERAL ============================== */
 function VisaoGeral() {
   const { unidade } = useUnidade();
-  const financeiro = useRecords("financeiro"), atendimentos = useRecords("convenios"), vacinas = useRecords("vacinas"), insumos = useRecords("insumos"), contas = useRecords("contas"), pessoal = useRecords("pessoal"), leads = useRecords("marketing"), procedimentos = useRecords("procedimentos");
+  const { perfil } = useAuth();
+  const canFinance = perfil && perfil.papel !== "operacional";
+  const financeiro = useRecords("financeiro", canFinance), atendimentos = useRecords("convenios"), vacinas = useRecords("vacinas"), insumos = useRecords("insumos"), contas = useRecords("contas", canFinance), pessoal = useRecords("pessoal"), leads = useRecords("marketing"), procedimentos = useRecords("procedimentos");
   const anyLoading = [financeiro, atendimentos, vacinas, insumos, contas, pessoal, leads, procedimentos].some((m) => m.loading);
   const entradas = financeiro.data.filter((r) => r.tipo === "entrada").reduce((s, r) => s + r.valor, 0);
   const saidas = financeiro.data.filter((r) => r.tipo === "saida").reduce((s, r) => s + r.valor, 0);
@@ -572,9 +782,13 @@ function VisaoGeral() {
   const alertas = [
     alertaVacinas > 0 && { texto: `${alertaVacinas} vacina(s) abaixo do estoque mínimo`, tone: "red" },
     alertaInsumos > 0 && { texto: `${alertaInsumos} insumo(s) em ponto crítico`, tone: "red" },
-    contasAtrasadas > 0 && { texto: `${contasAtrasadas} conta(s) atrasada(s) ou vencendo`, tone: "amber" },
-    resultado < 0 && { texto: "Resultado financeiro do período está negativo", tone: "red" },
+    canFinance && contasAtrasadas > 0 && { texto: `${contasAtrasadas} conta(s) atrasada(s) ou vencendo`, tone: "amber" },
+    canFinance && resultado < 0 && { texto: "Resultado financeiro do período está negativo", tone: "red" },
   ].filter(Boolean);
+
+  const heroStats = canFinance
+    ? [{ label: "Resultado do período", value: fmtBRL(resultado) }, { label: "Atendimentos (convênios)", value: fmtNum(totalAtendConvenio) }, { label: "Leads no período", value: fmtNum(leads.data.length) }, { label: "Contas pendentes", value: fmtBRL(contasPendentes) }, { label: "Meta média (equipe)", value: fmtPct(metaMedia) }]
+    : [{ label: "Atendimentos (convênios)", value: fmtNum(totalAtendConvenio) }, { label: "Leads no período", value: fmtNum(leads.data.length) }, { label: "Meta média (equipe)", value: fmtPct(metaMedia) }, { label: "Procedimentos concluídos", value: procConcluidos }];
 
   if (anyLoading) return <div className="text-center py-20" style={{ color: T.muted }}><Loader2 size={20} className="animate-spin inline mr-2" />Carregando painel…</div>;
 
@@ -584,21 +798,26 @@ function VisaoGeral() {
         <div className="flex items-center gap-2 mb-1"><Sparkles size={14} style={{ color: T.coral }} /><span className="text-xs font-semibold uppercase" style={{ color: "#9FB0AC", letterSpacing: "0.08em" }}>{weekdayLong()}</span></div>
         <h1 className="text-2xl font-bold mb-5" style={{ color: "#fff", fontFamily: "'Sora', sans-serif" }}>{unidade ? unidade.nome : "Clínica Olhar de Mãe"}</h1>
         <div className="flex flex-wrap gap-x-9 gap-y-4">
-          {[{ label: "Resultado do período", value: fmtBRL(resultado) }, { label: "Atendimentos (convênios)", value: fmtNum(totalAtendConvenio) }, { label: "Leads no período", value: fmtNum(leads.data.length) }, { label: "Contas pendentes", value: fmtBRL(contasPendentes) }, { label: "Meta média (equipe)", value: fmtPct(metaMedia) }].map((v, i) => (
+          {heroStats.map((v, i) => (
             <div key={i} className="flex items-center gap-2.5"><span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: T.coral }} />
               <div><div className="text-[10px] uppercase" style={{ color: "#9FB0AC", letterSpacing: "0.07em" }}>{v.label}</div><div className="text-lg font-bold" style={{ color: "#fff", fontFamily: "'IBM Plex Mono', monospace" }}>{v.value}</div></div></div>
           ))}
         </div>
       </div>
       {alertas.length > 0 && <Card className="mb-6" style={{ borderColor: `${T.red}40` }}><div className="flex items-center gap-2 mb-2"><AlertTriangle size={15} style={{ color: T.red }} /><span className="font-semibold text-sm" style={{ color: T.text }}>Pontos de atenção</span></div><div className="flex flex-col gap-1.5">{alertas.map((a, i) => (<div key={i} className="flex items-center gap-2 text-sm"><span className="w-1.5 h-1.5 rounded-full" style={{ background: a.tone === "red" ? T.red : T.amber }} /><span style={{ color: T.muted }}>{a.texto}</span></div>))}</div></Card>}
-      <div className="grid gap-3 mb-6 md:grid-cols-4">
+      {canFinance && <div className="grid gap-3 mb-6 md:grid-cols-4">
         <KpiCard label="Entradas do período" value={fmtBRL(entradas)} tone="green" icon={TrendingUp} />
         <KpiCard label="Saídas do período" value={fmtBRL(saidas)} tone="red" icon={TrendingDown} />
         <KpiCard label="Taxa de conversão (leads)" value={fmtPct(taxaConversao)} tone="rose" />
         <KpiCard label="Procedimentos concluídos" value={procConcluidos} tone="teal" />
-      </div>
+      </div>}
+      {!canFinance && <div className="grid gap-3 mb-6 md:grid-cols-3">
+        <KpiCard label="Taxa de conversão (leads)" value={fmtPct(taxaConversao)} tone="rose" />
+        <KpiCard label="Itens em alerta de estoque" value={alertaVacinas + alertaInsumos} tone={alertaVacinas + alertaInsumos ? "red" : "green"} />
+        <KpiCard label="Convênio líder" value={porConvenio[0] ? porConvenio[0].convenio : "—"} tone="teal" />
+      </div>}
       <div className="grid md:grid-cols-2 gap-5">
-        <ChartCard title="Fluxo de caixa por mês"><AreaChart data={fluxoPorMes}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="mes" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Area type="monotone" dataKey="saldo" stroke={T.coral} fill={`${T.coral}30`} strokeWidth={2} name="Saldo" /></AreaChart></ChartCard>
+        {canFinance && <ChartCard title="Fluxo de caixa por mês"><AreaChart data={fluxoPorMes}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="mes" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Area type="monotone" dataKey="saldo" stroke={T.coral} fill={`${T.coral}30`} strokeWidth={2} name="Saldo" /></AreaChart></ChartCard>}
         <ChartCard title="Faturamento por convênio"><PieChart><Pie data={porConvenio} dataKey="valor" nameKey="convenio" innerRadius={55} outerRadius={85} paddingAngle={2}>{porConvenio.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Pie><Tooltip formatter={(v) => fmtBRL(v)} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart></ChartCard>
       </div>
     </div>
@@ -638,24 +857,115 @@ function UnidadesModulo() {
   );
 }
 
-/* ============================== MENU ============================== */
-const MENU = [
+/* ============================== RELATÓRIOS ============================== */
+function humanizeKey(key) { return key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()); }
+function autoFormatValue(key, value) {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "number" && /valor|receita|custo|rentabilidade/i.test(key)) return fmtBRL(value);
+  if (typeof value === "string" && /^\d{4}-\d{2}(-\d{2})?$/.test(value)) return value.length === 7 ? value : fmtDate(value);
+  return String(value);
+}
+const REPORT_MODULES = [
+  { key: "financeiro", label: "Financeiro (entradas e saídas)", icon: Wallet, tone: "coral", dateKey: "data", valueKey: "valor", financeOnly: true },
+  { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral", dateKey: "vencimento", valueKey: "valor", financeOnly: true },
+  { key: "faturamento", label: "Faturamento de Convênios", icon: ClipboardList, tone: "coral", dateKey: "dataProtocolo", valueKey: "valor", financeOnly: true },
+  { key: "convenios", label: "Atendimentos por Convênio", icon: HeartHandshake, tone: "teal", dateKey: "data", valueKey: "valor" },
+  { key: "producao", label: "Produção Médica", icon: Stethoscope, tone: "teal", dateKey: null, valueKey: "receita" },
+  { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal", dateKey: "data", valueKey: "valor" },
+  { key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal", dateKey: null, valueKey: null },
+  { key: "insumos", label: "Estoque de Insumos", icon: Package, tone: "teal", dateKey: null, valueKey: null },
+  { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple", dateKey: null, valueKey: null },
+  { key: "marketing", label: "Marketing — Leads", icon: Megaphone, tone: "rose", dateKey: "data", valueKey: null },
+];
+
+function RelatoriosModulo() {
+  const { perfil } = useAuth();
+  const canFinance = perfil && perfil.papel !== "operacional";
+  const opcoes = REPORT_MODULES.filter((m) => canFinance || !m.financeOnly);
+  const [moduleKey, setModuleKey] = useState(opcoes[0].key);
+  const [inicio, setInicio] = useState(""); const [fim, setFim] = useState("");
+  const meta = opcoes.find((m) => m.key === moduleKey) || opcoes[0];
+  const { data, loading } = useRecords(meta.key, true);
+
+  const filtrados = useMemo(() => {
+    if (!meta.dateKey) return data;
+    return data.filter((r) => { const v = r[meta.dateKey]; if (!v) return true; if (inicio && v < inicio) return false; if (fim && v > fim) return false; return true; });
+  }, [data, inicio, fim, meta]);
+
+  const totalValor = meta.valueKey ? filtrados.reduce((s, r) => s + (Number(r[meta.valueKey]) || 0), 0) : null;
+  const colKeys = filtrados[0] ? Object.keys(filtrados[0]).filter((k) => k !== "id") : [];
+  const fieldsForExport = colKeys.map((k) => ({ key: k, label: humanizeKey(k) }));
+
+  return (
+    <div>
+      <style>{`@media print { body * { visibility: hidden; } #relatorio-print, #relatorio-print * { visibility: visible; } #relatorio-print { position: absolute; top: 0; left: 0; width: 100%; padding: 24px; } }`}</style>
+      <SectionHeader icon={FileText} title="Relatórios" subtitle="Gere relatórios de qualquer painel, com filtro de período" tone="ink" />
+      <Card className="mb-5">
+        <div className="flex flex-wrap gap-3 items-end">
+          <Field label="Painel">
+            <select className="rounded-lg px-3 py-2 text-sm outline-none w-64" style={inputStyle} value={moduleKey} onChange={(e) => setModuleKey(e.target.value)}>
+              {opcoes.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+            </select>
+          </Field>
+          {meta.dateKey && <>
+            <Field label="De"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={inicio} onChange={(e) => setInicio(e.target.value)} /></Field>
+            <Field label="Até"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={fim} onChange={(e) => setFim(e.target.value)} /></Field>
+          </>}
+          <Btn small variant="ghost" icon={Download} onClick={() => exportToCSV(fieldsForExport, filtrados, `relatorio-${meta.key}`)}>Exportar CSV</Btn>
+          <Btn small variant="ghost" icon={Printer} onClick={() => window.print()}>Imprimir / Salvar PDF</Btn>
+        </div>
+      </Card>
+
+      <div id="relatorio-print">
+        <div className="hidden print:block mb-4">
+          <h2 className="text-lg font-bold">{meta.label} — Olhar de Mãe</h2>
+          <p className="text-sm" style={{ color: T.muted }}>{inicio || fim ? `Período: ${inicio ? fmtDate(inicio) : "início"} a ${fim ? fmtDate(fim) : "hoje"}` : "Período completo"}</p>
+        </div>
+        <div className="grid gap-3 mb-5 md:grid-cols-3">
+          <KpiCard label="Registros" value={fmtNum(filtrados.length)} tone={meta.tone} icon={meta.icon} />
+          {totalValor !== null && <KpiCard label="Valor total" value={fmtBRL(totalValor)} tone="green" />}
+          {totalValor !== null && filtrados.length > 0 && <KpiCard label="Valor médio" value={fmtBRL(totalValor / filtrados.length)} />}
+        </div>
+        <Card>
+          {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> : (
+            filtrados.length === 0 ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhum registro no período selecionado.</div> : (
+              <div className="overflow-x-auto -mx-5 px-5">
+                <table className="w-full text-sm min-w-[560px]">
+                  <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>{colKeys.map((k) => <th key={k} className="text-left py-2 px-2 font-semibold text-[11px] uppercase" style={{ color: T.muted }}>{humanizeKey(k)}</th>)}</tr></thead>
+                  <tbody>{filtrados.map((r, i) => (<tr key={i} style={{ borderBottom: `1px solid ${T.border}` }}>{colKeys.map((k) => <td key={k} className="py-2 px-2" style={{ color: T.text }}>{autoFormatValue(k, r[k])}</td>)}</tr>))}</tbody>
+                </table>
+              </div>
+            )
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+
+const ALL_MENU = [
   { group: "Visão", items: [{ key: "visao", label: "Visão Geral", icon: LayoutDashboard, tone: "coral" }] },
-  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }] },
+  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Faturamento de Convênios", icon: ClipboardList, tone: "coral" }] },
   { group: "Atendimento Clínico", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producao", label: "Produção Médica", icon: Stethoscope, tone: "teal" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
-  { group: "Estoque", items: [{ key: "vacinas", label: "Vacinas", icon: Syringe, tone: "amber" }, { key: "insumos", label: "Insumos", icon: Package, tone: "amber" }] },
+  { group: "Estoque", items: [{ key: "vacinas", label: "Vacinas", icon: Syringe, tone: "teal" }, { key: "insumos", label: "Insumos", icon: Package, tone: "teal" }] },
   { group: "Pessoas", items: [{ key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }] },
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }] },
+  { group: "Relatórios", items: [{ key: "relatorios", label: "Gerar Relatórios", icon: FileText, tone: "ink" }] },
   { group: "Rede", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }] },
 ];
+const FINANCE_TABS = ["financeiro", "contas", "faturamento"];
 
 /* ============================== APP INTERNO (autenticado) ============================== */
 function AppInner() {
   const [tab, setTab] = useState("visao");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { logout, perfil } = useAuth();
+  const canFinance = perfil && perfil.papel !== "operacional";
+  const MENU = canFinance ? ALL_MENU : ALL_MENU.filter((g) => g.group !== "Financeiro");
   const activeMeta = MENU.flatMap((g) => g.items).find((i) => i.key === tab) || MENU[0].items[0];
   const renderTab = () => {
+    if (!canFinance && FINANCE_TABS.includes(tab)) return <VisaoGeral />;
     switch (tab) {
       case "visao": return <VisaoGeral />;
       case "financeiro": return <FinanceiroModulo />;
@@ -667,6 +977,8 @@ function AppInner() {
       case "pessoal": return <PessoalModulo />;
       case "marketing": return <MarketingModulo />;
       case "procedimentos": return <ProcedimentosModulo />;
+      case "faturamento": return <FaturamentoModulo />;
+      case "relatorios": return <RelatoriosModulo />;
       case "unidades": return <UnidadesModulo />;
       default: return null;
     }
