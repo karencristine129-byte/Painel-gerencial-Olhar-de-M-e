@@ -51,6 +51,7 @@ const T = {
   ink: "#16262A", inkSoft: "#1F383D", canvas: "#FAFAF8", card: "#FFFFFF",
   border: "#E6E8E5", text: "#1B2420", muted: "#71807A",
   coral: "#D2444E", coralDeep: "#B4363F", teal: "#1EA6B8", tealDeep: "#157E8C",
+  sidebar: "#0E4A53", sidebarSoft: "#123F47",
   amber: "#C98A2E", amberDeep: "#A66E1F", green: "#3E8F63", red: "#C24A3B",
 };
 const PALETTES = { coral: T.coral, teal: T.teal, amber: T.amber, purple: T.coral, rose: T.teal, ink: T.ink, green: T.green, red: T.red };
@@ -199,7 +200,7 @@ function LoginScreen() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: `linear-gradient(135deg, ${T.ink}, ${T.tealDeep})` }}>
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: T.sidebar }}>
       <div className="w-full max-w-sm rounded-2xl p-7" style={{ background: T.card }}>
         <div className="flex items-center gap-2.5 mb-6">
           <img src={LOGO_DATA_URI} alt="Olhar de Mãe" style={{ width: 46, height: 46, objectFit: "contain" }} />
@@ -579,7 +580,7 @@ function VisaoGeral() {
 
   return (
     <div>
-      <div className="rounded-3xl mb-7 p-7" style={{ background: T.ink }}>
+      <div className="rounded-3xl mb-7 p-7" style={{ background: T.sidebar }}>
         <div className="flex items-center gap-2 mb-1"><Sparkles size={14} style={{ color: T.coral }} /><span className="text-xs font-semibold uppercase" style={{ color: "#9FB0AC", letterSpacing: "0.08em" }}>{weekdayLong()}</span></div>
         <h1 className="text-2xl font-bold mb-5" style={{ color: "#fff", fontFamily: "'Sora', sans-serif" }}>{unidade ? unidade.nome : "Clínica Olhar de Mãe"}</h1>
         <div className="flex flex-wrap gap-x-9 gap-y-4">
@@ -674,7 +675,7 @@ function AppInner() {
     <div style={{ background: T.canvas, minHeight: "100vh", fontFamily: "'Inter', sans-serif" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap'); * { box-sizing: border-box; }`}</style>
       <div className="flex">
-        <aside className={`fixed md:static z-40 top-0 left-0 h-full md:h-auto w-72 flex-shrink-0 transition-transform overflow-y-auto ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`} style={{ background: `linear-gradient(180deg, ${T.ink}, ${T.inkSoft})`, minHeight: "100vh" }}>
+        <aside className={`fixed md:static z-40 top-0 left-0 h-full md:h-auto w-72 flex-shrink-0 transition-transform overflow-y-auto ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`} style={{ background: T.sidebar, minHeight: "100vh" }}>
           <div className="px-5 py-6 flex items-center gap-2.5" style={{ borderBottom: "1px solid #FFFFFF14" }}>
             <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#FFFFFF" }}><img src={LOGO_DATA_URI} alt="Olhar de Mãe" style={{ width: 36, height: 36, objectFit: "contain" }} /></div>
             <div><div className="text-sm font-bold" style={{ color: "#fff", fontFamily: "'Sora', sans-serif" }}>Olhar de Mãe</div><div className="text-xs" style={{ color: "#8FA0AC" }}>Painel de Gestão da Rede</div></div>
@@ -698,7 +699,7 @@ function AppInner() {
         </aside>
         {sidebarOpen && <div className="fixed inset-0 z-30 md:hidden" style={{ background: "#00000055" }} onClick={() => setSidebarOpen(false)} />}
         <main className="flex-1 min-w-0">
-          <div className="md:hidden flex items-center justify-between px-4 py-3" style={{ background: T.ink }}>
+          <div className="md:hidden flex items-center justify-between px-4 py-3" style={{ background: T.sidebar }}>
             <span className="text-sm font-bold" style={{ color: "#fff" }}>Olhar de Mãe — {activeMeta.label}</span>
             <button onClick={() => setSidebarOpen(true)} className="px-3 py-1.5 rounded-lg text-xs" style={{ background: "#FFFFFF1A", color: "#fff" }}>Menu</button>
           </div>
