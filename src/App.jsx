@@ -48,6 +48,26 @@ async function sbAuth(path, body) {
   if (!res.ok) throw new Error(data.error_description || data.msg || data.error || "Falha na autenticação");
   return data;
 }
+const RH_BUCKET = "documentos-rh";
+async function sbStorageUpload(path, file, token) {
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${RH_BUCKET}/${path}`, {
+    method: "POST",
+    headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream", "x-upsert": "true" },
+    body: file,
+  });
+  if (!res.ok) throw new Error((await res.text()) || "Falha ao enviar arquivo");
+  return true;
+}
+async function sbStorageSignedUrl(path, token, expiresIn = 120) {
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${RH_BUCKET}/${path}`, {
+    method: "POST",
+    headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ expiresIn }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || "Não foi possível gerar o link do arquivo");
+  return `${SUPABASE_URL}/storage/v1${data.signedURL}`;
+}
 
 /* ============================== TOKENS VISUAIS (cores extraídas da logo Olhar de Mãe) ============================== */
 const T = {
@@ -506,6 +526,36 @@ function useRecords(moduleKey, enabled = true) {
   return { data, add, bulkAdd, update, remove, loading, erro };
 }
 
+/* Hook: registros pessoais do colaborador logado (Meu RH) */
+function useOwnRecords(table, order = "data.desc") {
+  const { session, perfil } = useAuth();
+  const { unidadeId } = useUnidade();
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState(null);
+
+  const reload = useCallback(async () => {
+    setLoading(true); setErro(null);
+    try {
+      const rows = await sbRest(`${table}?colaborador_id=eq.${perfil.id}&select=*&order=${order}`, { token: session.access_token });
+      setData(rows || []);
+    } catch (e) { setErro(e.message); }
+    setLoading(false);
+  }, [table]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  const add = async (record) => {
+    try { await sbRest(table, { method: "POST", token: session.access_token, body: { ...record, unidade_id: unidadeId, colaborador_id: perfil.id } }); await reload(); return true; }
+    catch (e) { alert("Não foi possível salvar: " + e.message); return false; }
+  };
+  const remove = async (id) => {
+    try { await sbRest(`${table}?id=eq.${id}`, { method: "DELETE", token: session.access_token }); await reload(); }
+    catch (e) { alert("Não foi possível remover: " + e.message); }
+  };
+  return { data, add, remove, reload, loading, erro };
+}
+
 function normalizeForm(fields, form) {
   const out = {};
   fields.forEach((f) => { out[f.key] = (f.type === "number" || f.type === "currency") ? Number(form[f.key] || 0) : form[f.key]; });
@@ -709,6 +759,8 @@ function FaturamentoModulo() {
 }
 
 function PessoalModulo() {
+  const { perfil } = useAuth();
+  const canManageRH = perfil && ["admin", "colaborador"].includes(perfil.papel);
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("pessoal");
   const fields = [{ key: "nome", label: "Colaborador(a)", type: "text" }, { key: "cargo", label: "Cargo", type: "text" }, { key: "equipe", label: "Equipe", type: "select", options: ["Recepção", "Financeiro", "Marketing", "Enfermagem", "Administrativo", "Outra"] }, { key: "mes", label: "Mês (AAAA-MM)", type: "text", default: todayISO().slice(0, 7) }, { key: "metaMensal", label: "Meta mensal (agendados)", type: "number" }, { key: "ligacoes", label: "Ligações atendidas", type: "number" }, { key: "mensagens", label: "Mensagens respondidas", type: "number" }, { key: "agendados", label: "Pacientes agendados", type: "number" }];
   const withPct = data.map((r) => ({ ...r, pct: r.metaMensal ? (r.agendados / r.metaMensal) * 100 : (r.ligacoes + r.mensagens > 0 ? 100 : 0) }));
@@ -722,7 +774,8 @@ function PessoalModulo() {
       charts={<div className="grid md:grid-cols-2 gap-5">
         <ChartCard title="Meta atingida por colaborador(a)"><BarChart data={withPct} layout="vertical" margin={{ left: 10 }}><CartesianGrid strokeDasharray="3 3" stroke={T.border} horizontal={false} /><XAxis type="number" tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v}%`} /><YAxis type="category" dataKey="nome" width={130} tick={{ fontSize: 11, fill: T.muted }} /><Tooltip formatter={(v) => `${v.toFixed(0)}%`} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="pct" radius={[0, 4, 4, 0]}>{withPct.map((r, i) => <Cell key={i} fill={r.pct >= 100 ? T.green : r.pct >= 70 ? T.amber : T.red} />)}</Bar></BarChart></ChartCard>
         <ChartCard title="Desempenho médio por equipe"><BarChart data={porEquipe}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="equipe" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-10} textAnchor="end" height={50} /><YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v}%`} /><Tooltip formatter={(v) => `${v.toFixed(0)}%`} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="media" fill={T.purple} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>
-      </div>} />
+      </div>}
+      extra={canManageRH && <GestaoDocumentosRH />} />
   );
 }
 
@@ -858,6 +911,233 @@ function UnidadesModulo() {
 }
 
 /* ============================== RELATÓRIOS ============================== */
+/* ============================== MEU RH (autoatendimento do colaborador) ============================== */
+function ProdutividadeDiaria() {
+  const { data, add, loading } = useOwnRecords("producao_diaria_colaborador");
+  const [form, setForm] = useState({ data: todayISO(), ligacoes: "", mensagens: "", agendados: "" });
+  const [busy, setBusy] = useState(false);
+  const mesAtual = todayISO().slice(0, 7);
+  const doMes = data.filter((r) => r.data.slice(0, 7) === mesAtual);
+  const totais = doMes.reduce((s, r) => ({ ligacoes: s.ligacoes + r.ligacoes, mensagens: s.mensagens + r.mensagens, agendados: s.agendados + r.agendados }), { ligacoes: 0, mensagens: 0, agendados: 0 });
+  return (
+    <Card className="mb-5">
+      <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Produtividade — lançamento de hoje</p>
+      <div className="flex flex-wrap gap-3 items-end mb-4">
+        <Field label="Data"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} /></Field>
+        <Field label="Ligações atendidas"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.ligacoes} onChange={(e) => setForm((p) => ({ ...p, ligacoes: e.target.value }))} /></Field>
+        <Field label="Mensagens respondidas"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.mensagens} onChange={(e) => setForm((p) => ({ ...p, mensagens: e.target.value }))} /></Field>
+        <Field label="Pacientes agendados"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.agendados} onChange={(e) => setForm((p) => ({ ...p, agendados: e.target.value }))} /></Field>
+        <Btn icon={busy ? undefined : Plus} disabled={busy} onClick={async () => {
+          setBusy(true);
+          await add({ data: form.data, ligacoes: Number(form.ligacoes || 0), mensagens: Number(form.mensagens || 0), agendados: Number(form.agendados || 0) });
+          setForm({ data: todayISO(), ligacoes: "", mensagens: "", agendados: "" });
+          setBusy(false);
+        }}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Registrar</Btn>
+      </div>
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <KpiCard label="Ligações no mês" value={fmtNum(totais.ligacoes)} tone="coral" />
+        <KpiCard label="Mensagens no mês" value={fmtNum(totais.mensagens)} tone="teal" />
+        <KpiCard label="Agendados no mês" value={fmtNum(totais.agendados)} tone="green" />
+      </div>
+      {!loading && doMes.length > 0 && (
+        <div className="overflow-x-auto -mx-5 px-5">
+          <table className="w-full text-sm">
+            <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Data</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Ligações</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Mensagens</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Agendados</th></tr></thead>
+            <tbody>{[...doMes].sort((a, b) => b.data.localeCompare(a.data)).map((r) => (<tr key={r.id} style={{ borderBottom: `1px solid ${T.border}` }}><td className="py-2 px-2">{fmtDate(r.data)}</td><td className="py-2 px-2">{r.ligacoes}</td><td className="py-2 px-2">{r.mensagens}</td><td className="py-2 px-2">{r.agendados}</td></tr>))}</tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function MeusDocumentos() {
+  const { session, perfil } = useAuth();
+  const [data, setData] = useState([]); const [loading, setLoading] = useState(true);
+  useEffect(() => { sbRest(`rh_documentos?colaborador_id=eq.${perfil.id}&select=*&order=criado_em.desc`, { token: session.access_token }).then((r) => setData(r || [])).finally(() => setLoading(false)); }, []);
+  const baixar = async (doc) => {
+    try { const url = await sbStorageSignedUrl(doc.caminho_arquivo, session.access_token); window.open(url, "_blank"); }
+    catch (e) { alert(e.message); }
+  };
+  return (
+    <Card className="mb-5">
+      <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Meus documentos — holerite e recibo de férias</p>
+      {loading ? <div className="text-sm py-4" style={{ color: T.muted }}>Carregando…</div> : data.length === 0 ? <div className="text-sm py-4" style={{ color: T.muted }}>Nenhum documento enviado ainda.</div> : (
+        <div className="flex flex-col gap-2">
+          {data.map((d) => (
+            <div key={d.id} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}>
+              <div className="flex items-center gap-3"><IconChip icon={FileText} tone="coral" size={15} box={32} /><div><div className="font-semibold text-sm" style={{ color: T.text }}>{d.tipo} — {d.competencia}</div></div></div>
+              <Btn small variant="ghost" icon={Download} onClick={() => baixar(d)}>Baixar</Btn>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function EnviarAtestado() {
+  const { session } = useAuth();
+  const { data, add, remove, loading } = useOwnRecords("rh_atestados");
+  const [descricao, setDescricao] = useState(""); const [dataAtestado, setDataAtestado] = useState(todayISO());
+  const [arquivo, setArquivo] = useState(null); const [busy, setBusy] = useState(false);
+  const enviar = async () => {
+    if (!arquivo) return alert("Escolha um arquivo para enviar.");
+    setBusy(true);
+    try {
+      const path = `${session.user.id}/atestados/${Date.now()}-${arquivo.name}`;
+      await sbStorageUpload(path, arquivo, session.access_token);
+      await add({ data: dataAtestado, descricao, caminho_arquivo: path });
+      setDescricao(""); setArquivo(null);
+    } catch (e) { alert("Não foi possível enviar: " + e.message); }
+    setBusy(false);
+  };
+  return (
+    <Card className="mb-5">
+      <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Enviar atestado</p>
+      <div className="flex flex-wrap gap-3 items-end mb-4">
+        <Field label="Data"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={dataAtestado} onChange={(e) => setDataAtestado(e.target.value)} /></Field>
+        <Field label="Descrição (opcional)"><input className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="ex: consulta médica, 1 dia" /></Field>
+        <Field label="Arquivo (PDF ou imagem)"><input type="file" accept=".pdf,.jpg,.jpeg,.png" className="text-sm" onChange={(e) => setArquivo(e.target.files[0])} /></Field>
+        <Btn icon={busy ? undefined : Upload} disabled={busy} onClick={enviar}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Enviar atestado</Btn>
+      </div>
+      {!loading && data.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {data.map((a) => (
+            <div key={a.id} className="flex items-center justify-between rounded-xl px-4 py-2.5" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}>
+              <span className="text-sm" style={{ color: T.text }}>{fmtDate(a.data)} {a.descricao ? `— ${a.descricao}` : ""}</span>
+              <button onClick={() => { if (confirm("Remover este atestado?")) remove(a.id); }}><Trash2 size={13} style={{ color: T.red }} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function MeusHorarios() {
+  const { data, add, remove, loading } = useOwnRecords("rh_horas");
+  const [form, setForm] = useState({ data: todayISO(), hora_entrada: "", hora_saida: "" });
+  const [busy, setBusy] = useState(false);
+  const calcHoras = (e, s) => { if (!e || !s) return null; const [eh, em] = e.split(":").map(Number); const [sh, sm] = s.split(":").map(Number); let mins = (sh * 60 + sm) - (eh * 60 + em); if (mins < 0) mins += 24 * 60; return Math.round((mins / 60) * 100) / 100; };
+  const mesAtual = todayISO().slice(0, 7);
+  const totalMes = data.filter((r) => r.data.slice(0, 7) === mesAtual).reduce((s, r) => s + (Number(r.horas_total) || 0), 0);
+  return (
+    <Card className="mb-5">
+      <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Meus horários trabalhados</p>
+      <div className="flex flex-wrap gap-3 items-end mb-4">
+        <Field label="Data"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} /></Field>
+        <Field label="Entrada"><input type="time" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.hora_entrada} onChange={(e) => setForm((p) => ({ ...p, hora_entrada: e.target.value }))} /></Field>
+        <Field label="Saída"><input type="time" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.hora_saida} onChange={(e) => setForm((p) => ({ ...p, hora_saida: e.target.value }))} /></Field>
+        <Btn icon={busy ? undefined : Plus} disabled={busy} onClick={async () => {
+          setBusy(true);
+          const horas = calcHoras(form.hora_entrada, form.hora_saida);
+          await add({ data: form.data, hora_entrada: form.hora_entrada || null, hora_saida: form.hora_saida || null, horas_total: horas });
+          setForm({ data: todayISO(), hora_entrada: "", hora_saida: "" });
+          setBusy(false);
+        }}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Registrar</Btn>
+      </div>
+      <div className="mb-4"><KpiCard label="Total de horas no mês" value={`${totalMes.toFixed(2)} h`} tone="purple" /></div>
+      {!loading && data.length > 0 && (
+        <div className="overflow-x-auto -mx-5 px-5">
+          <table className="w-full text-sm">
+            <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Data</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Entrada</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Saída</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Horas</th><th></th></tr></thead>
+            <tbody>{[...data].sort((a, b) => b.data.localeCompare(a.data)).map((r) => (<tr key={r.id} style={{ borderBottom: `1px solid ${T.border}` }}><td className="py-2 px-2">{fmtDate(r.data)}</td><td className="py-2 px-2">{r.hora_entrada || "—"}</td><td className="py-2 px-2">{r.hora_saida || "—"}</td><td className="py-2 px-2">{r.horas_total ?? "—"}</td><td className="py-2 px-2 text-right"><button onClick={() => { if (confirm("Remover este registro?")) remove(r.id); }}><Trash2 size={13} style={{ color: T.red }} /></button></td></tr>))}</tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function MeuRHModulo() {
+  return (
+    <div>
+      <SectionHeader icon={Users} title="Meu RH" subtitle="Produtividade, documentos, atestados e horários — só você vê seus dados" tone="purple" />
+      <ProdutividadeDiaria />
+      <MeusDocumentos />
+      <EnviarAtestado />
+      <MeusHorarios />
+    </div>
+  );
+}
+
+/* ============================== RH (visão do gestor) — enviar holerite/férias para a equipe ============================== */
+function GestaoDocumentosRH() {
+  const { session } = useAuth();
+  const { unidadeId } = useUnidade();
+  const [colaboradores, setColaboradores] = useState([]);
+  const [colaboradorId, setColaboradorId] = useState("");
+  const [tipo, setTipo] = useState("Holerite");
+  const [competencia, setCompetencia] = useState(todayISO().slice(0, 7));
+  const [arquivo, setArquivo] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [enviados, setEnviados] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const carregar = useCallback(async () => {
+    setLoading(true);
+    const [cs, docs] = await Promise.all([
+      sbRest(`perfis?unidade_id=eq.${unidadeId}&select=id,nome,cargo&order=nome.asc`, { token: session.access_token }),
+      sbRest(`rh_documentos?unidade_id=eq.${unidadeId}&select=*&order=criado_em.desc&limit=30`, { token: session.access_token }),
+    ]);
+    setColaboradores(cs || []);
+    if (!colaboradorId && cs && cs[0]) setColaboradorId(cs[0].id);
+    setEnviados(docs || []);
+    setLoading(false);
+  }, [unidadeId]);
+
+  useEffect(() => { carregar(); }, [carregar]);
+
+  const enviar = async () => {
+    if (!arquivo || !colaboradorId) return alert("Escolha o colaborador e o arquivo.");
+    setBusy(true);
+    try {
+      const pasta = tipo === "Holerite" ? "holerites" : "ferias";
+      const path = `${colaboradorId}/${pasta}/${Date.now()}-${arquivo.name}`;
+      await sbStorageUpload(path, arquivo, session.access_token);
+      await sbRest("rh_documentos", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, colaborador_id: colaboradorId, tipo, competencia, caminho_arquivo: path, enviado_por: session.user.id } });
+      setArquivo(null);
+      await carregar();
+    } catch (e) { alert("Não foi possível enviar: " + e.message); }
+    setBusy(false);
+  };
+
+  const nomeDoColaborador = (id) => { const c = colaboradores.find((x) => x.id === id); return c ? c.nome : "—"; };
+
+  return (
+    <Card className="mb-5">
+      <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Enviar holerite / recibo de férias para a equipe</p>
+      <div className="flex flex-wrap gap-3 items-end mb-4">
+        <Field label="Colaborador(a)">
+          <select className="rounded-lg px-3 py-2 text-sm outline-none w-56" style={inputStyle} value={colaboradorId} onChange={(e) => setColaboradorId(e.target.value)}>
+            {colaboradores.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+          </select>
+        </Field>
+        <Field label="Tipo">
+          <select className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={tipo} onChange={(e) => setTipo(e.target.value)}>
+            <option value="Holerite">Holerite</option>
+            <option value="Recibo de Férias">Recibo de Férias</option>
+          </select>
+        </Field>
+        <Field label="Competência (AAAA-MM)"><input className="rounded-lg px-3 py-2 text-sm outline-none w-32" style={inputStyle} value={competencia} onChange={(e) => setCompetencia(e.target.value)} /></Field>
+        <Field label="Arquivo (PDF)"><input type="file" accept=".pdf" className="text-sm" onChange={(e) => setArquivo(e.target.files[0])} /></Field>
+        <Btn icon={busy ? undefined : Upload} disabled={busy} onClick={enviar}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Enviar</Btn>
+      </div>
+      {!loading && enviados.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {enviados.map((d) => (
+            <div key={d.id} className="flex items-center justify-between rounded-xl px-4 py-2.5 text-sm" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}>
+              <span style={{ color: T.text }}>{nomeDoColaborador(d.colaborador_id)} — {d.tipo} ({d.competencia})</span>
+              <span style={{ color: T.muted }}>{fmtDate(d.criado_em.slice(0, 10))}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function humanizeKey(key) { return key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()); }
 function autoFormatValue(key, value) {
   if (value === null || value === undefined || value === "") return "—";
@@ -949,20 +1229,39 @@ const ALL_MENU = [
   { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Faturamento de Convênios", icon: ClipboardList, tone: "coral" }] },
   { group: "Atendimento Clínico", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producao", label: "Produção Médica", icon: Stethoscope, tone: "teal" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
   { group: "Estoque", items: [{ key: "vacinas", label: "Vacinas", icon: Syringe, tone: "teal" }, { key: "insumos", label: "Insumos", icon: Package, tone: "teal" }] },
-  { group: "Pessoas", items: [{ key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }] },
+  { group: "Pessoas", items: [{ key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" }] },
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }] },
   { group: "Relatórios", items: [{ key: "relatorios", label: "Gerar Relatórios", icon: FileText, tone: "ink" }] },
   { group: "Rede", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }] },
 ];
 const FINANCE_TABS = ["financeiro", "contas", "faturamento"];
+/* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
+const RESTRICTED_MENUS = {
+  recepcao: { group: "Minha área", items: [
+    { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
+    { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" },
+    { key: "insumos", label: "Estoque de Insumos", icon: Package, tone: "teal" },
+  ] },
+  marketing: { group: "Minha área", items: [
+    { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
+    { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" },
+    { key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" },
+  ] },
+  enfermagem: { group: "Minha área", items: [
+    { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
+    { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" },
+    { key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" },
+  ] },
+};
 
 /* ============================== APP INTERNO (autenticado) ============================== */
 function AppInner() {
-  const [tab, setTab] = useState("visao");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const { logout, perfil } = useAuth();
+  const isRestrito = perfil && RESTRICTED_MENUS[perfil.papel];
+  const [tab, setTab] = useState(isRestrito ? "meurh" : "visao");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const canFinance = perfil && perfil.papel !== "operacional";
-  const MENU = canFinance ? ALL_MENU : ALL_MENU.filter((g) => g.group !== "Financeiro");
+  const MENU = isRestrito ? [RESTRICTED_MENUS[perfil.papel]] : (canFinance ? ALL_MENU : ALL_MENU.filter((g) => g.group !== "Financeiro"));
   const activeMeta = MENU.flatMap((g) => g.items).find((i) => i.key === tab) || MENU[0].items[0];
   const renderTab = () => {
     if (!canFinance && FINANCE_TABS.includes(tab)) return <VisaoGeral />;
@@ -975,6 +1274,7 @@ function AppInner() {
       case "producao": return <ProducaoModulo />;
       case "contas": return <ContasModulo />;
       case "pessoal": return <PessoalModulo />;
+      case "meurh": return <MeuRHModulo />;
       case "marketing": return <MarketingModulo />;
       case "procedimentos": return <ProcedimentosModulo />;
       case "faturamento": return <FaturamentoModulo />;
