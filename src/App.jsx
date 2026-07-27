@@ -11,6 +11,7 @@ import {
   AlertTriangle, TrendingUp, TrendingDown, Activity, Building2,
   CalendarDays, Sparkles, ChevronDown, LogOut, Loader2, Lock,
   Upload, FileSpreadsheet, Printer, Download, FileText, CheckCircle2, ClipboardList,
+  Bell, Settings, UserCircle,
 } from "lucide-react";
 
 /* ============================== SUPABASE (REST direto, sem SDK) ============================== */
@@ -71,14 +72,15 @@ async function sbStorageSignedUrl(path, token, expiresIn = 120) {
 
 /* ============================== TOKENS VISUAIS (cores extraídas da logo Olhar de Mãe) ============================== */
 const T = {
-  ink: "#16262A", inkSoft: "#1F383D", canvas: "#FAFAF8", card: "#FFFFFF",
-  border: "#E6E8E5", text: "#1B2420", muted: "#71807A",
-  coral: "#D2444E", coralDeep: "#B4363F", teal: "#1EA6B8", tealDeep: "#157E8C",
-  sidebar: "#0E4A53", sidebarSoft: "#123F47",
+  ink: "#233042", inkSoft: "#1B2733", canvas: "#F6F9FB", card: "#FFFFFF",
+  border: "#E4EAEE", text: "#233042", muted: "#6B7280",
+  coral: "#D34550", coralDeep: "#B23540", teal: "#32B9C8", tealDeep: "#144D56",
+  tealLight: "#68C7CC", tealSoft: "#A0DDDF", ice: "#E8F2F0",
+  sidebar: "#144D56", sidebarSoft: "#0E3A41",
   amber: "#C98A2E", amberDeep: "#A66E1F", green: "#3E8F63", red: "#C24A3B",
 };
 const PALETTES = { coral: T.coral, teal: T.teal, amber: T.amber, purple: T.coral, rose: T.teal, ink: T.ink, green: T.green, red: T.red };
-const CHART_SET = [T.coral, T.teal, T.amberDeep, T.tealDeep, T.coralDeep, "#5C7A72", "#8A5A5E"];
+const CHART_SET = [T.teal, T.coral, T.tealDeep, T.amberDeep, T.coralDeep, T.tealLight, "#8A5A5E"];
 const CONVENIOS = ["Bradesco Saúde", "Unimed", "IPSM", "AMMP", "Orizon", "Sancoop", "Particular"];
 
 const fmtBRL = (v) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -150,12 +152,12 @@ function IconChip({ icon: Icon, tone = "ink", size = 18, box = 38 }) {
 function KpiCard({ label, value, sub, tone = "ink", icon: Icon }) {
   const color = PALETTES[tone] || T.ink;
   return (
-    <div className="rounded-2xl p-4 flex flex-col gap-2 min-w-0 shadow-sm hover:shadow-md transition-shadow" style={{ background: T.card, border: `1px solid ${T.border}` }}>
+    <div className="rounded-[18px] p-4 flex flex-col gap-2 min-w-0 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all" style={{ background: T.card, border: `1px solid ${T.border}` }}>
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-semibold uppercase" style={{ color: T.muted, letterSpacing: "0.07em" }}>{label}</span>
         {Icon ? <IconChip icon={Icon} tone={tone} size={13} box={26} /> : null}
       </div>
-      <span className="text-2xl font-bold truncate" style={{ color: T.text, fontFamily: "'IBM Plex Mono', monospace" }}>{value}</span>
+      <span className="text-2xl font-bold truncate" style={{ color: T.text, fontFamily: "'JetBrains Mono', monospace" }}>{value}</span>
       {sub ? <span className="text-xs font-medium" style={{ color }}>{sub}</span> : null}
     </div>
   );
@@ -164,12 +166,12 @@ function SectionHeader({ icon, title, subtitle, tone = "ink" }) {
   return (
     <div className="flex items-center gap-3 mb-6">
       <IconChip icon={icon} tone={tone} size={20} box={46} />
-      <div><h2 className="text-xl font-bold leading-tight" style={{ color: T.text, fontFamily: "'Sora', sans-serif" }}>{title}</h2><p className="text-sm" style={{ color: T.muted }}>{subtitle}</p></div>
+      <div><h2 className="text-xl font-bold leading-tight" style={{ color: T.text, fontFamily: "'Poppins', sans-serif" }}>{title}</h2><p className="text-sm" style={{ color: T.muted }}>{subtitle}</p></div>
     </div>
   );
 }
 function Card({ children, className = "", style = {} }) {
-  return <div className={`rounded-2xl p-5 shadow-sm ${className}`} style={{ background: T.card, border: `1px solid ${T.border}`, ...style }}>{children}</div>;
+  return <div className={`rounded-[18px] p-5 shadow-sm ${className}`} style={{ background: T.card, border: `1px solid ${T.border}`, ...style }}>{children}</div>;
 }
 function Btn({ children, onClick, variant = "primary", icon: Icon, small, tone = "ink", disabled }) {
   const color = PALETTES[tone] || T.ink;
@@ -236,7 +238,7 @@ function LoginScreen() {
       <div className="w-full max-w-sm rounded-2xl p-7" style={{ background: T.card }}>
         <div className="flex items-center gap-2.5 mb-6">
           <img src={LOGO_DATA_URI} alt="Olhar de Mãe" style={{ width: 46, height: 46, objectFit: "contain" }} />
-          <div><div className="font-bold" style={{ color: T.text, fontFamily: "'Sora', sans-serif" }}>Olhar de Mãe</div><div className="text-xs" style={{ color: T.muted }}>Painel de Gestão da Rede</div></div>
+          <div><div className="font-bold" style={{ color: T.text, fontFamily: "'Poppins', sans-serif" }}>Olhar de Mãe</div><div className="text-xs" style={{ color: T.muted }}>Painel de Gestão da Rede</div></div>
         </div>
         <div className="flex gap-2 mb-5">
           <button onClick={() => setMode("login")} className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ background: mode === "login" ? T.ink : "#F1EEE4", color: mode === "login" ? "#fff" : T.muted }}>Entrar</button>
@@ -270,7 +272,7 @@ function OnboardingPerfil({ onDone }) {
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ background: T.canvas }}>
       <Card className="w-full max-w-sm">
-        <p className="font-bold mb-1" style={{ color: T.text, fontFamily: "'Sora', sans-serif" }}>Complete seu perfil</p>
+        <p className="font-bold mb-1" style={{ color: T.text, fontFamily: "'Poppins', sans-serif" }}>Complete seu perfil</p>
         <p className="text-sm mb-4" style={{ color: T.muted }}>Só precisamos disso uma vez.</p>
         <div className="flex flex-col gap-3">
           <Field label="Seu nome"><input className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
@@ -291,7 +293,7 @@ function DailyEntryPanel({ tone, fields, onSubmit, cta = "Registrar lançamento"
   return (
     <div className="rounded-2xl p-5 mb-6" style={{ background: `linear-gradient(135deg, ${color}10, ${color}05)`, border: `1px solid ${color}30` }}>
       <div className="flex items-center gap-2 mb-3.5">
-        <CalendarDays size={15} style={{ color }} /><span className="text-sm font-bold" style={{ color: T.text, fontFamily: "'Sora', sans-serif" }}>Lançamento de hoje</span>
+        <CalendarDays size={15} style={{ color }} /><span className="text-sm font-bold" style={{ color: T.text, fontFamily: "'Poppins', sans-serif" }}>Lançamento de hoje</span>
         <span className="text-xs" style={{ color: T.muted }}>— preencha aqui diariamente</span>
       </div>
       <div className="flex flex-wrap gap-3 items-end">
@@ -312,7 +314,7 @@ function EditModal({ title, fields, initial, onSave, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "#13203099" }} onClick={onClose}>
       <div className="rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto" style={{ background: T.card }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 sticky top-0" style={{ background: T.card, borderBottom: `1px solid ${T.border}` }}>
-          <h3 className="font-bold" style={{ color: T.text, fontFamily: "'Sora', sans-serif" }}>{title}</h3><button onClick={onClose}><X size={18} style={{ color: T.muted }} /></button>
+          <h3 className="font-bold" style={{ color: T.text, fontFamily: "'Poppins', sans-serif" }}>{title}</h3><button onClick={onClose}><X size={18} style={{ color: T.muted }} /></button>
         </div>
         <div className="p-5 flex flex-col gap-3.5">{fields.map((f) => <Field key={f.key} label={f.label}><FieldInput f={f} value={form[f.key]} onChange={(v) => setForm((p) => ({ ...p, [f.key]: v }))} /></Field>)}</div>
         <div className="flex justify-end gap-2 px-5 py-4" style={{ borderTop: `1px solid ${T.border}` }}>
@@ -413,7 +415,7 @@ function ImportModal({ fields, onImport, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "#13203099" }} onClick={onClose}>
       <div className="rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" style={{ background: T.card }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 sticky top-0" style={{ background: T.card, borderBottom: `1px solid ${T.border}` }}>
-          <h3 className="font-bold flex items-center gap-2" style={{ color: T.text, fontFamily: "'Sora', sans-serif" }}><FileSpreadsheet size={16} /> Importar planilha</h3>
+          <h3 className="font-bold flex items-center gap-2" style={{ color: T.text, fontFamily: "'Poppins', sans-serif" }}><FileSpreadsheet size={16} /> Importar planilha</h3>
           <button onClick={onClose}><X size={18} style={{ color: T.muted }} /></button>
         </div>
         <div className="p-5">
@@ -619,7 +621,7 @@ function FinanceiroModulo() {
     { key: "data", label: "Data", render: (r) => fmtDate(r.data) },
     { key: "tipo", label: "Tipo", render: (r) => <Badge tone={r.tipo === "entrada" ? "green" : "red"}>{r.tipo === "entrada" ? "Entrada" : "Saída"}</Badge> },
     { key: "linha", label: "Linha DRE" }, { key: "descricao", label: "Descrição" },
-    { key: "valor", label: "Valor", render: (r) => <span style={{ color: r.tipo === "entrada" ? T.green : T.red, fontFamily: "'IBM Plex Mono', monospace" }}>{fmtBRL(r.valor)}</span> },
+    { key: "valor", label: "Valor", render: (r) => <span style={{ color: r.tipo === "entrada" ? T.green : T.red, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(r.valor)}</span> },
   ];
   const entradas = data.filter((r) => r.tipo === "entrada").reduce((s, r) => s + r.valor, 0);
   const saidas = data.filter((r) => r.tipo === "saida").reduce((s, r) => s + r.valor, 0);
@@ -634,7 +636,7 @@ function FinanceiroModulo() {
   const DreLine = ({ label, value, bold }) => (
     <div className="flex justify-between py-1.5" style={{ borderBottom: `1px solid ${T.border}`, paddingLeft: bold ? 0 : 16 }}>
       <span className={bold ? "font-bold" : ""} style={{ color: bold ? T.text : T.muted, fontSize: bold ? 14 : 13 }}>{label}</span>
-      <span className={bold ? "font-bold" : ""} style={{ color: T.text, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13 }}>{fmtBRL(value)}</span>
+      <span className={bold ? "font-bold" : ""} style={{ color: T.text, fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>{fmtBRL(value)}</span>
     </div>
   );
   return (
@@ -650,7 +652,7 @@ function FinanceiroModulo() {
         <div className="max-w-lg">{receitas.map((r) => <DreLine key={r.linha} label={r.linha} value={r.valor} />)}<DreLine label="(=) Receita Total" value={totalReceita} bold />
         {custos.map((r) => <DreLine key={r.linha} label={`(-) ${r.linha}`} value={r.valor} />)}<DreLine label="(=) Lucro Bruto" value={lucroBruto} bold />
         {despesas.map((r) => <DreLine key={r.linha} label={`(-) ${r.linha}`} value={r.valor} />)}{impostos.map((r) => <DreLine key={r.linha} label={`(-) ${r.linha}`} value={r.valor} />)}
-        <div className="flex justify-between py-2 mt-1"><span className="font-bold text-sm" style={{ color: T.text }}>(=) Resultado do Período</span><span className="font-bold" style={{ color: resultado >= 0 ? T.green : T.red, fontFamily: "'IBM Plex Mono', monospace" }}>{fmtBRL(resultado)}</span></div></div></Card>} />
+        <div className="flex justify-between py-2 mt-1"><span className="font-bold text-sm" style={{ color: T.text }}>(=) Resultado do Período</span><span className="font-bold" style={{ color: resultado >= 0 ? T.green : T.red, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(resultado)}</span></div></div></Card>} />
   );
 }
 
@@ -702,7 +704,7 @@ function InsumosModulo() {
 function ProducaoModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("producao");
   const fields = [{ key: "profissional", label: "Profissional", type: "text" }, { key: "mes", label: "Mês (AAAA-MM)", type: "text", placeholder: todayISO().slice(0, 7), default: todayISO().slice(0, 7) }, { key: "atendimentos", label: "Atendimentos", type: "number" }, { key: "receita", label: "Receita gerada (R$)", type: "currency" }, { key: "custo", label: "Custo/repasse (R$)", type: "currency" }];
-  const columns = [{ key: "profissional", label: "Profissional" }, { key: "mes", label: "Mês" }, { key: "atendimentos", label: "Atendimentos" }, { key: "receita", label: "Receita", render: (r) => fmtBRL(r.receita) }, { key: "custo", label: "Custo", render: (r) => fmtBRL(r.custo) }, { key: "rentabilidade", label: "Rentabilidade", render: (r) => { const rent = r.receita - r.custo; return <span style={{ color: rent >= 0 ? T.green : T.red, fontFamily: "'IBM Plex Mono', monospace" }}>{fmtBRL(rent)}</span>; } }, { key: "margem", label: "Margem", render: (r) => fmtPct(r.receita ? ((r.receita - r.custo) / r.receita) * 100 : 0) }];
+  const columns = [{ key: "profissional", label: "Profissional" }, { key: "mes", label: "Mês" }, { key: "atendimentos", label: "Atendimentos" }, { key: "receita", label: "Receita", render: (r) => fmtBRL(r.receita) }, { key: "custo", label: "Custo", render: (r) => fmtBRL(r.custo) }, { key: "rentabilidade", label: "Rentabilidade", render: (r) => { const rent = r.receita - r.custo; return <span style={{ color: rent >= 0 ? T.green : T.red, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(rent)}</span>; } }, { key: "margem", label: "Margem", render: (r) => fmtPct(r.receita ? ((r.receita - r.custo) / r.receita) * 100 : 0) }];
   const chartData = data.map((r) => ({ profissional: r.profissional.replace(/^Dr[a]?\.\s*/, ""), receita: r.receita, custo: r.custo, rentabilidade: r.receita - r.custo }));
   const totalReceita = data.reduce((s, r) => s + r.receita, 0), totalCusto = data.reduce((s, r) => s + r.custo, 0); const maisRentavel = [...data].sort((a, b) => (b.receita - b.custo) - (a.receita - a.custo))[0];
   return (
@@ -726,7 +728,7 @@ function ContasModulo() {
       dailyFields={fields} dailyCta="Lançar conta" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Total pendente", value: fmtBRL(totalPendente), tone: "amber" }, { label: "Total pago", value: fmtBRL(totalPago), tone: "green" }, { label: "Atrasadas", value: atrasados.length, tone: atrasados.length ? "red" : "green" }, { label: "Vencendo em 7 dias", value: proximos.length, tone: proximos.length ? "amber" : "green" }]}
       charts={<ChartCard title="Valor pendente por categoria"><BarChart data={porCategoria}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="categoria" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="valor" fill={T.coral} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>}
-      extra={proximos.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><div className="flex items-center gap-2 mb-2"><AlertTriangle size={15} style={{ color: T.amber }} /><span className="font-semibold text-sm" style={{ color: T.text }}>Vencimentos nos próximos 7 dias</span></div><div className="flex flex-col gap-1.5">{proximos.map((r) => (<div key={r.id} className="flex justify-between text-sm"><span style={{ color: T.muted }}>{r.descricao} — {fmtDate(r.vencimento)}</span><span style={{ color: T.text, fontFamily: "'IBM Plex Mono', monospace" }}>{fmtBRL(r.valor)}</span></div>))}</div></Card>} />
+      extra={proximos.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><div className="flex items-center gap-2 mb-2"><AlertTriangle size={15} style={{ color: T.amber }} /><span className="font-semibold text-sm" style={{ color: T.text }}>Vencimentos nos próximos 7 dias</span></div><div className="flex flex-col gap-1.5">{proximos.map((r) => (<div key={r.id} className="flex justify-between text-sm"><span style={{ color: T.muted }}>{r.descricao} — {fmtDate(r.vencimento)}</span><span style={{ color: T.text, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(r.valor)}</span></div>))}</div></Card>} />
   );
 }
 
@@ -746,7 +748,7 @@ function RepasseMedicoModulo() {
     { key: "valorConvenio", label: "Convênios", render: (r) => fmtBRL(r.valorConvenio) },
     { key: "valorPlantao", label: "Plantão", render: (r) => fmtBRL(r.valorPlantao) },
     { key: "valorVacinas", label: "Vacinas", render: (r) => <span title={`${r.qtdVacinas} × ${fmtBRL(r.valorPorVacina)}`}>{fmtBRL(r.valorVacinas)}</span> },
-    { key: "total", label: "Total a repassar", render: (r) => <span style={{ color: T.green, fontWeight: 700, fontFamily: "'IBM Plex Mono', monospace" }}>{fmtBRL(r.total)}</span> },
+    { key: "total", label: "Total a repassar", render: (r) => <span style={{ color: T.green, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(r.total)}</span> },
   ];
   const totalGeral = withTotal.reduce((s, r) => s + r.total, 0);
   const porMedico = useMemo(() => { const map = {}; withTotal.forEach((r) => { map[r.medico] = (map[r.medico] || 0) + r.total; }); return Object.entries(map).map(([medico, total]) => ({ medico, total })).sort((a, b) => b.total - a.total); }, [withTotal]);
@@ -807,7 +809,7 @@ function PessoalModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("pessoal");
   const fields = [{ key: "nome", label: "Colaborador(a)", type: "text" }, { key: "cargo", label: "Cargo", type: "text" }, { key: "equipe", label: "Equipe", type: "select", options: ["Recepção", "Financeiro", "Marketing", "Enfermagem", "Administrativo", "Outra"] }, { key: "mes", label: "Mês (AAAA-MM)", type: "text", default: todayISO().slice(0, 7) }, { key: "metaMensal", label: "Meta mensal (agendados)", type: "number" }, { key: "ligacoes", label: "Ligações atendidas", type: "number" }, { key: "mensagens", label: "Mensagens respondidas", type: "number" }, { key: "agendados", label: "Pacientes agendados", type: "number" }];
   const withPct = data.map((r) => ({ ...r, pct: r.metaMensal ? (r.agendados / r.metaMensal) * 100 : (r.ligacoes + r.mensagens > 0 ? 100 : 0) }));
-  const columns = [{ key: "nome", label: "Colaborador(a)" }, { key: "equipe", label: "Equipe" }, { key: "ligacoes", label: "Ligações" }, { key: "mensagens", label: "Mensagens" }, { key: "agendados", label: "Agendados" }, { key: "pct", label: "Meta atingida", render: (r) => (<div className="flex items-center gap-2 min-w-[110px]"><Progress pct={r.pct} /><span className="text-xs font-semibold" style={{ color: T.text, fontFamily: "'IBM Plex Mono', monospace" }}>{fmtPct(r.pct)}</span></div>) }];
+  const columns = [{ key: "nome", label: "Colaborador(a)" }, { key: "equipe", label: "Equipe" }, { key: "ligacoes", label: "Ligações" }, { key: "mensagens", label: "Mensagens" }, { key: "agendados", label: "Agendados" }, { key: "pct", label: "Meta atingida", render: (r) => (<div className="flex items-center gap-2 min-w-[110px]"><Progress pct={r.pct} /><span className="text-xs font-semibold" style={{ color: T.text, fontFamily: "'JetBrains Mono', monospace" }}>{fmtPct(r.pct)}</span></div>) }];
   const porEquipe = useMemo(() => { const map = {}; withPct.forEach((r) => { if (!map[r.equipe]) map[r.equipe] = { equipe: r.equipe, soma: 0, n: 0 }; map[r.equipe].soma += r.pct; map[r.equipe].n += 1; }); return Object.values(map).map((e) => ({ equipe: e.equipe, media: e.soma / e.n })).sort((a, b) => b.media - a.media); }, [withPct]);
   const destaque = [...withPct].sort((a, b) => b.pct - a.pct)[0]; const mediaGeral = withPct.length ? withPct.reduce((s, r) => s + r.pct, 0) / withPct.length : 0;
   return (
@@ -858,22 +860,38 @@ function VisaoGeral() {
   const { unidade } = useUnidade();
   const { perfil } = useAuth();
   const canFinance = perfil && perfil.papel !== "operacional";
-  const financeiro = useRecords("financeiro", canFinance), atendimentos = useRecords("convenios"), vacinas = useRecords("vacinas"), insumos = useRecords("insumos"), contas = useRecords("contas", canFinance), pessoal = useRecords("pessoal"), leads = useRecords("marketing"), procedimentos = useRecords("procedimentos");
-  const anyLoading = [financeiro, atendimentos, vacinas, insumos, contas, pessoal, leads, procedimentos].some((m) => m.loading);
+  const financeiro = useRecords("financeiro", canFinance), atendimentos = useRecords("convenios"), vacinas = useRecords("vacinas"), insumos = useRecords("insumos"), contas = useRecords("contas", canFinance), pessoal = useRecords("pessoal"), leads = useRecords("marketing"), procedimentos = useRecords("procedimentos"), faturamento = useRecords("faturamento", canFinance), producao = useRecords("producao"), metas = useRecords("metas", canFinance);
+  const anyLoading = [financeiro, atendimentos, vacinas, insumos, contas, pessoal, leads, procedimentos, faturamento, producao, metas].some((m) => m.loading);
+  const mesAtual = todayISO().slice(0, 7);
+  const mesAnterior = (() => { const [y, m] = mesAtual.split("-").map(Number); const d = new Date(y, m - 2, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; })();
+
   const entradas = financeiro.data.filter((r) => r.tipo === "entrada").reduce((s, r) => s + r.valor, 0);
   const saidas = financeiro.data.filter((r) => r.tipo === "saida").reduce((s, r) => s + r.valor, 0);
   const resultado = entradas - saidas;
+  const entradasMes = financeiro.data.filter((r) => r.tipo === "entrada" && monthKey(r.data) === mesAtual).reduce((s, r) => s + r.valor, 0);
+  const entradasMesAnterior = financeiro.data.filter((r) => r.tipo === "entrada" && monthKey(r.data) === mesAnterior).reduce((s, r) => s + r.valor, 0);
+  const receitaHoje = financeiro.data.filter((r) => r.tipo === "entrada" && r.data === todayISO()).reduce((s, r) => s + r.valor, 0);
+  const tendenciaReceita = entradasMesAnterior ? ((entradasMes - entradasMesAnterior) / entradasMesAnterior) * 100 : null;
+
   const totalAtendConvenio = atendimentos.data.reduce((s, r) => s + Number(r.quantidade), 0);
+  const pacientesMes = atendimentos.data.filter((r) => monthKey(r.data) === mesAtual).reduce((s, r) => s + Number(r.quantidade), 0);
+  const consultasMes = producao.data.filter((p) => p.mes === mesAtual).reduce((s, p) => s + Number(p.atendimentos), 0);
+  const contasReceber = faturamento.data.filter((f) => f.status === "Protocolada" || f.status === "Faturada").reduce((s, f) => s + f.valor, 0);
+  const metaReceitaMes = metas.data.find((m) => m.mes === mesAtual && m.categoria === "Receita Total");
+  const metaPct = metaReceitaMes && metaReceitaMes.valorMeta ? (entradasMes / metaReceitaMes.valorMeta) * 100 : null;
+
   const alertaVacinas = vacinas.data.filter((v) => v.qtdEstoque < v.qtdMinima).length;
   const alertaInsumos = insumos.data.filter((i) => i.qtd < i.qtdMinima).length;
   const contasPendentes = contas.data.filter((c) => c.status !== "Pago").reduce((s, c) => s + c.valor, 0);
   const contasAtrasadas = contas.data.filter((c) => c.status === "Atrasado" || (c.status === "Pendente" && c.vencimento < todayISO())).length;
-  const metaMedia = pessoal.data.length ? pessoal.data.reduce((s, p) => s + (p.metaMensal ? Math.min((p.agendados / p.metaMensal) * 100, 999) : 0), 0) / pessoal.data.length : 0;
+  const metaMediaEquipe = pessoal.data.length ? pessoal.data.reduce((s, p) => s + (p.metaMensal ? Math.min((p.agendados / p.metaMensal) * 100, 999) : 0), 0) / pessoal.data.length : 0;
   const leadsConvertidos = leads.data.filter((l) => l.status === "Convertido").length;
   const taxaConversao = leads.data.length ? (leadsConvertidos / leads.data.length) * 100 : 0;
   const procConcluidos = procedimentos.data.filter((p) => p.status === "Concluído").length;
   const porConvenio = useMemo(() => { const map = {}; atendimentos.data.forEach((r) => { map[r.convenio] = (map[r.convenio] || 0) + Number(r.valor); }); return Object.entries(map).map(([convenio, valor]) => ({ convenio, valor })).sort((a, b) => b.valor - a.valor); }, [atendimentos.data]);
   const fluxoPorMes = useMemo(() => { const map = {}; financeiro.data.forEach((r) => { const m = monthKey(r.data); if (!map[m]) map[m] = { mes: m, entradas: 0, saidas: 0 }; map[m][r.tipo === "entrada" ? "entradas" : "saidas"] += r.valor; }); return Object.values(map).sort((a, b) => a.mes.localeCompare(b.mes)).map((r) => ({ ...r, saldo: r.entradas - r.saidas })); }, [financeiro.data]);
+  const ultimosRecebimentos = [...financeiro.data].filter((r) => r.tipo === "entrada").sort((a, b) => b.data.localeCompare(a.data)).slice(0, 5);
+  const ultimosPagamentos = [...financeiro.data].filter((r) => r.tipo === "saida").sort((a, b) => b.data.localeCompare(a.data)).slice(0, 5);
   const alertas = [
     alertaVacinas > 0 && { texto: `${alertaVacinas} vacina(s) abaixo do estoque mínimo`, tone: "red" },
     alertaInsumos > 0 && { texto: `${alertaInsumos} insumo(s) em ponto crítico`, tone: "red" },
@@ -881,40 +899,89 @@ function VisaoGeral() {
     canFinance && resultado < 0 && { texto: "Resultado financeiro do período está negativo", tone: "red" },
   ].filter(Boolean);
 
-  const heroStats = canFinance
-    ? [{ label: "Resultado do período", value: fmtBRL(resultado) }, { label: "Atendimentos (convênios)", value: fmtNum(totalAtendConvenio) }, { label: "Leads no período", value: fmtNum(leads.data.length) }, { label: "Contas pendentes", value: fmtBRL(contasPendentes) }, { label: "Meta média (equipe)", value: fmtPct(metaMedia) }]
-    : [{ label: "Atendimentos (convênios)", value: fmtNum(totalAtendConvenio) }, { label: "Leads no período", value: fmtNum(leads.data.length) }, { label: "Meta média (equipe)", value: fmtPct(metaMedia) }, { label: "Procedimentos concluídos", value: procConcluidos }];
-
   if (anyLoading) return <div className="text-center py-20" style={{ color: T.muted }}><Loader2 size={20} className="animate-spin inline mr-2" />Carregando painel…</div>;
+
+  const primeiroNome = perfil && perfil.nome ? perfil.nome.split(" ")[0] : "";
 
   return (
     <div>
-      <div className="rounded-3xl mb-7 p-7" style={{ background: T.sidebar }}>
-        <div className="flex items-center gap-2 mb-1"><Sparkles size={14} style={{ color: T.coral }} /><span className="text-xs font-semibold uppercase" style={{ color: "#9FB0AC", letterSpacing: "0.08em" }}>{weekdayLong()}</span></div>
-        <h1 className="text-2xl font-bold mb-5" style={{ color: "#fff", fontFamily: "'Sora', sans-serif" }}>{unidade ? unidade.nome : "Clínica Olhar de Mãe"}</h1>
-        <div className="flex flex-wrap gap-x-9 gap-y-4">
-          {heroStats.map((v, i) => (
-            <div key={i} className="flex items-center gap-2.5"><span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: T.coral }} />
-              <div><div className="text-[10px] uppercase" style={{ color: "#9FB0AC", letterSpacing: "0.07em" }}>{v.label}</div><div className="text-lg font-bold" style={{ color: "#fff", fontFamily: "'IBM Plex Mono', monospace" }}>{v.value}</div></div></div>
-          ))}
-        </div>
+      {/* Saudação */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold mb-1" style={{ color: T.text, fontFamily: "'Poppins', sans-serif" }}>Olá, {primeiroNome} 👋</h1>
+        <p className="text-sm" style={{ color: T.muted }}>Bem-vinda ao Painel Administrativo — {unidade ? unidade.nome : "Olhar de Mãe"}</p>
+        <p className="text-xs mt-0.5" style={{ color: T.muted }}>Hoje é {weekdayLong()}</p>
       </div>
+
       {alertas.length > 0 && <Card className="mb-6" style={{ borderColor: `${T.red}40` }}><div className="flex items-center gap-2 mb-2"><AlertTriangle size={15} style={{ color: T.red }} /><span className="font-semibold text-sm" style={{ color: T.text }}>Pontos de atenção</span></div><div className="flex flex-col gap-1.5">{alertas.map((a, i) => (<div key={i} className="flex items-center gap-2 text-sm"><span className="w-1.5 h-1.5 rounded-full" style={{ background: a.tone === "red" ? T.red : T.amber }} /><span style={{ color: T.muted }}>{a.texto}</span></div>))}</div></Card>}
-      {canFinance && <div className="grid gap-3 mb-6 md:grid-cols-4">
-        <KpiCard label="Entradas do período" value={fmtBRL(entradas)} tone="green" icon={TrendingUp} />
-        <KpiCard label="Saídas do período" value={fmtBRL(saidas)} tone="red" icon={TrendingDown} />
-        <KpiCard label="Taxa de conversão (leads)" value={fmtPct(taxaConversao)} tone="rose" />
-        <KpiCard label="Procedimentos concluídos" value={procConcluidos} tone="teal" />
-      </div>}
-      {!canFinance && <div className="grid gap-3 mb-6 md:grid-cols-3">
-        <KpiCard label="Taxa de conversão (leads)" value={fmtPct(taxaConversao)} tone="rose" />
-        <KpiCard label="Itens em alerta de estoque" value={alertaVacinas + alertaInsumos} tone={alertaVacinas + alertaInsumos ? "red" : "green"} />
-        <KpiCard label="Convênio líder" value={porConvenio[0] ? porConvenio[0].convenio : "—"} tone="teal" />
-      </div>}
-      <div className="grid md:grid-cols-2 gap-5">
-        {canFinance && <ChartCard title="Fluxo de caixa por mês"><AreaChart data={fluxoPorMes}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="mes" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Area type="monotone" dataKey="saldo" stroke={T.coral} fill={`${T.coral}30`} strokeWidth={2} name="Saldo" /></AreaChart></ChartCard>}
-        <ChartCard title="Faturamento por convênio"><PieChart><Pie data={porConvenio} dataKey="valor" nameKey="convenio" innerRadius={55} outerRadius={85} paddingAngle={2}>{porConvenio.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Pie><Tooltip formatter={(v) => fmtBRL(v)} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart></ChartCard>
-      </div>
+
+      {canFinance ? (
+        <>
+          {/* Receita — hierarquia visual: número gigante primeiro */}
+          <div className="rounded-[20px] p-7 mb-6 shadow-sm" style={{ background: `linear-gradient(135deg, ${T.tealDeep}, ${T.teal})` }}>
+            <div className="flex items-center gap-2 mb-2"><span style={{ color: "#D7F2F4" }}>📈</span><span className="text-xs font-semibold uppercase" style={{ color: "#D7F2F4", letterSpacing: "0.08em" }}>Receita do mês</span></div>
+            <div className="text-5xl font-extrabold mb-2" style={{ color: "#fff", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "-0.02em" }}>{fmtBRL(entradasMes)}</div>
+            {tendenciaReceita !== null && (
+              <div className="flex items-center gap-1.5 text-sm font-medium" style={{ color: tendenciaReceita >= 0 ? "#C8F5D8" : "#FBD5D0" }}>
+                <span>{tendenciaReceita >= 0 ? "▲" : "▼"} {Math.abs(tendenciaReceita).toFixed(0)}%</span>
+                <span style={{ color: "#D7F2F4" }}>em relação ao mês anterior</span>
+              </div>
+            )}
+          </div>
+
+          {/* Indicadores secundários — hierarquia menor */}
+          <div className="grid gap-3 mb-6 md:grid-cols-5">
+            <KpiCard label="📈 Receita hoje" value={fmtBRL(receitaHoje)} tone="teal" />
+            <KpiCard label="👶 Pacientes (mês)" value={fmtNum(pacientesMes)} tone="coral" />
+            <KpiCard label="💰 Contas a receber" value={fmtBRL(contasReceber)} tone="amber" />
+            <KpiCard label="🏥 Consultas (mês)" value={fmtNum(consultasMes)} tone="teal" />
+            <KpiCard label="📊 Meta do mês" value={metaPct !== null ? fmtPct(metaPct) : "—"} tone={metaPct !== null ? (metaPct >= 100 ? "green" : metaPct >= 60 ? "amber" : "red") : "ink"} sub={metaPct !== null ? undefined : "sem meta definida"} />
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-5 mb-5">
+            <ChartCard title="Receita x Despesas do mês" height={220}>
+              <BarChart data={[{ nome: "Este mês", entradas: entradasMes, saidas: financeiro.data.filter((r) => r.tipo === "saida" && monthKey(r.data) === mesAtual).reduce((s, r) => s + r.valor, 0) }]} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke={T.border} horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} />
+                <YAxis type="category" dataKey="nome" width={70} tick={{ fontSize: 11, fill: T.muted }} />
+                <Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="entradas" name="Receita" fill={T.teal} radius={[0, 4, 4, 0]} />
+                <Bar dataKey="saidas" name="Despesas" fill={T.coral} radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ChartCard>
+            <ChartCard title="Faturamento por convênio" height={220}>
+              <PieChart><Pie data={porConvenio} dataKey="valor" nameKey="convenio" innerRadius={50} outerRadius={80} paddingAngle={2}>{porConvenio.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Pie><Tooltip formatter={(v) => fmtBRL(v)} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart>
+            </ChartCard>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-5">
+            <Card>
+              <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Últimos recebimentos</p>
+              {ultimosRecebimentos.length === 0 ? <p className="text-sm py-4" style={{ color: T.muted }}>Nenhum lançamento ainda.</p> : (
+                <div className="flex flex-col gap-2">{ultimosRecebimentos.map((r) => (<div key={r.id} className="flex items-center justify-between text-sm py-1.5" style={{ borderBottom: `1px solid ${T.border}` }}><span style={{ color: T.text }}>{r.descricao || r.linha}<span className="block text-xs" style={{ color: T.muted }}>{fmtDate(r.data)}</span></span><span style={{ color: T.green, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(r.valor)}</span></div>))}</div>
+              )}
+            </Card>
+            <Card>
+              <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Últimos pagamentos</p>
+              {ultimosPagamentos.length === 0 ? <p className="text-sm py-4" style={{ color: T.muted }}>Nenhum lançamento ainda.</p> : (
+                <div className="flex flex-col gap-2">{ultimosPagamentos.map((r) => (<div key={r.id} className="flex items-center justify-between text-sm py-1.5" style={{ borderBottom: `1px solid ${T.border}` }}><span style={{ color: T.text }}>{r.descricao || r.linha}<span className="block text-xs" style={{ color: T.muted }}>{fmtDate(r.data)}</span></span><span style={{ color: T.coral, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(r.valor)}</span></div>))}</div>
+              )}
+            </Card>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="grid gap-3 mb-6 md:grid-cols-4">
+            <KpiCard label="👶 Pacientes (mês)" value={fmtNum(pacientesMes)} tone="coral" />
+            <KpiCard label="Taxa de conversão (leads)" value={fmtPct(taxaConversao)} tone="teal" />
+            <KpiCard label="Itens em alerta de estoque" value={alertaVacinas + alertaInsumos} tone={alertaVacinas + alertaInsumos ? "red" : "green"} />
+            <KpiCard label="Convênio líder" value={porConvenio[0] ? porConvenio[0].convenio : "—"} tone="teal" />
+          </div>
+          <ChartCard title="Faturamento por convênio">
+            <PieChart><Pie data={porConvenio} dataKey="valor" nameKey="convenio" innerRadius={55} outerRadius={85} paddingAngle={2}>{porConvenio.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Pie><Tooltip formatter={(v) => fmtBRL(v)} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart>
+          </ChartCard>
+        </>
+      )}
     </div>
   );
 }
@@ -1215,7 +1282,7 @@ function MetasModulo() {
     { key: "valorMeta", label: "Meta", render: (r) => fmtValor(r.categoria, r.valorMeta) },
     { key: "realizado", label: "Realizado", render: (r) => fmtValor(r.categoria, r.realizado) },
     { key: "falta", label: "Falta", render: (r) => <span style={{ color: r.falta > 0 ? T.amber : T.green }}>{fmtValor(r.categoria, r.falta)}</span> },
-    { key: "pct", label: "Atingido", render: (r) => (<div className="flex items-center gap-2 min-w-[110px]"><Progress pct={r.pct} /><span className="text-xs font-semibold" style={{ color: T.text, fontFamily: "'IBM Plex Mono', monospace" }}>{fmtPct(r.pct)}</span></div>) },
+    { key: "pct", label: "Atingido", render: (r) => (<div className="flex items-center gap-2 min-w-[110px]"><Progress pct={r.pct} /><span className="text-xs font-semibold" style={{ color: T.text, fontFamily: "'JetBrains Mono', monospace" }}>{fmtPct(r.pct)}</span></div>) },
   ];
   const mesAtual = todayISO().slice(0, 7);
   const metasDoMes = withRealizado.filter((r) => r.mes === mesAtual);
@@ -1411,14 +1478,14 @@ function RelatoriosModulo() {
 
 
 const ALL_MENU = [
-  { group: "Visão", items: [{ key: "visao", label: "Visão Geral", icon: LayoutDashboard, tone: "coral" }] },
-  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Faturamento de Convênios", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }] },
-  { group: "Atendimento Clínico", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producao", label: "Produção Médica", icon: Stethoscope, tone: "teal" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
-  { group: "Estoque", items: [{ key: "vacinas", label: "Vacinas", icon: Syringe, tone: "teal" }, { key: "insumos", label: "Insumos", icon: Package, tone: "teal" }] },
+  { group: "Visão", items: [{ key: "visao", label: "Dashboard", icon: LayoutDashboard, tone: "coral" }] },
+  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }] },
+  { group: "Atendimento", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producao", label: "Produção Médica", icon: Stethoscope, tone: "teal" }, { key: "vacinas", label: "Vacinas", icon: Syringe, tone: "teal" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
+  { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }] },
   { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" }] },
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }] },
-  { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "relatorios", label: "Gerar Relatórios", icon: FileText, tone: "ink" }] },
-  { group: "Rede", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }] },
+  { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
+  { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }] },
 ];
 const FINANCE_TABS = ["financeiro", "contas", "faturamento", "repasse", "equipe", "metas"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
@@ -1474,12 +1541,16 @@ function AppInner() {
   };
   return (
     <div style={{ background: T.canvas, minHeight: "100vh", fontFamily: "'Inter', sans-serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap'); * { box-sizing: border-box; }`}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600;700&display=swap'); * { box-sizing: border-box; }`}</style>
       <div className="flex">
-        <aside className={`fixed md:static z-40 top-0 left-0 h-full md:h-auto w-72 flex-shrink-0 transition-transform overflow-y-auto ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`} style={{ background: T.sidebar, minHeight: "100vh" }}>
-          <div className="px-5 py-6 flex items-center gap-2.5" style={{ borderBottom: "1px solid #FFFFFF14" }}>
-            <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#FFFFFF" }}><img src={LOGO_DATA_URI} alt="Olhar de Mãe" style={{ width: 36, height: 36, objectFit: "contain" }} /></div>
-            <div><div className="text-sm font-bold" style={{ color: "#fff", fontFamily: "'Sora', sans-serif" }}>Olhar de Mãe</div><div className="text-xs" style={{ color: "#8FA0AC" }}>Painel de Gestão da Rede</div></div>
+        <aside className={`fixed md:sticky z-40 top-0 left-0 h-screen md:h-screen w-72 flex-shrink-0 transition-transform overflow-y-auto ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`} style={{ background: T.sidebar }}>
+          <div className="px-5 py-6 flex items-center gap-3" style={{ borderBottom: "1px solid #FFFFFF14" }}>
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: "#FFFFFF" }}><img src={LOGO_DATA_URI} alt="Olhar de Mãe" style={{ width: 44, height: 44, objectFit: "contain" }} /></div>
+            <div><div className="text-base font-bold" style={{ color: "#fff", fontFamily: "'Poppins', sans-serif" }}>Olhar de Mãe</div><div className="text-xs" style={{ color: "#9FD4D9" }}>Painel de Gestão da Rede</div></div>
+          </div>
+          <div className="px-5 py-3.5" style={{ borderBottom: "1px solid #FFFFFF14" }}>
+            <div className="text-sm font-semibold" style={{ color: "#fff" }}>{perfil ? perfil.nome : ""}</div>
+            <div className="text-xs" style={{ color: "#9FD4D9" }}>{perfil ? perfil.cargo || "Colaborador(a)" : ""}</div>
           </div>
           <UnidadeSwitcher />
           <nav className="p-3 flex flex-col gap-4">
@@ -1493,9 +1564,8 @@ function AppInner() {
               </div>
             ))}
           </nav>
-          <div className="px-5 py-4 mt-2 flex items-center justify-between">
-            <div className="text-xs truncate" style={{ color: "#8FA0AC" }}>{perfil ? perfil.nome : ""}</div>
-            <button onClick={logout} className="flex items-center gap-1 text-xs" style={{ color: "#B9C3CC" }}><LogOut size={13} /> Sair</button>
+          <div className="px-5 py-4 mt-2">
+            <button onClick={logout} className="flex items-center gap-1.5 text-xs w-full px-3 py-2 rounded-lg" style={{ color: "#D6E9EA", background: "#FFFFFF10" }}><LogOut size={13} /> Sair</button>
           </div>
         </aside>
         {sidebarOpen && <div className="fixed inset-0 z-30 md:hidden" style={{ background: "#00000055" }} onClick={() => setSidebarOpen(false)} />}
@@ -1504,12 +1574,44 @@ function AppInner() {
             <span className="text-sm font-bold" style={{ color: "#fff" }}>Olhar de Mãe — {activeMeta.label}</span>
             <button onClick={() => setSidebarOpen(true)} className="px-3 py-1.5 rounded-lg text-xs" style={{ background: "#FFFFFF1A", color: "#fff" }}>Menu</button>
           </div>
+          <div className="hidden md:flex items-center justify-between px-8 py-4" style={{ background: T.card, borderBottom: `1px solid ${T.border}` }}>
+            <h1 className="text-lg font-bold" style={{ color: T.text, fontFamily: "'Poppins', sans-serif" }}>{activeMeta.label}</h1>
+            <div className="flex items-center gap-4">
+              <Btn tone="coral" icon={Plus} onClick={() => setTab("convenios")}>Novo Atendimento</Btn>
+              <div className="flex items-center gap-3 pl-2" style={{ borderLeft: `1px solid ${T.border}` }}>
+                <button title="Notificações"><Bell size={18} style={{ color: T.muted }} /></button>
+                <button title="Configurações" onClick={() => setTab("unidades")}><Settings size={18} style={{ color: T.muted }} /></button>
+                <ProfileMenu />
+              </div>
+            </div>
+          </div>
           <div className="p-4 md:p-8 max-w-6xl mx-auto">{renderTab()}</div>
         </main>
       </div>
     </div>
   );
 }
+function ProfileMenu() {
+  const { perfil, logout } = useAuth();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-2">
+        <div className="w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm" style={{ background: T.tealSoft, color: T.tealDeep }}>{perfil && perfil.nome ? perfil.nome.charAt(0).toUpperCase() : <UserCircle size={18} />}</div>
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 w-52 rounded-xl overflow-hidden z-50 shadow-lg" style={{ background: T.card, border: `1px solid ${T.border}` }} onMouseLeave={() => setOpen(false)}>
+          <div className="px-4 py-3" style={{ borderBottom: `1px solid ${T.border}` }}>
+            <div className="text-sm font-semibold" style={{ color: T.text }}>{perfil ? perfil.nome : ""}</div>
+            <div className="text-xs" style={{ color: T.muted }}>{perfil ? perfil.cargo || perfil.papel : ""}</div>
+          </div>
+          <button onClick={logout} className="w-full text-left px-4 py-2.5 text-sm flex items-center gap-2" style={{ color: T.red }}><LogOut size={14} /> Sair</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function UnidadeSwitcher() {
   const { unidadeId, unidades, setUnidadeId } = useUnidade(); const [open, setOpen] = useState(false);
   const atual = unidades.find((u) => u.id === unidadeId) || unidades[0];
