@@ -134,8 +134,20 @@ const MODULES = {
     toDb: (r) => ({ medico: r.medico, mes: monthToDate(r.mes), valor_convenio: r.valorConvenio, valor_plantao: r.valorPlantao, qtd_vacinas_prescritas: r.qtdVacinas, valor_por_vacina: r.valorPorVacina }),
     fromDb: (r) => ({ id: r.id, medico: r.medico, mes: monthKey(r.mes), valorConvenio: r.valor_convenio, valorPlantao: r.valor_plantao, qtdVacinas: r.qtd_vacinas_prescritas, valorPorVacina: r.valor_por_vacina }) },
   metas: { table: "metas", order: "mes.desc",
-    toDb: (r) => ({ mes: monthToDate(r.mes), categoria: r.categoria, valor_meta: r.valorMeta }),
-    fromDb: (r) => ({ id: r.id, mes: monthKey(r.mes), categoria: r.categoria, valorMeta: r.valor_meta }) },
+    toDb: (r) => ({ mes: monthToDate(r.mes), categoria: r.categoria, valor_meta: r.valorMeta, convenio: r.convenio || null }),
+    fromDb: (r) => ({ id: r.id, mes: monthKey(r.mes), categoria: r.categoria, valorMeta: r.valor_meta, convenio: r.convenio }) },
+  cadConvenios: { table: "cadastro_convenios", order: "nome.asc",
+    toDb: (r) => ({ nome: r.nome, valor_padrao: r.valorPadrao, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, valorPadrao: r.valor_padrao, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes }) },
+  cadColaboradores: { table: "cadastro_colaboradores", order: "nome.asc",
+    toDb: (r) => ({ nome: r.nome, cargo: r.cargo, tipo: r.tipo, telefone: r.telefone, observacoes: r.observacoes }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, cargo: r.cargo, tipo: r.tipo, telefone: r.telefone, observacoes: r.observacoes }) },
+  cadProfissionais: { table: "cadastro_profissionais", order: "nome.asc",
+    toDb: (r) => ({ nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email }) },
+  cadFornecedores: { table: "cadastro_fornecedores", order: "nome.asc",
+    toDb: (r) => ({ nome: r.nome, categoria: r.categoria, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, categoria: r.categoria, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes }) },
 };
 
 /* ============================== CONTEXTOS ============================== */
@@ -290,6 +302,7 @@ function DailyEntryPanel({ tone, fields, onSubmit, cta = "Registrar lançamento"
   const blank = () => { const b = {}; fields.forEach((f) => { b[f.key] = f.default !== undefined ? f.default : ""; }); return b; };
   const [form, setForm] = useState(blank()); const [busy, setBusy] = useState(false);
   const color = PALETTES[tone] || T.ink;
+  const visiveis = fields.filter((f) => !f.showIf || f.showIf(form));
   return (
     <div className="rounded-2xl p-5 mb-6" style={{ background: `linear-gradient(135deg, ${color}10, ${color}05)`, border: `1px solid ${color}30` }}>
       <div className="flex items-center gap-2 mb-3.5">
@@ -297,9 +310,9 @@ function DailyEntryPanel({ tone, fields, onSubmit, cta = "Registrar lançamento"
         <span className="text-xs" style={{ color: T.muted }}>— preencha aqui diariamente</span>
       </div>
       <div className="flex flex-wrap gap-3 items-end">
-        {fields.map((f) => <Field key={f.key} label={f.label}><FieldInput f={f} value={form[f.key]} onChange={(v) => setForm((p) => ({ ...p, [f.key]: v }))} /></Field>)}
+        {visiveis.map((f) => <Field key={f.key} label={f.label}><FieldInput f={f} value={form[f.key]} onChange={(v) => setForm((p) => ({ ...p, [f.key]: v }))} /></Field>)}
         <Btn tone={tone} icon={busy ? undefined : Plus} disabled={busy} onClick={async () => {
-          const missing = fields.some((f) => f.required !== false && (form[f.key] === "" || form[f.key] === undefined));
+          const missing = visiveis.some((f) => f.required !== false && (form[f.key] === "" || form[f.key] === undefined));
           if (missing) return;
           setBusy(true); await onSubmit(form); setForm(blank()); setBusy(false);
         }}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} {cta}</Btn>
@@ -316,7 +329,7 @@ function EditModal({ title, fields, initial, onSave, onClose }) {
         <div className="flex items-center justify-between px-5 py-4 sticky top-0" style={{ background: T.card, borderBottom: `1px solid ${T.border}` }}>
           <h3 className="font-bold" style={{ color: T.text, fontFamily: "'Poppins', sans-serif" }}>{title}</h3><button onClick={onClose}><X size={18} style={{ color: T.muted }} /></button>
         </div>
-        <div className="p-5 flex flex-col gap-3.5">{fields.map((f) => <Field key={f.key} label={f.label}><FieldInput f={f} value={form[f.key]} onChange={(v) => setForm((p) => ({ ...p, [f.key]: v }))} /></Field>)}</div>
+        <div className="p-5 flex flex-col gap-3.5">{fields.filter((f) => !f.showIf || f.showIf(form)).map((f) => <Field key={f.key} label={f.label}><FieldInput f={f} value={form[f.key]} onChange={(v) => setForm((p) => ({ ...p, [f.key]: v }))} /></Field>)}</div>
         <div className="flex justify-end gap-2 px-5 py-4" style={{ borderTop: `1px solid ${T.border}` }}>
           <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
           <Btn disabled={busy} onClick={async () => { setBusy(true); await onSave(form); setBusy(false); }}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Salvar alterações</Btn>
@@ -1276,7 +1289,71 @@ function GestaoDocumentosRH() {
 
 /* ============================== PAINEL DA EQUIPE (visão do gestor) ============================== */
 /* ============================== METAS ============================== */
-const CATEGORIAS_META = ["Receita Total", "Atendimentos por Convênio", "Novos Leads Convertidos", "Procedimentos Concluídos"];
+const CATEGORIAS_META = ["Receita Total", "Faturamento em Vacinas", "Faturamento em Convênios", "Atendimentos por Convênio", "Novos Leads Convertidos", "Procedimentos Concluídos"];
+const CATEGORIAS_COM_CONVENIO = ["Faturamento em Convênios", "Atendimentos por Convênio"];
+const CATEGORIAS_MOEDA = ["Receita Total", "Faturamento em Vacinas", "Faturamento em Convênios"];
+/* ============================== CADASTROS (dados-mestre da clínica) ============================== */
+function CadastroConveniosModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("cadConvenios");
+  const fields = [
+    { key: "nome", label: "Nome do convênio", type: "text" },
+    { key: "valorPadrao", label: "Valor padrão por atendimento (R$)", type: "currency" },
+    { key: "contato", label: "Contato / responsável", type: "text", required: false },
+    { key: "telefone", label: "Telefone", type: "text", required: false },
+    { key: "observacoes", label: "Observações", type: "text", required: false },
+  ];
+  const columns = [{ key: "nome", label: "Convênio" }, { key: "valorPadrao", label: "Valor padrão", render: (r) => fmtBRL(r.valorPadrao) }, { key: "contato", label: "Contato" }, { key: "telefone", label: "Telefone" }];
+  return (
+    <ModuleShell icon={HeartHandshake} title="Cadastro de Convênios" subtitle="Convênios parceiros e valores de referência por atendimento" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Cadastrar convênio" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
+  );
+}
+function CadastroColaboradoresModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("cadColaboradores");
+  const fields = [
+    { key: "nome", label: "Nome", type: "text" },
+    { key: "cargo", label: "Cargo", type: "text", required: false },
+    { key: "tipo", label: "Tipo", type: "select", options: ["Interno", "Terceirizado"] },
+    { key: "telefone", label: "Telefone", type: "text", required: false },
+    { key: "observacoes", label: "Observações", type: "text", required: false },
+  ];
+  const columns = [{ key: "nome", label: "Nome" }, { key: "cargo", label: "Cargo" }, { key: "tipo", label: "Tipo", render: (r) => <Badge tone={r.tipo === "Interno" ? "teal" : "amber"}>{r.tipo}</Badge> }, { key: "telefone", label: "Telefone" }];
+  return (
+    <ModuleShell icon={Users} title="Cadastro de Colaboradores" subtitle="Equipe interna e terceirizados, com ou sem acesso ao sistema" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Cadastrar colaborador(a)" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
+  );
+}
+function CadastroProfissionaisModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("cadProfissionais");
+  const fields = [
+    { key: "nome", label: "Nome do(a) profissional", type: "text" },
+    { key: "especialidade", label: "Especialidade", type: "text", required: false },
+    { key: "crm", label: "CRM", type: "text", required: false },
+    { key: "telefone", label: "Telefone", type: "text", required: false },
+    { key: "email", label: "E-mail", type: "text", required: false },
+  ];
+  const columns = [{ key: "nome", label: "Nome" }, { key: "especialidade", label: "Especialidade" }, { key: "crm", label: "CRM" }, { key: "telefone", label: "Telefone" }, { key: "email", label: "E-mail" }];
+  return (
+    <ModuleShell icon={Stethoscope} title="Cadastro de Profissionais" subtitle="Médicos e demais profissionais que atendem na clínica" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Cadastrar profissional" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
+  );
+}
+function CadastroFornecedoresModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("cadFornecedores");
+  const fields = [
+    { key: "nome", label: "Nome do fornecedor", type: "text" },
+    { key: "categoria", label: "Categoria", type: "select", options: ["Insumos médicos", "Vacinas", "Limpeza", "Escritório", "Serviços", "Outros"], required: false },
+    { key: "contato", label: "Contato / responsável", type: "text", required: false },
+    { key: "telefone", label: "Telefone", type: "text", required: false },
+    { key: "observacoes", label: "Observações", type: "text", required: false },
+  ];
+  const columns = [{ key: "nome", label: "Fornecedor" }, { key: "categoria", label: "Categoria" }, { key: "contato", label: "Contato" }, { key: "telefone", label: "Telefone" }];
+  return (
+    <ModuleShell icon={Package} title="Cadastro de Fornecedores" subtitle="Fornecedores de insumos, vacinas e serviços da clínica" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Cadastrar fornecedor" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
+  );
+}
+
 function MetasModulo() {
   const { data, add, update, remove, loading, erro } = useRecords("metas");
   const financeiro = useRecords("financeiro");
@@ -1284,24 +1361,34 @@ function MetasModulo() {
   const leads = useRecords("marketing");
   const procedimentos = useRecords("procedimentos");
 
-  const realizadoPara = (categoria, mes) => {
+  const realizadoPara = (categoria, mes, convenio) => {
     if (categoria === "Receita Total") return financeiro.data.filter((r) => r.tipo === "entrada" && monthKey(r.data) === mes).reduce((s, r) => s + r.valor, 0);
-    if (categoria === "Atendimentos por Convênio") return atendimentos.data.filter((r) => monthKey(r.data) === mes).reduce((s, r) => s + Number(r.quantidade), 0);
+    if (categoria === "Faturamento em Vacinas") return financeiro.data.filter((r) => r.tipo === "entrada" && r.linha === "Receita de Vacinas" && monthKey(r.data) === mes).reduce((s, r) => s + r.valor, 0);
+    if (categoria === "Faturamento em Convênios") {
+      if (convenio) return atendimentos.data.filter((r) => r.convenio === convenio && monthKey(r.data) === mes).reduce((s, r) => s + Number(r.valorLiquido ?? r.valor), 0);
+      return financeiro.data.filter((r) => r.tipo === "entrada" && r.linha === "Receita de Convênios" && monthKey(r.data) === mes).reduce((s, r) => s + r.valor, 0);
+    }
+    if (categoria === "Atendimentos por Convênio") {
+      const base = atendimentos.data.filter((r) => monthKey(r.data) === mes && (!convenio || r.convenio === convenio));
+      return base.reduce((s, r) => s + Number(r.quantidade), 0);
+    }
     if (categoria === "Novos Leads Convertidos") return leads.data.filter((r) => r.status === "Convertido" && monthKey(r.data) === mes).length;
     if (categoria === "Procedimentos Concluídos") return procedimentos.data.filter((r) => r.status === "Concluído" && monthKey(r.data) === mes).length;
     return 0;
   };
-  const isCurrency = (categoria) => categoria === "Receita Total";
+  const isCurrency = (categoria) => CATEGORIAS_MOEDA.includes(categoria);
   const fmtValor = (categoria, v) => (isCurrency(categoria) ? fmtBRL(v) : fmtNum(v));
 
   const fields = [
     { key: "mes", label: "Mês (AAAA-MM)", type: "text", default: todayISO().slice(0, 7) },
     { key: "categoria", label: "Categoria", type: "select", options: CATEGORIAS_META },
+    { key: "convenio", label: "Convênio (opcional — deixe vazio para todos)", type: "select", options: CONVENIOS, required: false, showIf: (form) => CATEGORIAS_COM_CONVENIO.includes(form.categoria) },
     { key: "valorMeta", label: "Valor da meta", type: "number" },
   ];
-  const withRealizado = data.map((r) => { const realizado = realizadoPara(r.categoria, r.mes); const falta = Math.max(r.valorMeta - realizado, 0); const pct = r.valorMeta ? (realizado / r.valorMeta) * 100 : 0; return { ...r, realizado, falta, pct }; });
+  const withRealizado = data.map((r) => { const realizado = realizadoPara(r.categoria, r.mes, r.convenio); const falta = Math.max(r.valorMeta - realizado, 0); const pct = r.valorMeta ? (realizado / r.valorMeta) * 100 : 0; return { ...r, realizado, falta, pct }; });
   const columns = [
     { key: "mes", label: "Mês" }, { key: "categoria", label: "Categoria" },
+    { key: "convenio", label: "Convênio", render: (r) => r.convenio || "Todos" },
     { key: "valorMeta", label: "Meta", render: (r) => fmtValor(r.categoria, r.valorMeta) },
     { key: "realizado", label: "Realizado", render: (r) => fmtValor(r.categoria, r.realizado) },
     { key: "falta", label: "Falta", render: (r) => <span style={{ color: r.falta > 0 ? T.amber : T.green }}>{fmtValor(r.categoria, r.falta)}</span> },
@@ -1315,7 +1402,7 @@ function MetasModulo() {
       dailyFields={fields} dailyCta="Definir meta" fields={fields} columns={columns} rows={[...withRealizado].sort((a, b) => b.mes.localeCompare(a.mes))} onAdd={add} onUpdate={update} onDelete={remove}
       kpis={[{ label: "Metas cadastradas para o mês", value: metasDoMes.length }, { label: "Média atingida (mês atual)", value: fmtPct(mediaAtingidoMes), tone: mediaAtingidoMes >= 90 ? "green" : mediaAtingidoMes >= 60 ? "amber" : "red" }]}
       charts={metasDoMes.length > 0 && <ChartCard title="Progresso das metas do mês atual">
-        <BarChart data={metasDoMes.map((m) => ({ categoria: m.categoria, pct: Math.min(m.pct, 100) }))}>
+        <BarChart data={metasDoMes.map((m) => ({ categoria: m.convenio ? `${m.categoria} (${m.convenio})` : m.categoria, pct: Math.min(m.pct, 100) }))}>
           <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
           <XAxis dataKey="categoria" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-10} textAnchor="end" height={60} />
           <YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v}%`} />
@@ -1508,9 +1595,10 @@ const ALL_MENU = [
   { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" }] },
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }] },
   { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
+  { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "contas", "faturamento", "repasse", "equipe", "metas"];
+const FINANCE_TABS = ["financeiro", "contas", "faturamento", "repasse", "equipe", "metas", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
 const RESTRICTED_MENUS = {
   recepcao: { group: "Minha área", items: [
@@ -1558,6 +1646,10 @@ function AppInner() {
       case "equipe": return <EquipeModulo />;
       case "metas": return <MetasModulo />;
       case "relatorios": return <RelatoriosModulo />;
+      case "cadConvenios": return <CadastroConveniosModulo />;
+      case "cadColaboradores": return <CadastroColaboradoresModulo />;
+      case "cadProfissionais": return <CadastroProfissionaisModulo />;
+      case "cadFornecedores": return <CadastroFornecedoresModulo />;
       case "unidades": return <UnidadesModulo />;
       default: return null;
     }
