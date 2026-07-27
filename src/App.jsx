@@ -128,6 +128,12 @@ const MODULES = {
   faturamento: { table: "faturamento_guias", order: "data_protocolo.desc",
     toDb: (r) => ({ convenio: r.convenio, numero_guia: r.numeroGuia, tipo: r.tipo, data_protocolo: r.dataProtocolo, valor: r.valor, status: r.status, data_pagamento: r.dataPagamento || null }),
     fromDb: (r) => ({ id: r.id, convenio: r.convenio, numeroGuia: r.numero_guia, tipo: r.tipo, dataProtocolo: r.data_protocolo, valor: r.valor, status: r.status, dataPagamento: r.data_pagamento }) },
+  repasse: { table: "repasse_medico", order: "mes.desc",
+    toDb: (r) => ({ medico: r.medico, mes: monthToDate(r.mes), valor_convenio: r.valorConvenio, valor_plantao: r.valorPlantao, qtd_vacinas_prescritas: r.qtdVacinas, valor_por_vacina: r.valorPorVacina }),
+    fromDb: (r) => ({ id: r.id, medico: r.medico, mes: monthKey(r.mes), valorConvenio: r.valor_convenio, valorPlantao: r.valor_plantao, qtdVacinas: r.qtd_vacinas_prescritas, valorPorVacina: r.valor_por_vacina }) },
+  metas: { table: "metas", order: "mes.desc",
+    toDb: (r) => ({ mes: monthToDate(r.mes), categoria: r.categoria, valor_meta: r.valorMeta }),
+    fromDb: (r) => ({ id: r.id, mes: monthKey(r.mes), categoria: r.categoria, valorMeta: r.valor_meta }) },
 };
 
 /* ============================== CONTEXTOS ============================== */
@@ -724,6 +730,43 @@ function ContasModulo() {
   );
 }
 
+function RepasseMedicoModulo() {
+  const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("repasse");
+  const fields = [
+    { key: "medico", label: "Médico(a)", type: "text" },
+    { key: "mes", label: "Mês (AAAA-MM)", type: "text", default: todayISO().slice(0, 7) },
+    { key: "valorConvenio", label: "Repasse de convênios (R$)", type: "currency" },
+    { key: "valorPlantao", label: "Repasse de plantão (R$)", type: "currency" },
+    { key: "qtdVacinas", label: "Qtd. vacinas por prescrição", type: "number" },
+    { key: "valorPorVacina", label: "Valor por vacina prescrita (R$)", type: "currency" },
+  ];
+  const withTotal = data.map((r) => { const valorVacinas = r.qtdVacinas * r.valorPorVacina; return { ...r, valorVacinas, total: r.valorConvenio + r.valorPlantao + valorVacinas }; });
+  const columns = [
+    { key: "medico", label: "Médico(a)" }, { key: "mes", label: "Mês" },
+    { key: "valorConvenio", label: "Convênios", render: (r) => fmtBRL(r.valorConvenio) },
+    { key: "valorPlantao", label: "Plantão", render: (r) => fmtBRL(r.valorPlantao) },
+    { key: "valorVacinas", label: "Vacinas", render: (r) => <span title={`${r.qtdVacinas} × ${fmtBRL(r.valorPorVacina)}`}>{fmtBRL(r.valorVacinas)}</span> },
+    { key: "total", label: "Total a repassar", render: (r) => <span style={{ color: T.green, fontWeight: 700, fontFamily: "'IBM Plex Mono', monospace" }}>{fmtBRL(r.total)}</span> },
+  ];
+  const totalGeral = withTotal.reduce((s, r) => s + r.total, 0);
+  const porMedico = useMemo(() => { const map = {}; withTotal.forEach((r) => { map[r.medico] = (map[r.medico] || 0) + r.total; }); return Object.entries(map).map(([medico, total]) => ({ medico, total })).sort((a, b) => b.total - a.total); }, [withTotal]);
+  const maiorRepasse = porMedico[0];
+  return (
+    <ModuleShell icon={Stethoscope} title="Repasse Médico" subtitle="Convênios + plantão + vacinas por prescrição — total calculado automaticamente" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Registrar repasse" fields={fields} columns={columns} rows={withTotal} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
+      kpis={[{ label: "Total a repassar (todos)", value: fmtBRL(totalGeral), tone: "green" }, { label: "Maior repasse", value: maiorRepasse ? maiorRepasse.medico : "—", tone: "coral" }, { label: "Médicos no período", value: porMedico.length }]}
+      charts={<ChartCard title="Total a repassar por médico(a)">
+        <BarChart data={porMedico}>
+          <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
+          <XAxis dataKey="medico" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-15} textAnchor="end" height={60} />
+          <YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} />
+          <Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+          <Bar dataKey="total" fill={T.coral} radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ChartCard>} />
+  );
+}
+
 function FaturamentoModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("faturamento");
   const fields = [
@@ -774,8 +817,7 @@ function PessoalModulo() {
       charts={<div className="grid md:grid-cols-2 gap-5">
         <ChartCard title="Meta atingida por colaborador(a)"><BarChart data={withPct} layout="vertical" margin={{ left: 10 }}><CartesianGrid strokeDasharray="3 3" stroke={T.border} horizontal={false} /><XAxis type="number" tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v}%`} /><YAxis type="category" dataKey="nome" width={130} tick={{ fontSize: 11, fill: T.muted }} /><Tooltip formatter={(v) => `${v.toFixed(0)}%`} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="pct" radius={[0, 4, 4, 0]}>{withPct.map((r, i) => <Cell key={i} fill={r.pct >= 100 ? T.green : r.pct >= 70 ? T.amber : T.red} />)}</Bar></BarChart></ChartCard>
         <ChartCard title="Desempenho médio por equipe"><BarChart data={porEquipe}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="equipe" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-10} textAnchor="end" height={50} /><YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v}%`} /><Tooltip formatter={(v) => `${v.toFixed(0)}%`} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="media" fill={T.purple} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>
-      </div>}
-      extra={canManageRH && <GestaoDocumentosRH />} />
+      </div>} />
   );
 }
 
@@ -1074,16 +1116,19 @@ function GestaoDocumentosRH() {
   const [busy, setBusy] = useState(false);
   const [enviados, setEnviados] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState(null);
 
   const carregar = useCallback(async () => {
-    setLoading(true);
-    const [cs, docs] = await Promise.all([
-      sbRest(`perfis?unidade_id=eq.${unidadeId}&select=id,nome,cargo&order=nome.asc`, { token: session.access_token }),
-      sbRest(`rh_documentos?unidade_id=eq.${unidadeId}&select=*&order=criado_em.desc&limit=30`, { token: session.access_token }),
-    ]);
-    setColaboradores(cs || []);
-    if (!colaboradorId && cs && cs[0]) setColaboradorId(cs[0].id);
-    setEnviados(docs || []);
+    setLoading(true); setErro(null);
+    try {
+      const [cs, docs] = await Promise.all([
+        sbRest(`perfis?unidade_id=eq.${unidadeId}&select=id,nome,cargo&order=nome.asc`, { token: session.access_token }),
+        sbRest(`rh_documentos?unidade_id=eq.${unidadeId}&select=*&order=criado_em.desc&limit=30`, { token: session.access_token }),
+      ]);
+      setColaboradores(cs || []);
+      if (!colaboradorId && cs && cs[0]) setColaboradorId(cs[0].id);
+      setEnviados(docs || []);
+    } catch (e) { setErro(e.message); }
     setLoading(false);
   }, [unidadeId]);
 
@@ -1108,6 +1153,7 @@ function GestaoDocumentosRH() {
   return (
     <Card className="mb-5">
       <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Enviar holerite / recibo de férias para a equipe</p>
+      {erro && <p className="text-sm mb-3" style={{ color: T.red }}>Não foi possível carregar: {erro}. Confirme se o script de RH foi executado no Supabase.</p>}
       <div className="flex flex-wrap gap-3 items-end mb-4">
         <Field label="Colaborador(a)">
           <select className="rounded-lg px-3 py-2 text-sm outline-none w-56" style={inputStyle} value={colaboradorId} onChange={(e) => setColaboradorId(e.target.value)}>
@@ -1137,6 +1183,146 @@ function GestaoDocumentosRH() {
     </Card>
   );
 }
+
+/* ============================== PAINEL DA EQUIPE (visão do gestor) ============================== */
+/* ============================== METAS ============================== */
+const CATEGORIAS_META = ["Receita Total", "Atendimentos por Convênio", "Novos Leads Convertidos", "Procedimentos Concluídos"];
+function MetasModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("metas");
+  const financeiro = useRecords("financeiro");
+  const atendimentos = useRecords("convenios");
+  const leads = useRecords("marketing");
+  const procedimentos = useRecords("procedimentos");
+
+  const realizadoPara = (categoria, mes) => {
+    if (categoria === "Receita Total") return financeiro.data.filter((r) => r.tipo === "entrada" && monthKey(r.data) === mes).reduce((s, r) => s + r.valor, 0);
+    if (categoria === "Atendimentos por Convênio") return atendimentos.data.filter((r) => monthKey(r.data) === mes).reduce((s, r) => s + Number(r.quantidade), 0);
+    if (categoria === "Novos Leads Convertidos") return leads.data.filter((r) => r.status === "Convertido" && monthKey(r.data) === mes).length;
+    if (categoria === "Procedimentos Concluídos") return procedimentos.data.filter((r) => r.status === "Concluído" && monthKey(r.data) === mes).length;
+    return 0;
+  };
+  const isCurrency = (categoria) => categoria === "Receita Total";
+  const fmtValor = (categoria, v) => (isCurrency(categoria) ? fmtBRL(v) : fmtNum(v));
+
+  const fields = [
+    { key: "mes", label: "Mês (AAAA-MM)", type: "text", default: todayISO().slice(0, 7) },
+    { key: "categoria", label: "Categoria", type: "select", options: CATEGORIAS_META },
+    { key: "valorMeta", label: "Valor da meta", type: "number" },
+  ];
+  const withRealizado = data.map((r) => { const realizado = realizadoPara(r.categoria, r.mes); const falta = Math.max(r.valorMeta - realizado, 0); const pct = r.valorMeta ? (realizado / r.valorMeta) * 100 : 0; return { ...r, realizado, falta, pct }; });
+  const columns = [
+    { key: "mes", label: "Mês" }, { key: "categoria", label: "Categoria" },
+    { key: "valorMeta", label: "Meta", render: (r) => fmtValor(r.categoria, r.valorMeta) },
+    { key: "realizado", label: "Realizado", render: (r) => fmtValor(r.categoria, r.realizado) },
+    { key: "falta", label: "Falta", render: (r) => <span style={{ color: r.falta > 0 ? T.amber : T.green }}>{fmtValor(r.categoria, r.falta)}</span> },
+    { key: "pct", label: "Atingido", render: (r) => (<div className="flex items-center gap-2 min-w-[110px]"><Progress pct={r.pct} /><span className="text-xs font-semibold" style={{ color: T.text, fontFamily: "'IBM Plex Mono', monospace" }}>{fmtPct(r.pct)}</span></div>) },
+  ];
+  const mesAtual = todayISO().slice(0, 7);
+  const metasDoMes = withRealizado.filter((r) => r.mes === mesAtual);
+  const mediaAtingidoMes = metasDoMes.length ? metasDoMes.reduce((s, r) => s + Math.min(r.pct, 100), 0) / metasDoMes.length : 0;
+  return (
+    <ModuleShell icon={ClipboardList} title="Acompanhamento de Metas" subtitle="Meta do mês, quanto já foi realizado e quanto falta — calculado automaticamente" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Definir meta" fields={fields} columns={columns} rows={[...withRealizado].sort((a, b) => b.mes.localeCompare(a.mes))} onAdd={add} onUpdate={update} onDelete={remove}
+      kpis={[{ label: "Metas cadastradas para o mês", value: metasDoMes.length }, { label: "Média atingida (mês atual)", value: fmtPct(mediaAtingidoMes), tone: mediaAtingidoMes >= 90 ? "green" : mediaAtingidoMes >= 60 ? "amber" : "red" }]}
+      charts={metasDoMes.length > 0 && <ChartCard title="Progresso das metas do mês atual">
+        <BarChart data={metasDoMes.map((m) => ({ categoria: m.categoria, pct: Math.min(m.pct, 100) }))}>
+          <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
+          <XAxis dataKey="categoria" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-10} textAnchor="end" height={60} />
+          <YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v}%`} />
+          <Tooltip formatter={(v) => `${v.toFixed(0)}%`} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+          <Bar dataKey="pct" radius={[4, 4, 0, 0]}>{metasDoMes.map((m, i) => <Cell key={i} fill={m.pct >= 100 ? T.green : m.pct >= 60 ? T.amber : T.red} />)}</Bar>
+        </BarChart>
+      </ChartCard>} />
+  );
+}
+
+function EquipeModulo() {
+  const { session } = useAuth();
+  const { unidadeId } = useUnidade();
+  const [colaboradores, setColaboradores] = useState([]);
+  const [prod, setProd] = useState([]);
+  const [horas, setHoras] = useState([]);
+  const [atestados, setAtestados] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState(null);
+  const mesAtual = todayISO().slice(0, 7);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true); setErro(null);
+      try {
+        const [cs, pd, hr, at] = await Promise.all([
+          sbRest(`perfis?unidade_id=eq.${unidadeId}&select=id,nome,cargo,papel&order=nome.asc`, { token: session.access_token }),
+          sbRest(`producao_diaria_colaborador?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
+          sbRest(`rh_horas?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
+          sbRest(`rh_atestados?unidade_id=eq.${unidadeId}&select=*&order=data.desc`, { token: session.access_token }),
+        ]);
+        setColaboradores(cs || []); setProd(pd || []); setHoras(hr || []); setAtestados(at || []);
+      } catch (e) { setErro(e.message); }
+      setLoading(false);
+    })();
+  }, [unidadeId]);
+
+  const linhas = colaboradores.map((c) => {
+    const pdMes = prod.filter((p) => p.colaborador_id === c.id && p.data.slice(0, 7) === mesAtual);
+    const hrMes = horas.filter((h) => h.colaborador_id === c.id && h.data.slice(0, 7) === mesAtual);
+    const atMes = atestados.filter((a) => a.colaborador_id === c.id && a.data.slice(0, 7) === mesAtual);
+    return {
+      ...c,
+      ligacoes: pdMes.reduce((s, p) => s + p.ligacoes, 0),
+      mensagens: pdMes.reduce((s, p) => s + p.mensagens, 0),
+      agendados: pdMes.reduce((s, p) => s + p.agendados, 0),
+      horasTotal: hrMes.reduce((s, h) => s + (Number(h.horas_total) || 0), 0),
+      atestados: atMes.length,
+    };
+  });
+
+  return (
+    <div>
+      <SectionHeader icon={Users} title="Painel da Equipe" subtitle="Todos os colaboradores cadastrados, com produtividade e horas do mês" tone="purple" />
+      {erro && <Card className="mb-5" style={{ borderColor: `${T.red}55` }}><span className="text-sm" style={{ color: T.red }}>Erro ao carregar: {erro}. Confirme se o script de RH foi executado no Supabase.</span></Card>}
+      <div className="grid gap-3 mb-6 md:grid-cols-4">
+        <KpiCard label="Colaboradores" value={colaboradores.length} tone="purple" />
+        <KpiCard label="Ligações no mês (equipe)" value={fmtNum(linhas.reduce((s, r) => s + r.ligacoes, 0))} tone="coral" />
+        <KpiCard label="Horas no mês (equipe)" value={`${linhas.reduce((s, r) => s + r.horasTotal, 0).toFixed(0)} h`} tone="teal" />
+        <KpiCard label="Atestados no mês" value={linhas.reduce((s, r) => s + r.atestados, 0)} tone="amber" />
+      </div>
+      <GestaoDocumentosRH />
+      <Card>
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Colaboradores — resumo do mês atual</p>
+        {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> : (
+          <div className="overflow-x-auto -mx-5 px-5">
+            <table className="w-full text-sm min-w-[640px]">
+              <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Nome</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Cargo</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Perfil</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Ligações</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Mensagens</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Agendados</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Horas</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Atestados</th>
+              </tr></thead>
+              <tbody>{linhas.map((r) => (
+                <tr key={r.id} style={{ borderBottom: `1px solid ${T.border}` }}>
+                  <td className="py-2 px-2 font-medium" style={{ color: T.text }}>{r.nome}</td>
+                  <td className="py-2 px-2" style={{ color: T.muted }}>{r.cargo || "—"}</td>
+                  <td className="py-2 px-2"><Badge tone="ink">{r.papel}</Badge></td>
+                  <td className="py-2 px-2">{r.ligacoes}</td>
+                  <td className="py-2 px-2">{r.mensagens}</td>
+                  <td className="py-2 px-2">{r.agendados}</td>
+                  <td className="py-2 px-2">{r.horasTotal.toFixed(1)}</td>
+                  <td className="py-2 px-2">{r.atestados}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 
 function humanizeKey(key) { return key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()); }
 function autoFormatValue(key, value) {
@@ -1226,15 +1412,15 @@ function RelatoriosModulo() {
 
 const ALL_MENU = [
   { group: "Visão", items: [{ key: "visao", label: "Visão Geral", icon: LayoutDashboard, tone: "coral" }] },
-  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Faturamento de Convênios", icon: ClipboardList, tone: "coral" }] },
+  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Faturamento de Convênios", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }] },
   { group: "Atendimento Clínico", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producao", label: "Produção Médica", icon: Stethoscope, tone: "teal" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
   { group: "Estoque", items: [{ key: "vacinas", label: "Vacinas", icon: Syringe, tone: "teal" }, { key: "insumos", label: "Insumos", icon: Package, tone: "teal" }] },
-  { group: "Pessoas", items: [{ key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" }] },
+  { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" }] },
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }] },
-  { group: "Relatórios", items: [{ key: "relatorios", label: "Gerar Relatórios", icon: FileText, tone: "ink" }] },
+  { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "relatorios", label: "Gerar Relatórios", icon: FileText, tone: "ink" }] },
   { group: "Rede", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "contas", "faturamento"];
+const FINANCE_TABS = ["financeiro", "contas", "faturamento", "repasse", "equipe", "metas"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
 const RESTRICTED_MENUS = {
   recepcao: { group: "Minha área", items: [
@@ -1261,7 +1447,7 @@ function AppInner() {
   const [tab, setTab] = useState(isRestrito ? "meurh" : "visao");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const canFinance = perfil && perfil.papel !== "operacional";
-  const MENU = isRestrito ? [RESTRICTED_MENUS[perfil.papel]] : (canFinance ? ALL_MENU : ALL_MENU.filter((g) => g.group !== "Financeiro"));
+  const MENU = isRestrito ? [RESTRICTED_MENUS[perfil.papel]] : (canFinance ? ALL_MENU : ALL_MENU.map((g) => ({ ...g, items: g.items.filter((i) => !FINANCE_TABS.includes(i.key)) })).filter((g) => g.items.length > 0));
   const activeMeta = MENU.flatMap((g) => g.items).find((i) => i.key === tab) || MENU[0].items[0];
   const renderTab = () => {
     if (!canFinance && FINANCE_TABS.includes(tab)) return <VisaoGeral />;
@@ -1278,6 +1464,9 @@ function AppInner() {
       case "marketing": return <MarketingModulo />;
       case "procedimentos": return <ProcedimentosModulo />;
       case "faturamento": return <FaturamentoModulo />;
+      case "repasse": return <RepasseMedicoModulo />;
+      case "equipe": return <EquipeModulo />;
+      case "metas": return <MetasModulo />;
       case "relatorios": return <RelatoriosModulo />;
       case "unidades": return <UnidadesModulo />;
       default: return null;
