@@ -113,8 +113,8 @@ const MODULES = {
     toDb: (r) => ({ nome: r.nome, categoria: r.categoria, qtd: r.qtd, qtd_minima: r.qtdMinima, unidade_medida: r.unidade, valor_unitario: r.valorUnitario }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, categoria: r.categoria, qtd: r.qtd, qtdMinima: r.qtd_minima, unidade: r.unidade_medida, valorUnitario: r.valor_unitario }) },
   producao: { table: "producao_medica", order: "mes.desc",
-    toDb: (r) => ({ profissional: r.profissional, mes: monthToDate(r.mes), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo }),
-    fromDb: (r) => ({ id: r.id, profissional: r.profissional, mes: monthKey(r.mes), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo }) },
+    toDb: (r) => ({ profissional: r.profissional, mes: monthToDate(r.mes), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipo_repasse: r.tipoRepasse || "Fixo", percentual_repasse: r.percentualRepasse || 0 }),
+    fromDb: (r) => ({ id: r.id, profissional: r.profissional, mes: monthKey(r.mes), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipoRepasse: r.tipo_repasse, percentualRepasse: r.percentual_repasse }) },
   contas: { table: "contas_pagar", order: "vencimento.asc",
     toDb: (r) => ({ descricao: r.descricao, categoria: r.categoria, valor: r.valor, vencimento: r.vencimento, status: r.status, data_pagamento: r.dataPagamento || null }),
     fromDb: (r) => ({ id: r.id, descricao: r.descricao, categoria: r.categoria, valor: r.valor, vencimento: r.vencimento, status: r.status, dataPagamento: r.data_pagamento }) },
@@ -143,8 +143,14 @@ const MODULES = {
     toDb: (r) => ({ nome: r.nome, cargo: r.cargo, tipo: r.tipo, telefone: r.telefone, observacoes: r.observacoes }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, cargo: r.cargo, tipo: r.tipo, telefone: r.telefone, observacoes: r.observacoes }) },
   cadProfissionais: { table: "cadastro_profissionais", order: "nome.asc",
-    toDb: (r) => ({ nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email }),
-    fromDb: (r) => ({ id: r.id, nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email }) },
+    toDb: (r) => ({ nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcao_sublocacao: r.direcaoSublocacao || null, tipo_sublocacao: r.tipoSublocacao || null, percentual_sublocacao: r.percentualSublocacao || 0, valor_fixo_sublocacao: r.valorFixoSublocacao || 0, valor_abatimento: r.valorAbatimento || 0 }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcaoSublocacao: r.direcao_sublocacao, tipoSublocacao: r.tipo_sublocacao, percentualSublocacao: r.percentual_sublocacao, valorFixoSublocacao: r.valor_fixo_sublocacao, valorAbatimento: r.valor_abatimento }) },
+  cadTestesGeneticos: { table: "cadastro_testes_geneticos", order: "nome.asc",
+    toDb: (r) => ({ nome: r.nome, valor_teste: r.valorTeste, valor_repasse_clinica: r.valorRepasseClinica }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, valorTeste: r.valor_teste, valorRepasseClinica: r.valor_repasse_clinica }) },
+  vendasVacinas: { table: "vendas_vacinas", order: "data.desc",
+    toDb: (r) => ({ vacina_id: r.vacinaId, data: r.data, quantidade: r.quantidade, valor_unitario: r.valorUnitario, desconto_pct: r.descontoPct, valor_total: r.valorTotal }),
+    fromDb: (r) => ({ id: r.id, vacinaId: r.vacina_id, data: r.data, quantidade: r.quantidade, valorUnitario: r.valor_unitario, descontoPct: r.desconto_pct, valorTotal: r.valor_total }) },
   cadFornecedores: { table: "cadastro_fornecedores", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, categoria: r.categoria, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, categoria: r.categoria, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes }) },
@@ -724,6 +730,54 @@ function VacinasModulo() {
   );
 }
 
+function VendasVacinasModulo() {
+  const { data: vendas, add, update, remove, loading, erro } = useRecords("vendasVacinas");
+  const { data: vacinasCat, update: updateVacina, loading: loadingVacinas } = useRecords("vacinas");
+  const nomesVacinas = vacinasCat.map((v) => v.nome);
+  const fields = [
+    { key: "vacina", label: "Vacina", type: "select", options: nomesVacinas.length ? nomesVacinas : ["Cadastre em Estoque de Vacinas primeiro"] },
+    { key: "data", label: "Data", type: "date", default: todayISO() },
+    { key: "quantidade", label: "Quantidade vendida", type: "number" },
+    { key: "descontoPct", label: "Desconto (%)", type: "number", required: false, default: 0 },
+  ];
+  const computarVenda = (record) => {
+    const vac = vacinasCat.find((v) => v.nome === record.vacina);
+    if (!vac) return null;
+    const qtd = Number(record.quantidade) || 0;
+    const desconto = Number(record.descontoPct) || 0;
+    const valorUnitario = vac.valorVenda;
+    const valorTotal = qtd * valorUnitario * (1 - desconto / 100);
+    return { vac, qtd, valorUnitario, descontoPct: desconto, valorTotal };
+  };
+  const onAddVenda = async (record) => {
+    const calc = computarVenda(record);
+    if (!calc) return alert("Selecione uma vacina cadastrada.");
+    await add({ vacinaId: calc.vac.id, data: record.data, quantidade: calc.qtd, valorUnitario: calc.valorUnitario, descontoPct: calc.descontoPct, valorTotal: calc.valorTotal });
+    await updateVacina(calc.vac.id, { qtdEstoque: Math.max((calc.vac.qtdEstoque || 0) - calc.qtd, 0), qtdVendidaMes: (calc.vac.qtdVendidaMes || 0) + calc.qtd });
+  };
+  const onUpdateVenda = async (id, record) => {
+    const calc = computarVenda(record);
+    if (!calc) return alert("Selecione uma vacina cadastrada.");
+    await update(id, { vacinaId: calc.vac.id, data: record.data, quantidade: calc.qtd, valorUnitario: calc.valorUnitario, descontoPct: calc.descontoPct, valorTotal: calc.valorTotal });
+  };
+  const rowsEnriquecidas = vendas.map((v) => ({ ...v, vacina: (vacinasCat.find((x) => x.id === v.vacinaId) || {}).nome || "—" }));
+  const columns = [
+    { key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "vacina", label: "Vacina" }, { key: "quantidade", label: "Qtd." },
+    { key: "valorUnitario", label: "Valor unit.", render: (r) => fmtBRL(r.valorUnitario) },
+    { key: "descontoPct", label: "Desconto", render: (r) => fmtPct(r.descontoPct) },
+    { key: "valorTotal", label: "Total", render: (r) => <span style={{ color: T.green, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(r.valorTotal)}</span> },
+  ];
+  const totalVendido = vendas.reduce((s, r) => s + r.valorTotal, 0);
+  const totalQtd = vendas.reduce((s, r) => s + Number(r.quantidade), 0);
+  const porVacina = useMemo(() => { const map = {}; rowsEnriquecidas.forEach((r) => { map[r.vacina] = (map[r.vacina] || 0) + r.valorTotal; }); return Object.entries(map).map(([vacina, valor]) => ({ vacina, valor })).sort((a, b) => b.valor - a.valor); }, [rowsEnriquecidas]);
+  return (
+    <ModuleShell icon={Syringe} title="Vendas de Vacinas" subtitle="Selecione a vacina já cadastrada — valor e estoque atualizam automaticamente" tone="teal" loading={loading || loadingVacinas} erro={erro}
+      dailyFields={fields} dailyCta="Registrar venda" fields={fields} columns={columns} rows={rowsEnriquecidas} onAdd={onAddVenda} onUpdate={onUpdateVenda} onDelete={remove}
+      kpis={[{ label: "Vendas registradas", value: vendas.length }, { label: "Doses vendidas", value: fmtNum(totalQtd) }, { label: "Valor total vendido", value: fmtBRL(totalVendido), tone: "green" }]}
+      charts={<ChartCard title="Valor vendido por vacina"><BarChart data={porVacina}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="vacina" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-15} textAnchor="end" height={60} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="valor" fill={T.teal} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>} />
+  );
+}
+
 function InsumosModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("insumos");
   const fields = [{ key: "nome", label: "Item", type: "text" }, { key: "categoria", label: "Categoria", type: "select", options: ["Material médico", "EPI", "Limpeza", "Escritório", "Outros"] }, { key: "qtd", label: "Qtd. atual", type: "number" }, { key: "qtdMinima", label: "Qtd. mínima", type: "number" }, { key: "unidade", label: "Unidade", type: "text", placeholder: "caixa, litro…" }, { key: "valorUnitario", label: "Valor unitário (R$)", type: "currency" }];
@@ -739,13 +793,35 @@ function InsumosModulo() {
 
 function ProducaoModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("producao");
-  const fields = [{ key: "profissional", label: "Profissional", type: "text" }, { key: "mes", label: "Mês (AAAA-MM)", type: "text", placeholder: todayISO().slice(0, 7), default: todayISO().slice(0, 7) }, { key: "atendimentos", label: "Atendimentos", type: "number" }, { key: "receita", label: "Receita gerada (R$)", type: "currency" }, { key: "custo", label: "Custo/repasse (R$)", type: "currency" }];
-  const columns = [{ key: "profissional", label: "Profissional" }, { key: "mes", label: "Mês" }, { key: "atendimentos", label: "Atendimentos" }, { key: "receita", label: "Receita", render: (r) => fmtBRL(r.receita) }, { key: "custo", label: "Custo", render: (r) => fmtBRL(r.custo) }, { key: "rentabilidade", label: "Rentabilidade", render: (r) => { const rent = r.receita - r.custo; return <span style={{ color: rent >= 0 ? T.green : T.red, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(rent)}</span>; } }, { key: "margem", label: "Margem", render: (r) => fmtPct(r.receita ? ((r.receita - r.custo) / r.receita) * 100 : 0) }];
+  const { data: profissionais } = useRecords("cadProfissionais");
+  const nomesProfissionais = profissionais.map((p) => p.nome);
+  const fields = [
+    { key: "profissional", label: "Profissional", type: "select", options: nomesProfissionais.length ? nomesProfissionais : ["Cadastre em Cadastros → Profissionais"] },
+    { key: "mes", label: "Mês (AAAA-MM)", type: "text", placeholder: todayISO().slice(0, 7), default: todayISO().slice(0, 7) },
+    { key: "atendimentos", label: "Atendimentos", type: "number" },
+    { key: "receita", label: "Receita gerada (R$)", type: "currency" },
+    { key: "tipoRepasse", label: "Tipo de repasse", type: "select", options: ["Fixo", "Percentual"], default: "Fixo" },
+    { key: "custo", label: "Custo/repasse (R$)", type: "currency", showIf: (f) => f.tipoRepasse !== "Percentual" },
+    { key: "percentualRepasse", label: "Percentual de repasse (%)", type: "number", required: false, showIf: (f) => f.tipoRepasse === "Percentual" },
+  ];
+  const computar = (r) => {
+    if (r.tipoRepasse === "Percentual") return { custo: Number(r.receita || 0) * (Number(r.percentualRepasse || 0) / 100) };
+    return { custo: Number(r.custo || 0) };
+  };
+  const onAddComputado = (record) => add({ ...record, ...computar(record) });
+  const onUpdateComputado = (id, record) => update(id, { ...record, ...computar(record) });
+  const columns = [
+    { key: "profissional", label: "Profissional" }, { key: "mes", label: "Mês" }, { key: "atendimentos", label: "Atendimentos" },
+    { key: "receita", label: "Receita", render: (r) => fmtBRL(r.receita) },
+    { key: "custo", label: "Custo", render: (r) => <span>{fmtBRL(r.custo)}{r.tipoRepasse === "Percentual" && <span className="text-xs" style={{ color: T.muted }}> ({r.percentualRepasse}%)</span>}</span> },
+    { key: "rentabilidade", label: "Rentabilidade", render: (r) => { const rent = r.receita - r.custo; return <span style={{ color: rent >= 0 ? T.green : T.red, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(rent)}</span>; } },
+    { key: "margem", label: "Margem", render: (r) => fmtPct(r.receita ? ((r.receita - r.custo) / r.receita) * 100 : 0) },
+  ];
   const chartData = data.map((r) => ({ profissional: r.profissional.replace(/^Dr[a]?\.\s*/, ""), receita: r.receita, custo: r.custo, rentabilidade: r.receita - r.custo }));
   const totalReceita = data.reduce((s, r) => s + r.receita, 0), totalCusto = data.reduce((s, r) => s + r.custo, 0); const maisRentavel = [...data].sort((a, b) => (b.receita - b.custo) - (a.receita - a.custo))[0];
   return (
     <ModuleShell icon={Stethoscope} title="Produção Médica" subtitle="Produção e rentabilidade por profissional" tone="teal" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Registrar produção" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
+      dailyFields={fields} dailyCta="Registrar produção" fields={fields} columns={columns} rows={data} onAdd={onAddComputado} onUpdate={onUpdateComputado} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Receita gerada", value: fmtBRL(totalReceita), tone: "green" }, { label: "Custo/repasse", value: fmtBRL(totalCusto), tone: "red" }, { label: "Rentabilidade", value: fmtBRL(totalReceita - totalCusto), tone: (totalReceita - totalCusto) >= 0 ? "green" : "red" }, { label: "Mais rentável", value: maisRentavel ? maisRentavel.profissional.split(" ").slice(0, 2).join(" ") : "—", tone: "coral" }]}
       charts={<ChartCard title="Rentabilidade por profissional"><BarChart data={chartData}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="profissional" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="receita" name="Receita" fill={T.teal} radius={[4, 4, 0, 0]} /><Bar dataKey="custo" name="Custo" fill={`${T.teal}55`} radius={[4, 4, 0, 0]} /><Bar dataKey="rentabilidade" name="Rentabilidade" fill={T.green} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>} />
   );
@@ -765,6 +841,74 @@ function ContasModulo() {
       kpis={[{ label: "Total pendente", value: fmtBRL(totalPendente), tone: "amber" }, { label: "Total pago", value: fmtBRL(totalPago), tone: "green" }, { label: "Atrasadas", value: atrasados.length, tone: atrasados.length ? "red" : "green" }, { label: "Vencendo em 7 dias", value: proximos.length, tone: proximos.length ? "amber" : "green" }]}
       charts={<ChartCard title="Valor pendente por categoria"><BarChart data={porCategoria}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="categoria" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="valor" fill={T.coral} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>}
       extra={proximos.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><div className="flex items-center gap-2 mb-2"><AlertTriangle size={15} style={{ color: T.amber }} /><span className="font-semibold text-sm" style={{ color: T.text }}>Vencimentos nos próximos 7 dias</span></div><div className="flex flex-col gap-1.5">{proximos.map((r) => (<div key={r.id} className="flex justify-between text-sm"><span style={{ color: T.muted }}>{r.descricao} — {fmtDate(r.vencimento)}</span><span style={{ color: T.text, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(r.valor)}</span></div>))}</div></Card>} />
+  );
+}
+
+/* ============================== RECEITA DE SUBLOCAÇÃO (calculada automaticamente) ============================== */
+function SublocacaoModulo() {
+  const { data: producao, loading: loadingProd, erro: erroProd } = useRecords("producao");
+  const { data: profissionais, loading: loadingProf, erro: erroProf } = useRecords("cadProfissionais");
+  const loading = loadingProd || loadingProf;
+  const erro = erroProd || erroProf;
+
+  const calcular = (p, config) => {
+    if (config.tipoSublocacao === "Percentual") return p.receita * ((config.percentualSublocacao || 0) / 100);
+    if (config.tipoSublocacao === "Valor fixo com abatimento") return (config.valorFixoSublocacao || 0) - (config.valorAbatimento || 0);
+    return config.valorFixoSublocacao || 0;
+  };
+
+  const linhas = producao
+    .map((p) => { const config = profissionais.find((prof) => prof.nome === p.profissional); return config && config.direcaoSublocacao === "Profissional paga à clínica" ? { ...p, config, valorSublocacao: calcular(p, config) } : null; })
+    .filter(Boolean);
+
+  const totalSublocacao = linhas.reduce((s, l) => s + l.valorSublocacao, 0);
+  const porProfissional = useMemo(() => { const map = {}; linhas.forEach((l) => { map[l.profissional] = (map[l.profissional] || 0) + l.valorSublocacao; }); return Object.entries(map).map(([profissional, valor]) => ({ profissional, valor })).sort((a, b) => b.valor - a.valor); }, [linhas]);
+
+  return (
+    <div>
+      <SectionHeader icon={Building2} title="Receita de Sublocação" subtitle="Valores que os profissionais pagam à clínica pela sublocação da sala — calculado a partir da Produção Médica" tone="coral" />
+      {erro && <Card className="mb-5" style={{ borderColor: `${T.red}55` }}><span className="text-sm" style={{ color: T.red }}>Erro ao carregar: {erro}</span></Card>}
+      <div className="grid gap-3 mb-6 md:grid-cols-3">
+        <KpiCard label="Receita de sublocação (total)" value={fmtBRL(totalSublocacao)} tone="green" />
+        <KpiCard label="Profissionais nessa modalidade" value={porProfissional.length} tone="coral" />
+        <KpiCard label="Lançamentos considerados" value={linhas.length} />
+      </div>
+      {!loading && porProfissional.length > 0 && (
+        <ChartCard title="Receita de sublocação por profissional">
+          <BarChart data={porProfissional}>
+            <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
+            <XAxis dataKey="profissional" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-15} textAnchor="end" height={60} />
+            <YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} />
+            <Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+            <Bar dataKey="valor" fill={T.coral} radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ChartCard>
+      )}
+      <Card>
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Detalhamento por lançamento de produção</p>
+        {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> :
+          linhas.length === 0 ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhum profissional com sublocação "profissional paga à clínica" cadastrada, ou nenhum lançamento de produção correspondente.</div> : (
+          <div className="overflow-x-auto -mx-5 px-5">
+            <table className="w-full text-sm min-w-[560px]">
+              <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Profissional</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Mês</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Forma</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Valor</th>
+              </tr></thead>
+              <tbody>{linhas.map((l) => (
+                <tr key={l.id} style={{ borderBottom: `1px solid ${T.border}` }}>
+                  <td className="py-2 px-2 font-medium" style={{ color: T.text }}>{l.profissional}</td>
+                  <td className="py-2 px-2">{l.mes}</td>
+                  <td className="py-2 px-2">{l.config.tipoSublocacao}</td>
+                  <td className="py-2 px-2" style={{ color: T.green, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(l.valorSublocacao)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
 
@@ -879,13 +1023,28 @@ function MarketingModulo() {
 
 function ProcedimentosModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("procedimentos");
-  const fields = [{ key: "tipo", label: "Tipo de procedimento", type: "select", options: ["Teste Genético", "Fototerapia"] }, { key: "paciente", label: "Paciente (iniciais/idade)", type: "text" }, { key: "data", label: "Data", type: "date", default: todayISO() }, { key: "status", label: "Status", type: "select", options: ["Solicitado", "Em Andamento", "Concluído", "Cancelado"] }, { key: "valor", label: "Valor (R$)", type: "currency" }];
+  const { data: testesCat } = useRecords("cadTestesGeneticos");
+  const nomesTestes = testesCat.map((t) => t.nome);
+  const fields = [
+    { key: "tipo", label: "Tipo de procedimento", type: "select", options: ["Teste Genético", "Fototerapia"] },
+    { key: "tipoTeste", label: "Qual teste (preenche o valor sozinho)", type: "select", options: nomesTestes.length ? nomesTestes : ["Cadastre em Cadastros → Testes Genéticos"], required: false, showIf: (f) => f.tipo === "Teste Genético" },
+    { key: "paciente", label: "Paciente (iniciais/idade)", type: "text" },
+    { key: "data", label: "Data", type: "date", default: todayISO() },
+    { key: "status", label: "Status", type: "select", options: ["Solicitado", "Em Andamento", "Concluído", "Cancelado"] },
+    { key: "valor", label: "Valor (R$)", type: "currency" },
+  ];
+  const computarValor = (record) => {
+    if (record.tipo === "Teste Genético" && record.tipoTeste) { const t = testesCat.find((x) => x.nome === record.tipoTeste); if (t) return { valor: t.valorTeste }; }
+    return {};
+  };
+  const onAddComputado = (record) => add({ ...record, ...computarValor(record) });
+  const onUpdateComputado = (id, record) => update(id, { ...record, ...computarValor(record) });
   const columns = [{ key: "tipo", label: "Tipo", render: (r) => <Badge tone={r.tipo === "Teste Genético" ? "purple" : "teal"}>{r.tipo}</Badge> }, { key: "paciente", label: "Paciente" }, { key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "status", label: "Status", render: (r) => { const tone = { Solicitado: "muted", "Em Andamento": "amber", "Concluído": "green", Cancelado: "red" }[r.status]; return <Badge tone={tone}>{r.status}</Badge>; } }, { key: "valor", label: "Valor", render: (r) => fmtBRL(r.valor) }];
   const porTipo = useMemo(() => { const map = {}; data.forEach((r) => { if (!map[r.tipo]) map[r.tipo] = { tipo: r.tipo, total: 0, receita: 0 }; map[r.tipo].total += 1; map[r.tipo].receita += r.valor; }); return Object.values(map); }, [data]);
   const concluidos = data.filter((r) => r.status === "Concluído"), pendentes = data.filter((r) => r.status === "Solicitado" || r.status === "Em Andamento"); const receitaTotal = concluidos.reduce((s, r) => s + r.valor, 0);
   return (
     <ModuleShell icon={FlaskConical} title="Testes Genéticos e Fototerapia" subtitle="Procedimentos especiais por paciente" tone="teal" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Registrar procedimento" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
+      dailyFields={fields} dailyCta="Registrar procedimento" fields={fields} columns={columns} rows={data} onAdd={onAddComputado} onUpdate={onUpdateComputado} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Procedimentos", value: data.length }, { label: "Concluídos", value: concluidos.length, tone: "green" }, { label: "Em andamento", value: pendentes.length, tone: "amber" }, { label: "Receita (concluídos)", value: fmtBRL(receitaTotal), tone: "teal" }]}
       charts={<ChartCard title="Volume por tipo de procedimento"><BarChart data={porTipo}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="tipo" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="total" name="Qtd." fill={T.teal} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>} />
   );
@@ -1331,11 +1490,32 @@ function CadastroProfissionaisModulo() {
     { key: "crm", label: "CRM", type: "text", required: false },
     { key: "telefone", label: "Telefone", type: "text", required: false },
     { key: "email", label: "E-mail", type: "text", required: false },
+    { key: "direcaoSublocacao", label: "Sublocação — direção do pagamento", type: "select", options: ["Clínica paga ao profissional", "Profissional paga à clínica"], required: false },
+    { key: "tipoSublocacao", label: "Sublocação — forma de cálculo", type: "select", options: ["Percentual", "Valor fixo sem abatimento", "Valor fixo com abatimento"], required: false, showIf: (f) => !!f.direcaoSublocacao },
+    { key: "percentualSublocacao", label: "Percentual (%)", type: "number", required: false, showIf: (f) => f.tipoSublocacao === "Percentual" },
+    { key: "valorFixoSublocacao", label: "Valor fixo (R$)", type: "currency", required: false, showIf: (f) => f.tipoSublocacao === "Valor fixo sem abatimento" || f.tipoSublocacao === "Valor fixo com abatimento" },
+    { key: "valorAbatimento", label: "Valor do abatimento (R$)", type: "currency", required: false, showIf: (f) => f.tipoSublocacao === "Valor fixo com abatimento" },
   ];
-  const columns = [{ key: "nome", label: "Nome" }, { key: "especialidade", label: "Especialidade" }, { key: "crm", label: "CRM" }, { key: "telefone", label: "Telefone" }, { key: "email", label: "E-mail" }];
+  const columns = [
+    { key: "nome", label: "Nome" }, { key: "especialidade", label: "Especialidade" }, { key: "telefone", label: "Telefone" },
+    { key: "sublocacao", label: "Sublocação", render: (r) => r.direcaoSublocacao ? <Badge tone={r.direcaoSublocacao.startsWith("Profissional") ? "green" : "amber"}>{r.tipoSublocacao === "Percentual" ? `${r.percentualSublocacao}%` : fmtBRL(r.valorFixoSublocacao)} — {r.direcaoSublocacao.startsWith("Profissional") ? "recebemos" : "pagamos"}</Badge> : <span style={{ color: T.muted }}>—</span> },
+  ];
   return (
-    <ModuleShell icon={Stethoscope} title="Cadastro de Profissionais" subtitle="Médicos e demais profissionais que atendem na clínica" tone="coral" loading={loading} erro={erro}
+    <ModuleShell icon={Stethoscope} title="Cadastro de Profissionais" subtitle="Médicos e demais profissionais — inclui a forma de pagamento da sublocação" tone="coral" loading={loading} erro={erro}
       dailyFields={fields} dailyCta="Cadastrar profissional" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
+  );
+}
+function CadastroTestesGeneticosModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("cadTestesGeneticos");
+  const fields = [
+    { key: "nome", label: "Nome do teste", type: "text" },
+    { key: "valorTeste", label: "Valor do teste (R$)", type: "currency" },
+    { key: "valorRepasseClinica", label: "Valor de repasse para a clínica (R$)", type: "currency" },
+  ];
+  const columns = [{ key: "nome", label: "Teste" }, { key: "valorTeste", label: "Valor do teste", render: (r) => fmtBRL(r.valorTeste) }, { key: "valorRepasseClinica", label: "Repasse à clínica", render: (r) => fmtBRL(r.valorRepasseClinica) }];
+  return (
+    <ModuleShell icon={FlaskConical} title="Cadastro de Testes Genéticos" subtitle="Tipos de teste, valor cobrado e valor de repasse para a clínica" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Cadastrar teste" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
   );
 }
 function CadastroFornecedoresModulo() {
@@ -1589,16 +1769,16 @@ function RelatoriosModulo() {
 
 const ALL_MENU = [
   { group: "Visão", items: [{ key: "visao", label: "Dashboard", icon: LayoutDashboard, tone: "coral" }] },
-  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }] },
-  { group: "Atendimento", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producao", label: "Produção Médica", icon: Stethoscope, tone: "teal" }, { key: "vacinas", label: "Vacinas", icon: Syringe, tone: "teal" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
+  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }, { key: "sublocacao", label: "Receita de Sublocação", icon: Building2, tone: "coral" }] },
+  { group: "Atendimento", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producao", label: "Produção Médica", icon: Stethoscope, tone: "teal" }, { key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
   { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }] },
   { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" }] },
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }] },
   { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
-  { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }] },
+  { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "contas", "faturamento", "repasse", "equipe", "metas", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores"];
+const FINANCE_TABS = ["financeiro", "contas", "faturamento", "repasse", "sublocacao", "equipe", "metas", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
 const RESTRICTED_MENUS = {
   recepcao: { group: "Minha área", items: [
@@ -1634,6 +1814,7 @@ function AppInner() {
       case "financeiro": return <FinanceiroModulo />;
       case "convenios": return <ConveniosModulo />;
       case "vacinas": return <VacinasModulo />;
+      case "vendasVacinas": return <VendasVacinasModulo />;
       case "insumos": return <InsumosModulo />;
       case "producao": return <ProducaoModulo />;
       case "contas": return <ContasModulo />;
@@ -1643,6 +1824,7 @@ function AppInner() {
       case "procedimentos": return <ProcedimentosModulo />;
       case "faturamento": return <FaturamentoModulo />;
       case "repasse": return <RepasseMedicoModulo />;
+      case "sublocacao": return <SublocacaoModulo />;
       case "equipe": return <EquipeModulo />;
       case "metas": return <MetasModulo />;
       case "relatorios": return <RelatoriosModulo />;
@@ -1650,6 +1832,7 @@ function AppInner() {
       case "cadColaboradores": return <CadastroColaboradoresModulo />;
       case "cadProfissionais": return <CadastroProfissionaisModulo />;
       case "cadFornecedores": return <CadastroFornecedoresModulo />;
+      case "cadTestesGeneticos": return <CadastroTestesGeneticosModulo />;
       case "unidades": return <UnidadesModulo />;
       default: return null;
     }
