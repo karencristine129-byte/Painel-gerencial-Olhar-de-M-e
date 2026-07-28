@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, createContext, useContext } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useReducer, createContext, useContext } from "react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import {
@@ -81,6 +81,24 @@ const T = {
 };
 const PALETTES = { coral: T.coral, teal: T.teal, amber: T.amber, purple: T.coral, rose: T.teal, ink: T.ink, green: T.green, red: T.red };
 const CHART_SET = [T.teal, T.coral, T.tealDeep, T.amberDeep, T.coralDeep, T.tealLight, "#8A5A5E"];
+const DEFAULT_PRIMARY = "#D34550", DEFAULT_SECONDARY = "#32B9C8";
+function shadeColor(hex, percent) {
+  if (!hex || hex[0] !== "#") return hex;
+  const num = parseInt(hex.slice(1), 16);
+  let r = (num >> 16) & 255, g = (num >> 8) & 255, b = num & 255;
+  const t = percent < 0 ? 0 : 255;
+  const p = Math.abs(percent) / 100;
+  r = Math.round((t - r) * p) + r; g = Math.round((t - g) * p) + g; b = Math.round((t - b) * p) + b;
+  return "#" + (0x1000000 + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
+function applyTheme(primary, secondary) {
+  const p = primary || DEFAULT_PRIMARY, s = secondary || DEFAULT_SECONDARY;
+  T.coral = p; T.coralDeep = shadeColor(p, -20);
+  T.teal = s; T.tealDeep = shadeColor(s, -55); T.tealLight = shadeColor(s, 15); T.tealSoft = shadeColor(s, 35);
+  T.sidebar = shadeColor(s, -55); T.sidebarSoft = shadeColor(s, -62); T.ice = shadeColor(s, 55);
+  PALETTES.coral = T.coral; PALETTES.purple = T.coral; PALETTES.teal = T.teal; PALETTES.rose = T.teal;
+  CHART_SET[0] = T.teal; CHART_SET[1] = T.coral; CHART_SET[2] = T.tealDeep; CHART_SET[4] = T.coralDeep; CHART_SET[5] = T.tealLight;
+}
 const CONVENIOS = ["Bradesco Saúde", "Unimed", "IPSM", "AMMP", "Orizon", "Sancoop", "Particular"];
 
 const fmtBRL = (v) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -151,6 +169,9 @@ const MODULES = {
   vendasVacinas: { table: "vendas_vacinas", order: "data.desc",
     toDb: (r) => ({ vacina_id: r.vacinaId, data: r.data, quantidade: r.quantidade, valor_unitario: r.valorUnitario, desconto_pct: r.descontoPct, valor_total: r.valorTotal }),
     fromDb: (r) => ({ id: r.id, vacinaId: r.vacina_id, data: r.data, quantidade: r.quantidade, valorUnitario: r.valor_unitario, descontoPct: r.desconto_pct, valorTotal: r.valor_total }) },
+  posVenda: { table: "pos_venda_ligacoes", order: "data.desc",
+    toDb: (r) => ({ data: r.data, paciente: r.paciente, telefone: r.telefone, convertida: !!r.convertida, agendamento_feito: !!r.agendamentoFeito, data_agendamento: r.dataAgendamento || null, observacoes: r.observacoes }),
+    fromDb: (r) => ({ id: r.id, data: r.data, paciente: r.paciente, telefone: r.telefone, convertida: r.convertida, agendamentoFeito: r.agendamento_feito, dataAgendamento: r.data_agendamento, observacoes: r.observacoes }) },
   cadFornecedores: { table: "cadastro_fornecedores", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, categoria: r.categoria, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, categoria: r.categoria, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes }) },
@@ -175,7 +196,7 @@ function KpiCard({ label, value, sub, tone = "ink", icon: Icon }) {
         <span className="text-[11px] font-semibold uppercase" style={{ color: T.muted, letterSpacing: "0.07em" }}>{label}</span>
         {Icon ? <IconChip icon={Icon} tone={tone} size={13} box={26} /> : null}
       </div>
-      <span className="text-2xl font-bold truncate" style={{ color: T.text, fontFamily: "'JetBrains Mono', monospace" }}>{value}</span>
+      <span className="text-2xl font-bold truncate" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{value}</span>
       {sub ? <span className="text-xs font-medium" style={{ color }}>{sub}</span> : null}
     </div>
   );
@@ -184,7 +205,7 @@ function SectionHeader({ icon, title, subtitle, tone = "ink" }) {
   return (
     <div className="flex items-center gap-3 mb-6">
       <IconChip icon={icon} tone={tone} size={20} box={46} />
-      <div><h2 className="text-xl font-bold leading-tight" style={{ color: T.text, fontFamily: "'Poppins', sans-serif" }}>{title}</h2><p className="text-sm" style={{ color: T.muted }}>{subtitle}</p></div>
+      <div><h2 className="text-xl font-bold leading-tight" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{title}</h2><p className="text-sm" style={{ color: T.muted }}>{subtitle}</p></div>
     </div>
   );
 }
@@ -231,6 +252,12 @@ function FieldInput({ f, value, onChange }) {
       </select>
     );
   }
+  if (f.type === "textarea") {
+    return <textarea rows={3} className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={value} onChange={(e) => onChange(e.target.value)} placeholder={f.placeholder || ""} />;
+  }
+  if (f.type === "checkbox") {
+    return <div className="flex items-center h-[38px]"><input type="checkbox" className="w-4 h-4" checked={!!value} onChange={(e) => onChange(e.target.checked)} /></div>;
+  }
   return <input type={f.type === "currency" ? "number" : f.type} step={f.type === "currency" || f.type === "number" ? "0.01" : undefined}
     className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={value} onChange={(e) => onChange(e.target.value)} placeholder={f.placeholder || ""} />;
 }
@@ -256,7 +283,7 @@ function LoginScreen() {
       <div className="w-full max-w-sm rounded-2xl p-7" style={{ background: T.card }}>
         <div className="flex items-center gap-2.5 mb-6">
           <img src={LOGO_DATA_URI} alt="Olhar de Mãe" style={{ width: 46, height: 46, objectFit: "contain" }} />
-          <div><div className="font-bold" style={{ color: T.text, fontFamily: "'Poppins', sans-serif" }}>Olhar de Mãe</div><div className="text-xs" style={{ color: T.muted }}>Painel de Gestão da Rede</div></div>
+          <div><div className="font-bold" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>Olhar de Mãe</div><div className="text-xs" style={{ color: T.muted }}>Painel de Gestão da Rede</div></div>
         </div>
         <div className="flex gap-2 mb-5">
           <button onClick={() => setMode("login")} className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ background: mode === "login" ? T.ink : "#F1EEE4", color: mode === "login" ? "#fff" : T.muted }}>Entrar</button>
@@ -275,28 +302,52 @@ function LoginScreen() {
   );
 }
 
+const TERMO_PROPRIEDADE = `Este sistema, incluindo seu código, layout, estrutura de dados, processos e identidade visual, é de propriedade exclusiva da Clínica Olhar de Mãe. Ao utilizar este sistema, o(a) colaborador(a) reconhece que não deve copiar, reproduzir, distribuir, sublicenciar ou utilizar para fins alheios à sua função qualquer parte do sistema, seus dados ou sua estrutura, mesmo após o encerramento do vínculo com a clínica. O uso do sistema é pessoal e intransferível, vinculado ao login individual de cada colaborador(a).`;
+const TERMO_LGPD = `Em conformidade com a Lei Geral de Proteção de Dados (Lei nº 13.709/2018 — LGPD), o(a) colaborador(a) declara estar ciente de que seus dados pessoais (nome, cargo, contato, produtividade, horários trabalhados, documentos enviados) serão tratados pela Clínica Olhar de Mãe exclusivamente para fins de gestão administrativa e de recursos humanos, com acesso restrito às pessoas autorizadas. O(a) colaborador(a) também se compromete a tratar os dados de pacientes aos quais tiver acesso através do sistema com sigilo e exclusivamente para o exercício de sua função, não os compartilhando, copiando ou utilizando para finalidade diversa.`;
+
+function TermoBox({ texto }) {
+  return <div className="rounded-lg p-3 text-xs max-h-32 overflow-y-auto mb-2" style={{ background: "#FBFAF6", border: `1px solid ${T.border}`, color: T.muted, lineHeight: 1.6 }}>{texto}</div>;
+}
+
 function OnboardingPerfil({ onDone }) {
   const { session, unidadesIniciais } = useAuth();
   const [nome, setNome] = useState(""); const [cargo, setCargo] = useState(""); const [busy, setBusy] = useState(false); const [erro, setErro] = useState(null);
+  const [aceitouPropriedade, setAceitouPropriedade] = useState(false);
+  const [aceitouLgpd, setAceitouLgpd] = useState(false);
   const salvar = async () => {
     setBusy(true); setErro(null);
     try {
       const unidadePadrao = unidadesIniciais[0];
       await sbRest("perfis", { method: "POST", token: session.access_token, body: { id: session.user.id, nome, cargo, unidade_id: unidadePadrao ? unidadePadrao.id : null, papel: "colaborador" } });
+      const unidadeId = unidadePadrao ? unidadePadrao.id : null;
+      await sbRest("termos_aceites", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, colaborador_id: session.user.id, tipo: "Propriedade Intelectual" } });
+      await sbRest("termos_aceites", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, colaborador_id: session.user.id, tipo: "LGPD" } });
       onDone();
     } catch (e) { setErro(e.message); }
     setBusy(false);
   };
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ background: T.canvas }}>
-      <Card className="w-full max-w-sm">
-        <p className="font-bold mb-1" style={{ color: T.text, fontFamily: "'Poppins', sans-serif" }}>Complete seu perfil</p>
+      <Card className="w-full max-w-md">
+        <p className="font-bold mb-1" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>Complete seu perfil</p>
         <p className="text-sm mb-4" style={{ color: T.muted }}>Só precisamos disso uma vez.</p>
         <div className="flex flex-col gap-3">
           <Field label="Seu nome"><input className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
           <Field label="Cargo"><input className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={cargo} onChange={(e) => setCargo(e.target.value)} /></Field>
+
+          <div className="mt-2">
+            <span className="text-[11px] font-semibold uppercase" style={{ color: T.muted, letterSpacing: "0.05em" }}>Termo de Propriedade Intelectual</span>
+            <TermoBox texto={TERMO_PROPRIEDADE} />
+            <label className="flex items-center gap-2 text-sm" style={{ color: T.text }}><input type="checkbox" checked={aceitouPropriedade} onChange={(e) => setAceitouPropriedade(e.target.checked)} /> Li e concordo com o Termo de Propriedade Intelectual</label>
+          </div>
+          <div>
+            <span className="text-[11px] font-semibold uppercase" style={{ color: T.muted, letterSpacing: "0.05em" }}>Termo de LGPD</span>
+            <TermoBox texto={TERMO_LGPD} />
+            <label className="flex items-center gap-2 text-sm" style={{ color: T.text }}><input type="checkbox" checked={aceitouLgpd} onChange={(e) => setAceitouLgpd(e.target.checked)} /> Li e concordo com o Termo de LGPD</label>
+          </div>
+
           {erro && <div className="text-sm" style={{ color: T.red }}>{erro}</div>}
-          <Btn onClick={salvar} disabled={busy || !nome}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Concluir</Btn>
+          <Btn onClick={salvar} disabled={busy || !nome || !aceitouPropriedade || !aceitouLgpd}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Concluir</Btn>
         </div>
       </Card>
     </div>
@@ -312,7 +363,7 @@ function DailyEntryPanel({ tone, fields, onSubmit, cta = "Registrar lançamento"
   return (
     <div className="rounded-2xl p-5 mb-6" style={{ background: `linear-gradient(135deg, ${color}10, ${color}05)`, border: `1px solid ${color}30` }}>
       <div className="flex items-center gap-2 mb-3.5">
-        <CalendarDays size={15} style={{ color }} /><span className="text-sm font-bold" style={{ color: T.text, fontFamily: "'Poppins', sans-serif" }}>Lançamento de hoje</span>
+        <CalendarDays size={15} style={{ color }} /><span className="text-sm font-bold" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>Lançamento de hoje</span>
         <span className="text-xs" style={{ color: T.muted }}>— preencha aqui diariamente</span>
       </div>
       <div className="flex flex-wrap gap-3 items-end">
@@ -333,7 +384,7 @@ function EditModal({ title, fields, initial, onSave, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "#13203099" }} onClick={onClose}>
       <div className="rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto" style={{ background: T.card }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 sticky top-0" style={{ background: T.card, borderBottom: `1px solid ${T.border}` }}>
-          <h3 className="font-bold" style={{ color: T.text, fontFamily: "'Poppins', sans-serif" }}>{title}</h3><button onClick={onClose}><X size={18} style={{ color: T.muted }} /></button>
+          <h3 className="font-bold" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{title}</h3><button onClick={onClose}><X size={18} style={{ color: T.muted }} /></button>
         </div>
         <div className="p-5 flex flex-col gap-3.5">{fields.filter((f) => !f.showIf || f.showIf(form)).map((f) => <Field key={f.key} label={f.label}><FieldInput f={f} value={form[f.key]} onChange={(v) => setForm((p) => ({ ...p, [f.key]: v }))} /></Field>)}</div>
         <div className="flex justify-end gap-2 px-5 py-4" style={{ borderTop: `1px solid ${T.border}` }}>
@@ -434,7 +485,7 @@ function ImportModal({ fields, onImport, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "#13203099" }} onClick={onClose}>
       <div className="rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" style={{ background: T.card }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 sticky top-0" style={{ background: T.card, borderBottom: `1px solid ${T.border}` }}>
-          <h3 className="font-bold flex items-center gap-2" style={{ color: T.text, fontFamily: "'Poppins', sans-serif" }}><FileSpreadsheet size={16} /> Importar planilha</h3>
+          <h3 className="font-bold flex items-center gap-2" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}><FileSpreadsheet size={16} /> Importar planilha</h3>
           <button onClick={onClose}><X size={18} style={{ color: T.muted }} /></button>
         </div>
         <div className="p-5">
@@ -640,7 +691,7 @@ function FinanceiroModulo() {
     { key: "data", label: "Data", render: (r) => fmtDate(r.data) },
     { key: "tipo", label: "Tipo", render: (r) => <Badge tone={r.tipo === "entrada" ? "green" : "red"}>{r.tipo === "entrada" ? "Entrada" : "Saída"}</Badge> },
     { key: "linha", label: "Linha DRE" }, { key: "descricao", label: "Descrição" },
-    { key: "valor", label: "Valor", render: (r) => <span style={{ color: r.tipo === "entrada" ? T.green : T.red, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(r.valor)}</span> },
+    { key: "valor", label: "Valor", render: (r) => <span style={{ color: r.tipo === "entrada" ? T.green : T.red, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(r.valor)}</span> },
   ];
   const entradas = data.filter((r) => r.tipo === "entrada").reduce((s, r) => s + r.valor, 0);
   const saidas = data.filter((r) => r.tipo === "saida").reduce((s, r) => s + r.valor, 0);
@@ -655,7 +706,7 @@ function FinanceiroModulo() {
   const DreLine = ({ label, value, bold }) => (
     <div className="flex justify-between py-1.5" style={{ borderBottom: `1px solid ${T.border}`, paddingLeft: bold ? 0 : 16 }}>
       <span className={bold ? "font-bold" : ""} style={{ color: bold ? T.text : T.muted, fontSize: bold ? 14 : 13 }}>{label}</span>
-      <span className={bold ? "font-bold" : ""} style={{ color: T.text, fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>{fmtBRL(value)}</span>
+      <span className={bold ? "font-bold" : ""} style={{ color: T.text, fontFamily: "'Roboto', sans-serif", fontSize: 13 }}>{fmtBRL(value)}</span>
     </div>
   );
   return (
@@ -671,7 +722,7 @@ function FinanceiroModulo() {
         <div className="max-w-lg">{receitas.map((r) => <DreLine key={r.linha} label={r.linha} value={r.valor} />)}<DreLine label="(=) Receita Total" value={totalReceita} bold />
         {custos.map((r) => <DreLine key={r.linha} label={`(-) ${r.linha}`} value={r.valor} />)}<DreLine label="(=) Lucro Bruto" value={lucroBruto} bold />
         {despesas.map((r) => <DreLine key={r.linha} label={`(-) ${r.linha}`} value={r.valor} />)}{impostos.map((r) => <DreLine key={r.linha} label={`(-) ${r.linha}`} value={r.valor} />)}
-        <div className="flex justify-between py-2 mt-1"><span className="font-bold text-sm" style={{ color: T.text }}>(=) Resultado do Período</span><span className="font-bold" style={{ color: resultado >= 0 ? T.green : T.red, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(resultado)}</span></div></div></Card>} />
+        <div className="flex justify-between py-2 mt-1"><span className="font-bold text-sm" style={{ color: T.text }}>(=) Resultado do Período</span><span className="font-bold" style={{ color: resultado >= 0 ? T.green : T.red, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(resultado)}</span></div></div></Card>} />
   );
 }
 
@@ -696,7 +747,7 @@ function ConveniosModulo() {
     { key: "valorUnitario", label: "Valor unit.", render: (r) => fmtBRL(r.valorUnitario) },
     { key: "valor", label: "Valor bruto", render: (r) => fmtBRL(r.valor) },
     { key: "aliquotaImposto", label: "Imposto", render: (r) => fmtPct(r.aliquotaImposto) },
-    { key: "valorLiquido", label: "Valor líquido", render: (r) => <span style={{ color: T.green, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(r.valorLiquido)}</span> },
+    { key: "valorLiquido", label: "Valor líquido", render: (r) => <span style={{ color: T.green, fontWeight: 600, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(r.valorLiquido)}</span> },
   ];
   const porConvenio = useMemo(() => { const map = {}; data.forEach((r) => { if (!map[r.convenio]) map[r.convenio] = { convenio: r.convenio, quantidade: 0, valor: 0 }; map[r.convenio].quantidade += Number(r.quantidade); map[r.convenio].valor += Number(r.valorLiquido ?? r.valor); }); return Object.values(map).sort((a, b) => b.valor - a.valor); }, [data]);
   const totalAtend = data.reduce((s, r) => s + Number(r.quantidade), 0);
@@ -727,6 +778,38 @@ function VacinasModulo() {
       kpis={[{ label: "Estoque (custo)", value: fmtBRL(valorEstoqueCompra) }, { label: "Estoque (revenda)", value: fmtBRL(valorEstoqueVenda), tone: "green" }, { label: "Receita de vendas/mês", value: fmtBRL(receitaVendasMes), tone: "coral" }, { label: "Abaixo do mínimo", value: abaixoMinimo.length, tone: abaixoMinimo.length ? "red" : "green" }]}
       charts={<ChartCard title="Estoque atual x estoque mínimo, por vacina"><BarChart data={data}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="nome" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-15} textAnchor="end" height={60} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="qtdEstoque" name="Em estoque" fill={T.amber} radius={[4, 4, 0, 0]} /><Bar dataKey="qtdMinima" name="Mínimo" fill={`${T.amber}55`} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>}
       extra={abaixoMinimo.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.red}55` }}><div className="flex items-center gap-2 mb-1"><AlertTriangle size={15} style={{ color: T.red }} /><span className="font-semibold text-sm" style={{ color: T.red }}>Reposição necessária</span></div><p className="text-sm" style={{ color: T.muted }}>{abaixoMinimo.map((r) => r.nome).join(", ")} — abaixo do estoque mínimo.</p></Card>} />
+  );
+}
+
+function PosVendaModulo() {
+  const { session } = useAuth();
+  const { data, add, update, remove, loading, erro } = useRecords("posVenda");
+  const fields = [
+    { key: "paciente", label: "Paciente / contato", type: "text" },
+    { key: "telefone", label: "Telefone", type: "text", required: false },
+    { key: "data", label: "Data da ligação", type: "date", default: todayISO() },
+    { key: "convertida", label: "Ligação convertida?", type: "select", options: ["Sim", "Não"], default: "Não" },
+    { key: "agendamentoFeito", label: "Agendamento feito?", type: "select", options: ["Sim", "Não"], default: "Não" },
+    { key: "dataAgendamento", label: "Data do agendamento", type: "date", required: false, showIf: (f) => f.agendamentoFeito === "Sim" },
+    { key: "observacoes", label: "Observações — anote tudo que o paciente falou", type: "textarea", required: false },
+  ];
+  const onAddConvertido = (record) => add({ ...record, convertida: record.convertida === "Sim", agendamentoFeito: record.agendamentoFeito === "Sim" });
+  const onUpdateConvertido = (id, record) => update(id, { ...record, convertida: record.convertida === "Sim", agendamentoFeito: record.agendamentoFeito === "Sim" });
+  const columns = [
+    { key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "paciente", label: "Paciente" }, { key: "telefone", label: "Telefone" },
+    { key: "convertida", label: "Convertida", render: (r) => <Badge tone={r.convertida ? "green" : "muted"}>{r.convertida ? "Sim" : "Não"}</Badge> },
+    { key: "agendamentoFeito", label: "Agendamento", render: (r) => r.agendamentoFeito ? <Badge tone="teal">{fmtDate(r.dataAgendamento)}</Badge> : <span style={{ color: T.muted }}>—</span> },
+    { key: "observacoes", label: "Observações" },
+  ];
+  const total = data.length;
+  const convertidas = data.filter((r) => r.convertida).length;
+  const agendamentos = data.filter((r) => r.agendamentoFeito).length;
+  const taxaConversao = total ? (convertidas / total) * 100 : 0;
+  const rowsParaForm = data.map((r) => ({ ...r, convertida: r.convertida ? "Sim" : "Não", agendamentoFeito: r.agendamentoFeito ? "Sim" : "Não" }));
+  return (
+    <ModuleShell icon={Megaphone} title="Pós-venda" subtitle="Ligações realizadas, conversão e agendamentos — com observações detalhadas" tone="rose" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Registrar ligação" fields={fields} columns={columns} rows={rowsParaForm} onAdd={onAddConvertido} onUpdate={onUpdateConvertido} onDelete={remove}
+      kpis={[{ label: "Ligações registradas", value: total }, { label: "Convertidas", value: convertidas, tone: "green" }, { label: "Taxa de conversão", value: fmtPct(taxaConversao), tone: taxaConversao >= 30 ? "green" : "amber" }, { label: "Agendamentos feitos", value: agendamentos, tone: "teal" }]} />
   );
 }
 
@@ -765,7 +848,7 @@ function VendasVacinasModulo() {
     { key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "vacina", label: "Vacina" }, { key: "quantidade", label: "Qtd." },
     { key: "valorUnitario", label: "Valor unit.", render: (r) => fmtBRL(r.valorUnitario) },
     { key: "descontoPct", label: "Desconto", render: (r) => fmtPct(r.descontoPct) },
-    { key: "valorTotal", label: "Total", render: (r) => <span style={{ color: T.green, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(r.valorTotal)}</span> },
+    { key: "valorTotal", label: "Total", render: (r) => <span style={{ color: T.green, fontWeight: 600, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(r.valorTotal)}</span> },
   ];
   const totalVendido = vendas.reduce((s, r) => s + r.valorTotal, 0);
   const totalQtd = vendas.reduce((s, r) => s + Number(r.quantidade), 0);
@@ -814,7 +897,7 @@ function ProducaoModulo() {
     { key: "profissional", label: "Profissional" }, { key: "mes", label: "Mês" }, { key: "atendimentos", label: "Atendimentos" },
     { key: "receita", label: "Receita", render: (r) => fmtBRL(r.receita) },
     { key: "custo", label: "Custo", render: (r) => <span>{fmtBRL(r.custo)}{r.tipoRepasse === "Percentual" && <span className="text-xs" style={{ color: T.muted }}> ({r.percentualRepasse}%)</span>}</span> },
-    { key: "rentabilidade", label: "Rentabilidade", render: (r) => { const rent = r.receita - r.custo; return <span style={{ color: rent >= 0 ? T.green : T.red, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(rent)}</span>; } },
+    { key: "rentabilidade", label: "Rentabilidade", render: (r) => { const rent = r.receita - r.custo; return <span style={{ color: rent >= 0 ? T.green : T.red, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(rent)}</span>; } },
     { key: "margem", label: "Margem", render: (r) => fmtPct(r.receita ? ((r.receita - r.custo) / r.receita) * 100 : 0) },
   ];
   const chartData = data.map((r) => ({ profissional: r.profissional.replace(/^Dr[a]?\.\s*/, ""), receita: r.receita, custo: r.custo, rentabilidade: r.receita - r.custo }));
@@ -840,7 +923,7 @@ function ContasModulo() {
       dailyFields={fields} dailyCta="Lançar conta" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Total pendente", value: fmtBRL(totalPendente), tone: "amber" }, { label: "Total pago", value: fmtBRL(totalPago), tone: "green" }, { label: "Atrasadas", value: atrasados.length, tone: atrasados.length ? "red" : "green" }, { label: "Vencendo em 7 dias", value: proximos.length, tone: proximos.length ? "amber" : "green" }]}
       charts={<ChartCard title="Valor pendente por categoria"><BarChart data={porCategoria}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="categoria" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="valor" fill={T.coral} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>}
-      extra={proximos.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><div className="flex items-center gap-2 mb-2"><AlertTriangle size={15} style={{ color: T.amber }} /><span className="font-semibold text-sm" style={{ color: T.text }}>Vencimentos nos próximos 7 dias</span></div><div className="flex flex-col gap-1.5">{proximos.map((r) => (<div key={r.id} className="flex justify-between text-sm"><span style={{ color: T.muted }}>{r.descricao} — {fmtDate(r.vencimento)}</span><span style={{ color: T.text, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(r.valor)}</span></div>))}</div></Card>} />
+      extra={proximos.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><div className="flex items-center gap-2 mb-2"><AlertTriangle size={15} style={{ color: T.amber }} /><span className="font-semibold text-sm" style={{ color: T.text }}>Vencimentos nos próximos 7 dias</span></div><div className="flex flex-col gap-1.5">{proximos.map((r) => (<div key={r.id} className="flex justify-between text-sm"><span style={{ color: T.muted }}>{r.descricao} — {fmtDate(r.vencimento)}</span><span style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(r.valor)}</span></div>))}</div></Card>} />
   );
 }
 
@@ -901,7 +984,7 @@ function SublocacaoModulo() {
                   <td className="py-2 px-2 font-medium" style={{ color: T.text }}>{l.profissional}</td>
                   <td className="py-2 px-2">{l.mes}</td>
                   <td className="py-2 px-2">{l.config.tipoSublocacao}</td>
-                  <td className="py-2 px-2" style={{ color: T.green, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(l.valorSublocacao)}</td>
+                  <td className="py-2 px-2" style={{ color: T.green, fontWeight: 600, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(l.valorSublocacao)}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -928,7 +1011,7 @@ function RepasseMedicoModulo() {
     { key: "valorConvenio", label: "Convênios", render: (r) => fmtBRL(r.valorConvenio) },
     { key: "valorPlantao", label: "Plantão", render: (r) => fmtBRL(r.valorPlantao) },
     { key: "valorVacinas", label: "Vacinas", render: (r) => <span title={`${r.qtdVacinas} × ${fmtBRL(r.valorPorVacina)}`}>{fmtBRL(r.valorVacinas)}</span> },
-    { key: "total", label: "Total a repassar", render: (r) => <span style={{ color: T.green, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(r.total)}</span> },
+    { key: "total", label: "Total a repassar", render: (r) => <span style={{ color: T.green, fontWeight: 700, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(r.total)}</span> },
   ];
   const totalGeral = withTotal.reduce((s, r) => s + r.total, 0);
   const porMedico = useMemo(() => { const map = {}; withTotal.forEach((r) => { map[r.medico] = (map[r.medico] || 0) + r.total; }); return Object.entries(map).map(([medico, total]) => ({ medico, total })).sort((a, b) => b.total - a.total); }, [withTotal]);
@@ -989,7 +1072,7 @@ function PessoalModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("pessoal");
   const fields = [{ key: "nome", label: "Colaborador(a)", type: "text" }, { key: "cargo", label: "Cargo", type: "text" }, { key: "equipe", label: "Equipe", type: "select", options: ["Recepção", "Financeiro", "Marketing", "Enfermagem", "Administrativo", "Outra"] }, { key: "mes", label: "Mês (AAAA-MM)", type: "text", default: todayISO().slice(0, 7) }, { key: "metaMensal", label: "Meta mensal (agendados)", type: "number" }, { key: "ligacoes", label: "Ligações atendidas", type: "number" }, { key: "mensagens", label: "Mensagens respondidas", type: "number" }, { key: "agendados", label: "Pacientes agendados", type: "number" }];
   const withPct = data.map((r) => ({ ...r, pct: r.metaMensal ? (r.agendados / r.metaMensal) * 100 : (r.ligacoes + r.mensagens > 0 ? 100 : 0) }));
-  const columns = [{ key: "nome", label: "Colaborador(a)" }, { key: "equipe", label: "Equipe" }, { key: "ligacoes", label: "Ligações" }, { key: "mensagens", label: "Mensagens" }, { key: "agendados", label: "Agendados" }, { key: "pct", label: "Meta atingida", render: (r) => (<div className="flex items-center gap-2 min-w-[110px]"><Progress pct={r.pct} /><span className="text-xs font-semibold" style={{ color: T.text, fontFamily: "'JetBrains Mono', monospace" }}>{fmtPct(r.pct)}</span></div>) }];
+  const columns = [{ key: "nome", label: "Colaborador(a)" }, { key: "equipe", label: "Equipe" }, { key: "ligacoes", label: "Ligações" }, { key: "mensagens", label: "Mensagens" }, { key: "agendados", label: "Agendados" }, { key: "pct", label: "Meta atingida", render: (r) => (<div className="flex items-center gap-2 min-w-[110px]"><Progress pct={r.pct} /><span className="text-xs font-semibold" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{fmtPct(r.pct)}</span></div>) }];
   const porEquipe = useMemo(() => { const map = {}; withPct.forEach((r) => { if (!map[r.equipe]) map[r.equipe] = { equipe: r.equipe, soma: 0, n: 0 }; map[r.equipe].soma += r.pct; map[r.equipe].n += 1; }); return Object.values(map).map((e) => ({ equipe: e.equipe, media: e.soma / e.n })).sort((a, b) => b.media - a.media); }, [withPct]);
   const destaque = [...withPct].sort((a, b) => b.pct - a.pct)[0]; const mediaGeral = withPct.length ? withPct.reduce((s, r) => s + r.pct, 0) / withPct.length : 0;
   return (
@@ -1102,7 +1185,7 @@ function VisaoGeral() {
     <div>
       {/* Saudação */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold mb-1" style={{ color: T.text, fontFamily: "'Poppins', sans-serif" }}>Olá, {primeiroNome} 👋</h1>
+        <h1 className="text-2xl font-bold mb-1" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>Olá, {primeiroNome} 👋</h1>
         <p className="text-sm" style={{ color: T.muted }}>Bem-vinda ao Painel Administrativo — {unidade ? unidade.nome : "Olhar de Mãe"}</p>
         <p className="text-xs mt-0.5" style={{ color: T.muted }}>Hoje é {weekdayLong()}</p>
       </div>
@@ -1114,7 +1197,7 @@ function VisaoGeral() {
           {/* Receita — hierarquia visual: número gigante primeiro */}
           <div className="rounded-[20px] p-7 mb-6 shadow-sm" style={{ background: `linear-gradient(135deg, ${T.tealDeep}, ${T.teal})` }}>
             <div className="flex items-center gap-2 mb-2"><span style={{ color: "#D7F2F4" }}>📈</span><span className="text-xs font-semibold uppercase" style={{ color: "#D7F2F4", letterSpacing: "0.08em" }}>Receita do mês</span></div>
-            <div className="text-5xl font-extrabold mb-2" style={{ color: "#fff", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "-0.02em" }}>{fmtBRL(entradasMes)}</div>
+            <div className="text-5xl font-extrabold mb-2" style={{ color: "#fff", fontFamily: "'Roboto', sans-serif", letterSpacing: "-0.02em" }}>{fmtBRL(entradasMes)}</div>
             {tendenciaReceita !== null && (
               <div className="flex items-center gap-1.5 text-sm font-medium" style={{ color: tendenciaReceita >= 0 ? "#C8F5D8" : "#FBD5D0" }}>
                 <span>{tendenciaReceita >= 0 ? "▲" : "▼"} {Math.abs(tendenciaReceita).toFixed(0)}%</span>
@@ -1153,13 +1236,13 @@ function VisaoGeral() {
             <Card>
               <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Últimos recebimentos</p>
               {ultimosRecebimentos.length === 0 ? <p className="text-sm py-4" style={{ color: T.muted }}>Nenhum lançamento ainda.</p> : (
-                <div className="flex flex-col gap-2">{ultimosRecebimentos.map((r) => (<div key={r.id} className="flex items-center justify-between text-sm py-1.5" style={{ borderBottom: `1px solid ${T.border}` }}><span style={{ color: T.text }}>{r.descricao || r.linha}<span className="block text-xs" style={{ color: T.muted }}>{fmtDate(r.data)}</span></span><span style={{ color: T.green, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(r.valor)}</span></div>))}</div>
+                <div className="flex flex-col gap-2">{ultimosRecebimentos.map((r) => (<div key={r.id} className="flex items-center justify-between text-sm py-1.5" style={{ borderBottom: `1px solid ${T.border}` }}><span style={{ color: T.text }}>{r.descricao || r.linha}<span className="block text-xs" style={{ color: T.muted }}>{fmtDate(r.data)}</span></span><span style={{ color: T.green, fontWeight: 600, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(r.valor)}</span></div>))}</div>
               )}
             </Card>
             <Card>
               <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Últimos pagamentos</p>
               {ultimosPagamentos.length === 0 ? <p className="text-sm py-4" style={{ color: T.muted }}>Nenhum lançamento ainda.</p> : (
-                <div className="flex flex-col gap-2">{ultimosPagamentos.map((r) => (<div key={r.id} className="flex items-center justify-between text-sm py-1.5" style={{ borderBottom: `1px solid ${T.border}` }}><span style={{ color: T.text }}>{r.descricao || r.linha}<span className="block text-xs" style={{ color: T.muted }}>{fmtDate(r.data)}</span></span><span style={{ color: T.coral, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>{fmtBRL(r.valor)}</span></div>))}</div>
+                <div className="flex flex-col gap-2">{ultimosPagamentos.map((r) => (<div key={r.id} className="flex items-center justify-between text-sm py-1.5" style={{ borderBottom: `1px solid ${T.border}` }}><span style={{ color: T.text }}>{r.descricao || r.linha}<span className="block text-xs" style={{ color: T.muted }}>{fmtDate(r.data)}</span></span><span style={{ color: T.coral, fontWeight: 600, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(r.valor)}</span></div>))}</div>
               )}
             </Card>
           </div>
@@ -1182,6 +1265,41 @@ function VisaoGeral() {
 }
 
 /* ============================== UNIDADES ============================== */
+function AparenciaModulo() {
+  const { unidade, atualizarCores } = useUnidade();
+  const [primaria, setPrimaria] = useState((unidade && unidade.cor_primaria) || DEFAULT_PRIMARY);
+  const [secundaria, setSecundaria] = useState((unidade && unidade.cor_secundaria) || DEFAULT_SECONDARY);
+  const [busy, setBusy] = useState(false);
+  const salvar = async () => { setBusy(true); await atualizarCores(primaria, secundaria); setBusy(false); };
+  const restaurar = async () => { setPrimaria(DEFAULT_PRIMARY); setSecundaria(DEFAULT_SECONDARY); setBusy(true); await atualizarCores(DEFAULT_PRIMARY, DEFAULT_SECONDARY); setBusy(false); };
+  return (
+    <div>
+      <SectionHeader icon={Sparkles} title="Aparência" subtitle="Personalize as cores do sistema para esta unidade" tone="ink" />
+      <Card className="mb-5">
+        <div className="flex flex-wrap gap-6 items-end mb-5">
+          <Field label="Cor primária (botões, destaques)">
+            <div className="flex items-center gap-2"><input type="color" value={primaria} onChange={(e) => setPrimaria(e.target.value)} className="w-12 h-10 rounded cursor-pointer" style={{ border: `1px solid ${T.border}` }} /><span className="text-sm" style={{ color: T.muted, fontFamily: "'Roboto', sans-serif" }}>{primaria}</span></div>
+          </Field>
+          <Field label="Cor secundária (menu, ícones)">
+            <div className="flex items-center gap-2"><input type="color" value={secundaria} onChange={(e) => setSecundaria(e.target.value)} className="w-12 h-10 rounded cursor-pointer" style={{ border: `1px solid ${T.border}` }} /><span className="text-sm" style={{ color: T.muted, fontFamily: "'Roboto', sans-serif" }}>{secundaria}</span></div>
+          </Field>
+        </div>
+        <div className="flex gap-2">
+          <Btn disabled={busy} onClick={salvar}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Salvar cores</Btn>
+          <Btn variant="ghost" disabled={busy} onClick={restaurar}>Restaurar cores padrão</Btn>
+        </div>
+      </Card>
+      <Card>
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Pré-visualização</p>
+        <div className="flex flex-wrap gap-3">
+          <div className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: primaria }}>Botão primário</div>
+          <div className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: secundaria }}>Menu / destaque</div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function UnidadesModulo() {
   const { unidadeId, unidades, setUnidadeId, addUnidade, reloadUnidades } = useUnidade();
   const { perfil } = useAuth();
@@ -1354,6 +1472,40 @@ function MeusHorarios() {
   );
 }
 
+const TERMO_USO_IMAGEM = `Autorizo a Clínica Olhar de Mãe a utilizar minha imagem (fotos e vídeos captados durante o exercício da função, eventos internos ou materiais institucionais) para fins de divulgação interna e em redes sociais, site e materiais de marketing da clínica, sem que isso gere direito a qualquer tipo de remuneração. Esta autorização é válida enquanto durar o vínculo com a clínica e pode ser revogada a qualquer momento mediante solicitação por escrito.`;
+
+function TermoUsoImagem() {
+  const { session, perfil } = useAuth();
+  const { unidadeId } = useUnidade();
+  const [aceite, setAceite] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    sbRest(`termos_aceites?colaborador_id=eq.${perfil.id}&tipo=eq.Uso de Imagem&select=*&order=aceito_em.desc&limit=1`, { token: session.access_token })
+      .then((r) => setAceite(r && r[0] ? r[0] : null)).finally(() => setLoading(false));
+  }, []);
+  const assinar = async () => {
+    setBusy(true);
+    try {
+      await sbRest("termos_aceites", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, colaborador_id: perfil.id, tipo: "Uso de Imagem" } });
+      const r = await sbRest(`termos_aceites?colaborador_id=eq.${perfil.id}&tipo=eq.Uso de Imagem&select=*&order=aceito_em.desc&limit=1`, { token: session.access_token });
+      setAceite(r && r[0] ? r[0] : null);
+    } catch (e) { alert("Não foi possível assinar: " + e.message); }
+    setBusy(false);
+  };
+  return (
+    <Card className="mb-5">
+      <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Termo de Consentimento de Uso de Imagem</p>
+      <TermoBox texto={TERMO_USO_IMAGEM} />
+      {loading ? <p className="text-sm" style={{ color: T.muted }}>Carregando…</p> : aceite ? (
+        <div className="flex items-center gap-2 text-sm" style={{ color: T.green }}><CheckCircle2 size={16} /> Assinado em {fmtDate(aceite.aceito_em.slice(0, 10))}</div>
+      ) : (
+        <Btn disabled={busy} onClick={assinar}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Assinar termo</Btn>
+      )}
+    </Card>
+  );
+}
+
 function MeuRHModulo() {
   return (
     <div>
@@ -1362,6 +1514,7 @@ function MeuRHModulo() {
       <MeusDocumentos />
       <EnviarAtestado />
       <MeusHorarios />
+      <TermoUsoImagem />
     </div>
   );
 }
@@ -1572,7 +1725,7 @@ function MetasModulo() {
     { key: "valorMeta", label: "Meta", render: (r) => fmtValor(r.categoria, r.valorMeta) },
     { key: "realizado", label: "Realizado", render: (r) => fmtValor(r.categoria, r.realizado) },
     { key: "falta", label: "Falta", render: (r) => <span style={{ color: r.falta > 0 ? T.amber : T.green }}>{fmtValor(r.categoria, r.falta)}</span> },
-    { key: "pct", label: "Atingido", render: (r) => (<div className="flex items-center gap-2 min-w-[110px]"><Progress pct={r.pct} /><span className="text-xs font-semibold" style={{ color: T.text, fontFamily: "'JetBrains Mono', monospace" }}>{fmtPct(r.pct)}</span></div>) },
+    { key: "pct", label: "Atingido", render: (r) => (<div className="flex items-center gap-2 min-w-[110px]"><Progress pct={r.pct} /><span className="text-xs font-semibold" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{fmtPct(r.pct)}</span></div>) },
   ];
   const mesAtual = todayISO().slice(0, 7);
   const metasDoMes = withRealizado.filter((r) => r.mes === mesAtual);
@@ -1600,6 +1753,7 @@ function EquipeModulo() {
   const [prod, setProd] = useState([]);
   const [horas, setHoras] = useState([]);
   const [atestados, setAtestados] = useState([]);
+  const [termos, setTermos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(null);
   const mesAtual = todayISO().slice(0, 7);
@@ -1608,13 +1762,14 @@ function EquipeModulo() {
     (async () => {
       setLoading(true); setErro(null);
       try {
-        const [cs, pd, hr, at] = await Promise.all([
+        const [cs, pd, hr, at, tm] = await Promise.all([
           sbRest(`perfis?unidade_id=eq.${unidadeId}&select=id,nome,cargo,papel&order=nome.asc`, { token: session.access_token }),
           sbRest(`producao_diaria_colaborador?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
           sbRest(`rh_horas?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
           sbRest(`rh_atestados?unidade_id=eq.${unidadeId}&select=*&order=data.desc`, { token: session.access_token }),
+          sbRest(`termos_aceites?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
         ]);
-        setColaboradores(cs || []); setProd(pd || []); setHoras(hr || []); setAtestados(at || []);
+        setColaboradores(cs || []); setProd(pd || []); setHoras(hr || []); setAtestados(at || []); setTermos(tm || []);
       } catch (e) { setErro(e.message); }
       setLoading(false);
     })();
@@ -1672,6 +1827,33 @@ function EquipeModulo() {
                   <td className="py-2 px-2">{r.atestados}</td>
                 </tr>
               ))}</tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+      <Card className="mt-5">
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Termos assinados</p>
+        {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> : (
+          <div className="overflow-x-auto -mx-5 px-5">
+            <table className="w-full text-sm min-w-[560px]">
+              <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Nome</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Propriedade Intelectual</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>LGPD</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Uso de Imagem</th>
+              </tr></thead>
+              <tbody>{colaboradores.map((c) => {
+                const tem = (tipo) => termos.find((t) => t.colaborador_id === c.id && t.tipo === tipo);
+                const Celula = ({ tipo }) => { const t = tem(tipo); return t ? <Badge tone="green">Assinado {fmtDate(t.aceito_em.slice(0, 10))}</Badge> : <Badge tone="red">Pendente</Badge>; };
+                return (
+                  <tr key={c.id} style={{ borderBottom: `1px solid ${T.border}` }}>
+                    <td className="py-2 px-2 font-medium" style={{ color: T.text }}>{c.nome}</td>
+                    <td className="py-2 px-2"><Celula tipo="Propriedade Intelectual" /></td>
+                    <td className="py-2 px-2"><Celula tipo="LGPD" /></td>
+                    <td className="py-2 px-2"><Celula tipo="Uso de Imagem" /></td>
+                  </tr>
+                );
+              })}</tbody>
             </table>
           </div>
         )}
@@ -1773,10 +1955,10 @@ const ALL_MENU = [
   { group: "Atendimento", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producao", label: "Produção Médica", icon: Stethoscope, tone: "teal" }, { key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
   { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }] },
   { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" }] },
-  { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }] },
+  { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }] },
   { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
   { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }] },
-  { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }] },
+  { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }] },
 ];
 const FINANCE_TABS = ["financeiro", "contas", "faturamento", "repasse", "sublocacao", "equipe", "metas", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
@@ -1795,6 +1977,10 @@ const RESTRICTED_MENUS = {
     { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
     { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" },
     { key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" },
+  ] },
+  posvenda: { group: "Minha área", items: [
+    { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
+    { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" },
   ] },
 };
 
@@ -1821,6 +2007,7 @@ function AppInner() {
       case "pessoal": return <PessoalModulo />;
       case "meurh": return <MeuRHModulo />;
       case "marketing": return <MarketingModulo />;
+      case "posVenda": return <PosVendaModulo />;
       case "procedimentos": return <ProcedimentosModulo />;
       case "faturamento": return <FaturamentoModulo />;
       case "repasse": return <RepasseMedicoModulo />;
@@ -1834,17 +2021,18 @@ function AppInner() {
       case "cadFornecedores": return <CadastroFornecedoresModulo />;
       case "cadTestesGeneticos": return <CadastroTestesGeneticosModulo />;
       case "unidades": return <UnidadesModulo />;
+      case "aparencia": return <AparenciaModulo />;
       default: return null;
     }
   };
   return (
     <div style={{ background: T.canvas, minHeight: "100vh", fontFamily: "'Inter', sans-serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600;700&display=swap'); * { box-sizing: border-box; }`}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800&display=swap'); * { box-sizing: border-box; font-family: 'Roboto', sans-serif; }`}</style>
       <div className="flex">
         <aside className={`fixed md:sticky z-40 top-0 left-0 h-screen md:h-screen w-72 flex-shrink-0 transition-transform overflow-y-auto ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`} style={{ background: T.sidebar }}>
           <div className="px-5 py-6 flex items-center gap-3" style={{ borderBottom: "1px solid #FFFFFF14" }}>
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: "#FFFFFF" }}><img src={LOGO_DATA_URI} alt="Olhar de Mãe" style={{ width: 44, height: 44, objectFit: "contain" }} /></div>
-            <div><div className="text-base font-bold" style={{ color: "#fff", fontFamily: "'Poppins', sans-serif" }}>Olhar de Mãe</div><div className="text-xs" style={{ color: "#9FD4D9" }}>Painel de Gestão da Rede</div></div>
+            <div><div className="text-base font-bold" style={{ color: "#fff", fontFamily: "'Roboto', sans-serif" }}>Olhar de Mãe</div><div className="text-xs" style={{ color: "#9FD4D9" }}>Painel de Gestão da Rede</div></div>
           </div>
           <div className="px-5 py-3.5" style={{ borderBottom: "1px solid #FFFFFF14" }}>
             <div className="text-sm font-semibold" style={{ color: "#fff" }}>{perfil ? perfil.nome : ""}</div>
@@ -1873,11 +2061,11 @@ function AppInner() {
             <button onClick={() => setSidebarOpen(true)} className="px-3 py-1.5 rounded-lg text-xs" style={{ background: "#FFFFFF1A", color: "#fff" }}>Menu</button>
           </div>
           <div className="hidden md:flex items-center justify-between px-8 py-4" style={{ background: T.card, borderBottom: `1px solid ${T.border}` }}>
-            <h1 className="text-lg font-bold" style={{ color: T.text, fontFamily: "'Poppins', sans-serif" }}>{activeMeta.label}</h1>
+            <h1 className="text-lg font-bold" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{activeMeta.label}</h1>
             <div className="flex items-center gap-4">
               <Btn tone="coral" icon={Plus} onClick={() => setTab("convenios")}>Novo Atendimento</Btn>
               <div className="flex items-center gap-3 pl-2" style={{ borderLeft: `1px solid ${T.border}` }}>
-                <button title="Notificações"><Bell size={18} style={{ color: T.muted }} /></button>
+                <NotificationsMenu setTab={setTab} />
                 <button title="Configurações" onClick={() => setTab("unidades")}><Settings size={18} style={{ color: T.muted }} /></button>
                 <ProfileMenu />
               </div>
@@ -1889,6 +2077,46 @@ function AppInner() {
     </div>
   );
 }
+function NotificationsMenu({ setTab }) {
+  const { perfil } = useAuth();
+  const canFinance = perfil && perfil.papel !== "operacional";
+  const [open, setOpen] = useState(false);
+  const vacinas = useRecords("vacinas");
+  const insumos = useRecords("insumos");
+  const contas = useRecords("contas", canFinance);
+  const leads = useRecords("marketing");
+  const loading = vacinas.loading || insumos.loading || contas.loading || leads.loading;
+
+  const notificacoes = [
+    ...vacinas.data.filter((v) => v.qtdEstoque < v.qtdMinima).map((v) => ({ texto: `Vacina "${v.nome}" abaixo do estoque mínimo`, tone: "red", tab: "vacinas" })),
+    ...insumos.data.filter((i) => i.qtd < i.qtdMinima).map((i) => ({ texto: `Insumo "${i.nome}" em ponto crítico`, tone: "red", tab: "insumos" })),
+    ...(canFinance ? contas.data.filter((c) => c.status === "Atrasado" || (c.status === "Pendente" && c.vencimento < todayISO())).map((c) => ({ texto: `Conta "${c.descricao}" vencida ou vencendo`, tone: "amber", tab: "contas" })) : []),
+    ...leads.data.filter((l) => l.status === "Novo").map((l) => ({ texto: `Lead novo: ${l.nome} — ainda não contatado`, tone: "teal", tab: "marketing" })),
+  ];
+
+  return (
+    <div className="relative">
+      <button title="Notificações" onClick={() => setOpen((o) => !o)} className="relative">
+        <Bell size={18} style={{ color: T.muted }} />
+        {notificacoes.length > 0 && <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: T.coral }}>{notificacoes.length > 9 ? "9+" : notificacoes.length}</span>}
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 w-80 rounded-xl overflow-hidden z-50 shadow-lg max-h-96 overflow-y-auto" style={{ background: T.card, border: `1px solid ${T.border}` }} onMouseLeave={() => setOpen(false)}>
+          <div className="px-4 py-3 sticky top-0" style={{ background: T.card, borderBottom: `1px solid ${T.border}` }}><span className="text-sm font-semibold" style={{ color: T.text }}>Notificações</span></div>
+          {loading ? <div className="px-4 py-6 text-sm text-center" style={{ color: T.muted }}>Carregando…</div> :
+            notificacoes.length === 0 ? <div className="px-4 py-6 text-sm text-center" style={{ color: T.muted }}>Tudo em dia — nenhum alerta no momento.</div> :
+            notificacoes.map((n, i) => (
+              <button key={i} onClick={() => { setTab(n.tab); setOpen(false); }} className="w-full text-left px-4 py-3 text-sm flex items-start gap-2" style={{ borderBottom: `1px solid ${T.border}` }}>
+                <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: n.tone === "red" ? T.red : n.tone === "amber" ? T.amber : T.teal }} />
+                <span style={{ color: T.text }}>{n.texto}</span>
+              </button>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProfileMenu() {
   const { perfil, logout } = useAuth();
   const [open, setOpen] = useState(false);
@@ -1953,10 +2181,22 @@ function UnidadeProvider({ children }) {
     if (row && row[0]) setUnidadeId(row[0].id);
   };
 
-  if (loading || !unidadeId) return <div className="min-h-screen flex items-center justify-center" style={{ background: T.canvas, color: T.muted }}><Loader2 size={20} className="animate-spin mr-2" /> Carregando unidades…</div>;
+  const [, forcarAtualizacao] = useReducer((x) => x + 1, 0);
+  const atualizarCores = async (corPrimaria, corSecundaria) => {
+    await sbRest(`unidades?id=eq.${unidadeId}`, { method: "PATCH", token: session.access_token, body: { cor_primaria: corPrimaria, cor_secundaria: corSecundaria } });
+    applyTheme(corPrimaria, corSecundaria);
+    await reloadUnidades();
+    forcarAtualizacao();
+  };
 
   const unidade = unidades.find((u) => u.id === unidadeId);
-  return <UnidadeContext.Provider value={{ unidadeId, unidade, unidades, setUnidadeId, addUnidade, reloadUnidades }}>{children}</UnidadeContext.Provider>;
+  useEffect(() => {
+    if (unidade) { applyTheme(unidade.cor_primaria, unidade.cor_secundaria); forcarAtualizacao(); }
+  }, [unidade && unidade.id, unidade && unidade.cor_primaria, unidade && unidade.cor_secundaria]);
+
+  if (loading || !unidadeId) return <div className="min-h-screen flex items-center justify-center" style={{ background: T.canvas, color: T.muted }}><Loader2 size={20} className="animate-spin mr-2" /> Carregando unidades…</div>;
+
+  return <UnidadeContext.Provider value={{ unidadeId, unidade, unidades, setUnidadeId, addUnidade, reloadUnidades, atualizarCores }}>{children}</UnidadeContext.Provider>;
 }
 
 /* ============================== PROVEDOR DE AUTENTICAÇÃO ============================== */
