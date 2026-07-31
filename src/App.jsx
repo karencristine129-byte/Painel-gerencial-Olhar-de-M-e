@@ -1286,12 +1286,6 @@ function AlertasModulo() {
           </div>
         </div>
       </Card>
-      <Card style={{ borderColor: `${T.amber}55` }}>
-        <div className="flex items-center gap-2 mb-2"><AlertTriangle size={15} style={{ color: T.amber }} /><span className="font-semibold text-sm" style={{ color: T.text }}>Falta um passo técnico para ativar o envio</span></div>
-        <p className="text-sm" style={{ color: T.muted }}>
-          Salvar o contato aqui prepara o sistema, mas o envio automático diário roda fora do site (no Supabase) e depende de duas contas externas (e-mail e WhatsApp) que só você pode criar, com suas próprias chaves de acesso. O Claude te entrega o código pronto e o passo a passo completo para ativar — é uma configuração única, feita direto no painel do Supabase.
-        </p>
-      </Card>
     </div>
   );
 }
