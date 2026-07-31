@@ -159,8 +159,8 @@ const MODULES = {
     toDb: (r) => ({ nome: r.nome, valor_padrao: r.valorPadrao, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, valorPadrao: r.valor_padrao, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes }) },
   cadColaboradores: { table: "cadastro_colaboradores", order: "nome.asc",
-    toDb: (r) => ({ nome: r.nome, cargo: r.cargo, tipo: r.tipo, telefone: r.telefone, observacoes: r.observacoes }),
-    fromDb: (r) => ({ id: r.id, nome: r.nome, cargo: r.cargo, tipo: r.tipo, telefone: r.telefone, observacoes: r.observacoes }) },
+    toDb: (r) => ({ nome: r.nome, cargo: r.cargo, tipo: r.tipo, telefone: r.telefone, observacoes: r.observacoes, carga_horaria_mensal: r.cargaHorariaMensal || 0 }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, cargo: r.cargo, tipo: r.tipo, telefone: r.telefone, observacoes: r.observacoes, cargaHorariaMensal: r.carga_horaria_mensal }) },
   cadProfissionais: { table: "cadastro_profissionais", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcao_sublocacao: r.direcaoSublocacao || null, tipo_sublocacao: r.tipoSublocacao || null, percentual_sublocacao: r.percentualSublocacao || 0, valor_fixo_sublocacao: r.valorFixoSublocacao || 0, valor_abatimento: r.valorAbatimento || 0 }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcaoSublocacao: r.direcao_sublocacao, tipoSublocacao: r.tipo_sublocacao, percentualSublocacao: r.percentual_sublocacao, valorFixoSublocacao: r.valor_fixo_sublocacao, valorAbatimento: r.valor_abatimento }) },
@@ -1463,33 +1463,54 @@ function EnviarAtestado() {
 }
 
 function MeusHorarios() {
+  const { perfil } = useAuth();
   const { data, add, remove, loading } = useOwnRecords("rh_horas");
-  const [form, setForm] = useState({ data: todayISO(), hora_entrada: "", hora_saida: "" });
+  const { data: colaboradoresCat } = useRecords("cadColaboradores");
+  const [form, setForm] = useState({ data: todayISO(), hora_entrada: "", hora_saida: "", hora_saida_almoco: "", hora_volta_almoco: "" });
   const [busy, setBusy] = useState(false);
-  const calcHoras = (e, s) => { if (!e || !s) return null; const [eh, em] = e.split(":").map(Number); const [sh, sm] = s.split(":").map(Number); let mins = (sh * 60 + sm) - (eh * 60 + em); if (mins < 0) mins += 24 * 60; return Math.round((mins / 60) * 100) / 100; };
+  const paraMinutos = (h) => { const [hh, mm] = h.split(":").map(Number); return hh * 60 + mm; };
+  const calcHoras = (e, s, almocoSaida, almocoVolta) => {
+    if (!e || !s) return null;
+    let mins = paraMinutos(s) - paraMinutos(e);
+    if (mins < 0) mins += 24 * 60;
+    if (almocoSaida && almocoVolta) { let almoco = paraMinutos(almocoVolta) - paraMinutos(almocoSaida); if (almoco < 0) almoco += 24 * 60; mins -= almoco; }
+    return Math.round((mins / 60) * 100) / 100;
+  };
   const mesAtual = todayISO().slice(0, 7);
   const totalMes = data.filter((r) => r.data.slice(0, 7) === mesAtual).reduce((s, r) => s + (Number(r.horas_total) || 0), 0);
+  const cadastro = colaboradoresCat.find((c) => c.nome === (perfil && perfil.nome));
+  const cargaHoraria = cadastro ? Number(cadastro.cargaHorariaMensal) : 0;
+  const faltaCumprir = Math.max(cargaHoraria - totalMes, 0);
+  const pctCumprido = cargaHoraria ? (totalMes / cargaHoraria) * 100 : null;
   return (
     <Card className="mb-5">
       <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Meus horários trabalhados</p>
       <div className="flex flex-wrap gap-3 items-end mb-4">
         <Field label="Data"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} /></Field>
         <Field label="Entrada"><input type="time" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.hora_entrada} onChange={(e) => setForm((p) => ({ ...p, hora_entrada: e.target.value }))} /></Field>
+        <Field label="Saída para o almoço"><input type="time" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.hora_saida_almoco} onChange={(e) => setForm((p) => ({ ...p, hora_saida_almoco: e.target.value }))} /></Field>
+        <Field label="Volta do almoço"><input type="time" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.hora_volta_almoco} onChange={(e) => setForm((p) => ({ ...p, hora_volta_almoco: e.target.value }))} /></Field>
         <Field label="Saída"><input type="time" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.hora_saida} onChange={(e) => setForm((p) => ({ ...p, hora_saida: e.target.value }))} /></Field>
         <Btn icon={busy ? undefined : Plus} disabled={busy} onClick={async () => {
           setBusy(true);
-          const horas = calcHoras(form.hora_entrada, form.hora_saida);
-          await add({ data: form.data, hora_entrada: form.hora_entrada || null, hora_saida: form.hora_saida || null, horas_total: horas });
-          setForm({ data: todayISO(), hora_entrada: "", hora_saida: "" });
+          const horas = calcHoras(form.hora_entrada, form.hora_saida, form.hora_saida_almoco, form.hora_volta_almoco);
+          await add({ data: form.data, hora_entrada: form.hora_entrada || null, hora_saida: form.hora_saida || null, hora_saida_almoco: form.hora_saida_almoco || null, hora_volta_almoco: form.hora_volta_almoco || null, horas_total: horas });
+          setForm({ data: todayISO(), hora_entrada: "", hora_saida: "", hora_saida_almoco: "", hora_volta_almoco: "" });
           setBusy(false);
         }}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Registrar</Btn>
       </div>
-      <div className="mb-4"><KpiCard label="Total de horas no mês" value={`${totalMes.toFixed(2)} h`} tone="purple" /></div>
+      <div className="grid gap-3 mb-4" style={{ gridTemplateColumns: cargaHoraria ? "repeat(3, minmax(0,1fr))" : "1fr" }}>
+        <KpiCard label="Total de horas no mês" value={`${totalMes.toFixed(2)} h`} tone="purple" />
+        {cargaHoraria > 0 && <>
+          <KpiCard label="Carga horária mensal" value={`${cargaHoraria.toFixed(0)} h`} />
+          <KpiCard label="Falta cumprir" value={`${faltaCumprir.toFixed(2)} h`} tone={faltaCumprir > 0 ? "amber" : "green"} sub={pctCumprido !== null ? fmtPct(pctCumprido) + " cumprido" : undefined} />
+        </>}
+      </div>
       {!loading && data.length > 0 && (
         <div className="overflow-x-auto -mx-5 px-5">
           <table className="w-full text-sm">
-            <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Data</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Entrada</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Saída</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Horas</th><th></th></tr></thead>
-            <tbody>{[...data].sort((a, b) => b.data.localeCompare(a.data)).map((r) => (<tr key={r.id} style={{ borderBottom: `1px solid ${T.border}` }}><td className="py-2 px-2">{fmtDate(r.data)}</td><td className="py-2 px-2">{r.hora_entrada || "—"}</td><td className="py-2 px-2">{r.hora_saida || "—"}</td><td className="py-2 px-2">{r.horas_total ?? "—"}</td><td className="py-2 px-2 text-right"><button onClick={() => { if (confirm("Remover este registro?")) remove(r.id); }}><Trash2 size={13} style={{ color: T.red }} /></button></td></tr>))}</tbody>
+            <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Data</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Entrada</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Almoço</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Saída</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Horas</th><th></th></tr></thead>
+            <tbody>{[...data].sort((a, b) => b.data.localeCompare(a.data)).map((r) => (<tr key={r.id} style={{ borderBottom: `1px solid ${T.border}` }}><td className="py-2 px-2">{fmtDate(r.data)}</td><td className="py-2 px-2">{r.hora_entrada || "—"}</td><td className="py-2 px-2">{r.hora_saida_almoco && r.hora_volta_almoco ? `${r.hora_saida_almoco}–${r.hora_volta_almoco}` : "—"}</td><td className="py-2 px-2">{r.hora_saida || "—"}</td><td className="py-2 px-2">{r.horas_total ?? "—"}</td><td className="py-2 px-2 text-right"><button onClick={() => { if (confirm("Remover este registro?")) remove(r.id); }}><Trash2 size={13} style={{ color: T.red }} /></button></td></tr>))}</tbody>
           </table>
         </div>
       )}
@@ -1652,11 +1673,12 @@ function CadastroColaboradoresModulo() {
     { key: "cargo", label: "Cargo", type: "text", required: false },
     { key: "tipo", label: "Tipo", type: "select", options: ["Interno", "Terceirizado"] },
     { key: "telefone", label: "Telefone", type: "text", required: false },
+    { key: "cargaHorariaMensal", label: "Carga horária mensal (horas)", type: "number", required: false, placeholder: "ex: 220" },
     { key: "observacoes", label: "Observações", type: "text", required: false },
   ];
-  const columns = [{ key: "nome", label: "Nome" }, { key: "cargo", label: "Cargo" }, { key: "tipo", label: "Tipo", render: (r) => <Badge tone={r.tipo === "Interno" ? "teal" : "amber"}>{r.tipo}</Badge> }, { key: "telefone", label: "Telefone" }];
+  const columns = [{ key: "nome", label: "Nome" }, { key: "cargo", label: "Cargo" }, { key: "tipo", label: "Tipo", render: (r) => <Badge tone={r.tipo === "Interno" ? "teal" : "amber"}>{r.tipo}</Badge> }, { key: "cargaHorariaMensal", label: "Carga horária/mês", render: (r) => r.cargaHorariaMensal ? `${r.cargaHorariaMensal} h` : "—" }, { key: "telefone", label: "Telefone" }];
   return (
-    <ModuleShell icon={Users} title="Cadastro de Colaboradores" subtitle="Equipe interna e terceirizados, com ou sem acesso ao sistema" tone="coral" loading={loading} erro={erro}
+    <ModuleShell icon={Users} title="Cadastro de Colaboradores" subtitle="Equipe interna e terceirizados, com carga horária mensal" tone="coral" loading={loading} erro={erro}
       dailyFields={fields} dailyCta="Cadastrar colaborador(a)" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
   );
 }
