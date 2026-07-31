@@ -107,6 +107,7 @@ const fmtPct = (v) => `${(Number(v) || 0).toFixed(0)}%`;
 const fmtDate = (d) => { if (!d) return "—"; const dt = new Date(d + "T00:00:00"); return isNaN(dt) ? d : dt.toLocaleDateString("pt-BR"); };
 const monthKey = (d) => (d || "").slice(0, 7);
 const todayISO = () => new Date().toISOString().slice(0, 10);
+const diasAFrente = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 const weekdayLong = () => new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
 const monthToDate = (m) => (m && m.length === 7 ? `${m}-01` : m || todayISO().slice(0, 7) + "-01");
 
@@ -1265,6 +1266,36 @@ function VisaoGeral() {
 }
 
 /* ============================== UNIDADES ============================== */
+function AlertasModulo() {
+  const { unidade, atualizarContatosAlerta } = useUnidade();
+  const [email, setEmail] = useState((unidade && unidade.email_alertas) || "");
+  const [whatsapp, setWhatsapp] = useState((unidade && unidade.whatsapp_alertas) || "");
+  const [busy, setBusy] = useState(false);
+  const [salvo, setSalvo] = useState(false);
+  const salvar = async () => { setBusy(true); await atualizarContatosAlerta(email, whatsapp); setBusy(false); setSalvo(true); setTimeout(() => setSalvo(false), 3000); };
+  return (
+    <div>
+      <SectionHeader icon={Bell} title="Alertas por E-mail e WhatsApp" subtitle="Contas a pagar vencendo em 2 dias ou vencidas — avisos automáticos além da notificação no sistema" tone="ink" />
+      <Card className="mb-5">
+        <div className="flex flex-col gap-4 max-w-md">
+          <Field label="E-mail(s) que vão receber os alertas — separe por vírgula se for mais de um"><input type="text" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="financeiro@olhardemae.com.br, karen@olhardemae.com.br" /></Field>
+          <Field label="WhatsApp que vai receber os alertas (só números, com DDI e DDD)"><input className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="5538999999999" /></Field>
+          <div className="flex items-center gap-3">
+            <Btn disabled={busy} onClick={salvar}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Salvar contatos</Btn>
+            {salvo && <span className="text-sm" style={{ color: T.green }}>Salvo!</span>}
+          </div>
+        </div>
+      </Card>
+      <Card style={{ borderColor: `${T.amber}55` }}>
+        <div className="flex items-center gap-2 mb-2"><AlertTriangle size={15} style={{ color: T.amber }} /><span className="font-semibold text-sm" style={{ color: T.text }}>Falta um passo técnico para ativar o envio</span></div>
+        <p className="text-sm" style={{ color: T.muted }}>
+          Salvar o contato aqui prepara o sistema, mas o envio automático diário roda fora do site (no Supabase) e depende de duas contas externas (e-mail e WhatsApp) que só você pode criar, com suas próprias chaves de acesso. O Claude te entrega o código pronto e o passo a passo completo para ativar — é uma configuração única, feita direto no painel do Supabase.
+        </p>
+      </Card>
+    </div>
+  );
+}
+
 function AparenciaModulo() {
   const { unidade, atualizarCores } = useUnidade();
   const [primaria, setPrimaria] = useState((unidade && unidade.cor_primaria) || DEFAULT_PRIMARY);
@@ -1958,7 +1989,7 @@ const ALL_MENU = [
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }] },
   { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
   { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }] },
-  { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }] },
+  { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas (E-mail/WhatsApp)", icon: Bell, tone: "ink" }] },
 ];
 const FINANCE_TABS = ["financeiro", "contas", "faturamento", "repasse", "sublocacao", "equipe", "metas", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
@@ -2022,6 +2053,7 @@ function AppInner() {
       case "cadTestesGeneticos": return <CadastroTestesGeneticosModulo />;
       case "unidades": return <UnidadesModulo />;
       case "aparencia": return <AparenciaModulo />;
+      case "alertas": return <AlertasModulo />;
       default: return null;
     }
   };
@@ -2090,7 +2122,8 @@ function NotificationsMenu({ setTab }) {
   const notificacoes = [
     ...vacinas.data.filter((v) => v.qtdEstoque < v.qtdMinima).map((v) => ({ texto: `Vacina "${v.nome}" abaixo do estoque mínimo`, tone: "red", tab: "vacinas" })),
     ...insumos.data.filter((i) => i.qtd < i.qtdMinima).map((i) => ({ texto: `Insumo "${i.nome}" em ponto crítico`, tone: "red", tab: "insumos" })),
-    ...(canFinance ? contas.data.filter((c) => c.status === "Atrasado" || (c.status === "Pendente" && c.vencimento < todayISO())).map((c) => ({ texto: `Conta "${c.descricao}" vencida ou vencendo`, tone: "amber", tab: "contas" })) : []),
+    ...(canFinance ? contas.data.filter((c) => c.status !== "Pago" && c.vencimento < todayISO()).map((c) => ({ texto: `Conta vencida: "${c.descricao}" — vencimento ${fmtDate(c.vencimento)}`, tone: "red", tab: "contas" })) : []),
+    ...(canFinance ? contas.data.filter((c) => c.status === "Pendente" && c.vencimento === diasAFrente(2)).map((c) => ({ texto: `Conta "${c.descricao}" vence em 2 dias — ${fmtDate(c.vencimento)}`, tone: "amber", tab: "contas" })) : []),
     ...leads.data.filter((l) => l.status === "Novo").map((l) => ({ texto: `Lead novo: ${l.nome} — ainda não contatado`, tone: "teal", tab: "marketing" })),
   ];
 
@@ -2188,6 +2221,10 @@ function UnidadeProvider({ children }) {
     await reloadUnidades();
     forcarAtualizacao();
   };
+  const atualizarContatosAlerta = async (email, whatsapp) => {
+    await sbRest(`unidades?id=eq.${unidadeId}`, { method: "PATCH", token: session.access_token, body: { email_alertas: email, whatsapp_alertas: whatsapp } });
+    await reloadUnidades();
+  };
 
   const unidade = unidades.find((u) => u.id === unidadeId);
   useEffect(() => {
@@ -2196,7 +2233,7 @@ function UnidadeProvider({ children }) {
 
   if (loading || !unidadeId) return <div className="min-h-screen flex items-center justify-center" style={{ background: T.canvas, color: T.muted }}><Loader2 size={20} className="animate-spin mr-2" /> Carregando unidades…</div>;
 
-  return <UnidadeContext.Provider value={{ unidadeId, unidade, unidades, setUnidadeId, addUnidade, reloadUnidades, atualizarCores }}>{children}</UnidadeContext.Provider>;
+  return <UnidadeContext.Provider value={{ unidadeId, unidade, unidades, setUnidadeId, addUnidade, reloadUnidades, atualizarCores, atualizarContatosAlerta }}>{children}</UnidadeContext.Provider>;
 }
 
 /* ============================== PROVEDOR DE AUTENTICAÇÃO ============================== */
