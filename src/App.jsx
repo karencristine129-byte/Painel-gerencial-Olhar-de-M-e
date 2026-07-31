@@ -162,11 +162,17 @@ const MODULES = {
     toDb: (r) => ({ nome: r.nome, cargo: r.cargo, tipo: r.tipo, telefone: r.telefone, observacoes: r.observacoes, carga_horaria_mensal: r.cargaHorariaMensal || 0 }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, cargo: r.cargo, tipo: r.tipo, telefone: r.telefone, observacoes: r.observacoes, cargaHorariaMensal: r.carga_horaria_mensal }) },
   cadProfissionais: { table: "cadastro_profissionais", order: "nome.asc",
-    toDb: (r) => ({ nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcao_sublocacao: r.direcaoSublocacao || null, tipo_sublocacao: r.tipoSublocacao || null, percentual_sublocacao: r.percentualSublocacao || 0, valor_fixo_sublocacao: r.valorFixoSublocacao || 0, valor_abatimento: r.valorAbatimento || 0 }),
-    fromDb: (r) => ({ id: r.id, nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcaoSublocacao: r.direcao_sublocacao, tipoSublocacao: r.tipo_sublocacao, percentualSublocacao: r.percentual_sublocacao, valorFixoSublocacao: r.valor_fixo_sublocacao, valorAbatimento: r.valor_abatimento }) },
+    toDb: (r) => ({ nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcao_sublocacao: r.direcaoSublocacao || null, tipo_sublocacao: r.tipoSublocacao || null, percentual_sublocacao: r.percentualSublocacao || 0, valor_fixo_sublocacao: r.valorFixoSublocacao || 0, valor_abatimento: r.valorAbatimento || 0, valor_plantao_fixo: r.valorPlantaoFixo || 0, valor_repasse_atendimento_plantao: r.valorRepasseAtendimentoPlantao || 0 }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcaoSublocacao: r.direcao_sublocacao, tipoSublocacao: r.tipo_sublocacao, percentualSublocacao: r.percentual_sublocacao, valorFixoSublocacao: r.valor_fixo_sublocacao, valorAbatimento: r.valor_abatimento, valorPlantaoFixo: r.valor_plantao_fixo, valorRepasseAtendimentoPlantao: r.valor_repasse_atendimento_plantao }) },
   cadTestesGeneticos: { table: "cadastro_testes_geneticos", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, valor_teste: r.valorTeste, valor_repasse_clinica: r.valorRepasseClinica }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, valorTeste: r.valor_teste, valorRepasseClinica: r.valor_repasse_clinica }) },
+  plantaoValoresConvenio: { table: "plantao_valores_convenio", order: "convenio.asc",
+    toDb: (r) => ({ convenio: r.convenio, valor_atendimento: r.valorAtendimento }),
+    fromDb: (r) => ({ id: r.id, convenio: r.convenio, valorAtendimento: r.valor_atendimento }) },
+  plantaoAtendimentos: { table: "plantao_atendimentos", order: "data.desc",
+    toDb: (r) => ({ data: r.data, medico: r.medico, convenio: r.convenio, qtd_pacientes: r.qtdPacientes }),
+    fromDb: (r) => ({ id: r.id, data: r.data, medico: r.medico, convenio: r.convenio, qtdPacientes: r.qtd_pacientes }) },
   vendasVacinas: { table: "vendas_vacinas", order: "data.desc",
     toDb: (r) => ({ vacina_id: r.vacinaId, data: r.data, quantidade: r.quantidade, valor_unitario: r.valorUnitario, desconto_pct: r.descontoPct, valor_total: r.valorTotal }),
     fromDb: (r) => ({ id: r.id, vacinaId: r.vacina_id, data: r.data, quantidade: r.quantidade, valorUnitario: r.valor_unitario, descontoPct: r.desconto_pct, valorTotal: r.valor_total }) },
@@ -1695,10 +1701,13 @@ function CadastroProfissionaisModulo() {
     { key: "percentualSublocacao", label: "Percentual (%)", type: "number", required: false, showIf: (f) => f.tipoSublocacao === "Percentual" },
     { key: "valorFixoSublocacao", label: "Valor fixo (R$)", type: "currency", required: false, showIf: (f) => f.tipoSublocacao === "Valor fixo sem abatimento" || f.tipoSublocacao === "Valor fixo com abatimento" },
     { key: "valorAbatimento", label: "Valor do abatimento (R$)", type: "currency", required: false, showIf: (f) => f.tipoSublocacao === "Valor fixo com abatimento" },
+    { key: "valorPlantaoFixo", label: "Plantão — valor fixo por dia (R$)", type: "currency", required: false },
+    { key: "valorRepasseAtendimentoPlantao", label: "Plantão — repasse por atendimento (R$)", type: "currency", required: false },
   ];
   const columns = [
     { key: "nome", label: "Nome" }, { key: "especialidade", label: "Especialidade" }, { key: "telefone", label: "Telefone" },
     { key: "sublocacao", label: "Sublocação", render: (r) => r.direcaoSublocacao ? <Badge tone={r.direcaoSublocacao.startsWith("Profissional") ? "green" : "amber"}>{r.tipoSublocacao === "Percentual" ? `${r.percentualSublocacao}%` : fmtBRL(r.valorFixoSublocacao)} — {r.direcaoSublocacao.startsWith("Profissional") ? "recebemos" : "pagamos"}</Badge> : <span style={{ color: T.muted }}>—</span> },
+    { key: "plantao", label: "Plantão", render: (r) => (r.valorPlantaoFixo || r.valorRepasseAtendimentoPlantao) ? <span className="text-xs" style={{ color: T.muted }}>{fmtBRL(r.valorPlantaoFixo)}/dia + {fmtBRL(r.valorRepasseAtendimentoPlantao)}/atend.</span> : <span style={{ color: T.muted }}>—</span> },
   ];
   return (
     <ModuleShell icon={Stethoscope} title="Cadastro de Profissionais" subtitle="Médicos e demais profissionais — inclui a forma de pagamento da sublocação" tone="coral" loading={loading} erro={erro}
@@ -1718,6 +1727,142 @@ function CadastroTestesGeneticosModulo() {
       dailyFields={fields} dailyCta="Cadastrar teste" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
   );
 }
+
+/* ============================== PLANTÃO ============================== */
+function PlantaoValoresConvenioModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("plantaoValoresConvenio");
+  const fields = [
+    { key: "convenio", label: "Convênio", type: "select", options: CONVENIOS },
+    { key: "valorAtendimento", label: "Valor por atendimento no plantão (R$)", type: "currency" },
+  ];
+  const columns = [{ key: "convenio", label: "Convênio" }, { key: "valorAtendimento", label: "Valor por atendimento", render: (r) => fmtBRL(r.valorAtendimento) }];
+  return (
+    <ModuleShell icon={ClipboardList} title="Plantão — Valores por Convênio" subtitle="Quanto vale cada atendimento de plantão, por convênio" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Cadastrar valor" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
+  );
+}
+
+function PlantaoRegistroModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("plantaoAtendimentos");
+  const { data: profissionais } = useRecords("cadProfissionais");
+  const nomesProfissionais = profissionais.map((p) => p.nome);
+  const fields = [
+    { key: "data", label: "Data do plantão", type: "date", default: todayISO() },
+    { key: "medico", label: "Médico(a)", type: "select", options: nomesProfissionais.length ? nomesProfissionais : ["Cadastre em Cadastros → Profissionais"] },
+    { key: "convenio", label: "Convênio", type: "select", options: CONVENIOS },
+    { key: "qtdPacientes", label: "Quantidade de pacientes atendidos", type: "number" },
+  ];
+  const columns = [{ key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "medico", label: "Médico(a)" }, { key: "convenio", label: "Convênio" }, { key: "qtdPacientes", label: "Pacientes" }];
+  const totalPacientes = data.reduce((s, r) => s + Number(r.qtdPacientes), 0);
+  return (
+    <ModuleShell icon={Stethoscope} title="Registrar Plantão" subtitle="Lançamento diário — médico, convênio e quantidade de pacientes atendidos" tone="teal" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Registrar plantão" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove}
+      kpis={[{ label: "Registros no período", value: data.length }, { label: "Pacientes atendidos", value: fmtNum(totalPacientes), tone: "teal" }]} />
+  );
+}
+
+function PlantaoResumoModulo() {
+  const { data: atendimentos, loading: l1, erro: e1 } = useRecords("plantaoAtendimentos");
+  const { data: valoresConvenio, loading: l2 } = useRecords("plantaoValoresConvenio");
+  const { data: profissionais, loading: l3 } = useRecords("cadProfissionais");
+  const loading = l1 || l2 || l3;
+  const [mes, setMes] = useState(todayISO().slice(0, 7));
+  const [aliquotaImposto, setAliquotaImposto] = useState(0);
+
+  const doMes = atendimentos.filter((a) => monthKey(a.data) === mes);
+  const valorConvenioMap = {}; valoresConvenio.forEach((v) => { valorConvenioMap[v.convenio] = v.valorAtendimento; });
+
+  const porMedico = useMemo(() => {
+    const map = {};
+    doMes.forEach((a) => {
+      if (!map[a.medico]) map[a.medico] = { medico: a.medico, pacientes: 0, dias: new Set(), valorProduzido: 0 };
+      map[a.medico].pacientes += Number(a.qtdPacientes);
+      map[a.medico].dias.add(a.data);
+      map[a.medico].valorProduzido += Number(a.qtdPacientes) * (valorConvenioMap[a.convenio] || 0);
+    });
+    return Object.values(map).map((m) => {
+      const config = profissionais.find((p) => p.nome === m.medico) || {};
+      const diasTrabalhados = m.dias.size;
+      const valorPlantaoFixoTotal = diasTrabalhados * Number(config.valorPlantaoFixo || 0);
+      const valorRepasseAtendimentos = m.pacientes * Number(config.valorRepasseAtendimentoPlantao || 0);
+      const valorRepasseTotal = valorPlantaoFixoTotal + valorRepasseAtendimentos;
+      const valorClinicaBruto = m.valorProduzido - valorRepasseTotal;
+      const valorClinicaLiquido = valorClinicaBruto * (1 - aliquotaImposto / 100);
+      const mediaAtendimentos = diasTrabalhados ? m.pacientes / diasTrabalhados : 0;
+      return { ...m, diasTrabalhados, valorPlantaoFixoTotal, valorRepasseAtendimentos, valorRepasseTotal, valorClinicaBruto, valorClinicaLiquido, mediaAtendimentos };
+    }).sort((a, b) => b.valorProduzido - a.valorProduzido);
+  }, [doMes, profissionais, aliquotaImposto]);
+
+  const totalProduzido = porMedico.reduce((s, m) => s + m.valorProduzido, 0);
+  const totalRepasse = porMedico.reduce((s, m) => s + m.valorRepasseTotal, 0);
+  const totalBruto = porMedico.reduce((s, m) => s + m.valorClinicaBruto, 0);
+  const totalLiquido = porMedico.reduce((s, m) => s + m.valorClinicaLiquido, 0);
+  const mediaGeral = porMedico.length ? porMedico.reduce((s, m) => s + m.mediaAtendimentos, 0) / porMedico.length : 0;
+
+  return (
+    <div>
+      <SectionHeader icon={ClipboardList} title="Resumo Financeiro — Plantão" subtitle="Valor produzido, repasse e resultado da clínica por profissional — visível só para administradores e gestores" tone="coral" />
+      {e1 && <Card className="mb-5" style={{ borderColor: `${T.red}55` }}><span className="text-sm" style={{ color: T.red }}>Erro ao carregar: {e1}</span></Card>}
+      <Card className="mb-5">
+        <div className="flex flex-wrap gap-4 items-end">
+          <Field label="Mês (AAAA-MM)"><input className="rounded-lg px-3 py-2 text-sm outline-none w-32" style={inputStyle} value={mes} onChange={(e) => setMes(e.target.value)} /></Field>
+          <Field label="Alíquota de imposto sobre o valor bruto (%)"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-32" style={inputStyle} value={aliquotaImposto} onChange={(e) => setAliquotaImposto(Number(e.target.value) || 0)} /></Field>
+        </div>
+      </Card>
+      <div className="grid gap-3 mb-6 md:grid-cols-3">
+        <KpiCard label="Total produzido" value={fmtBRL(totalProduzido)} tone="teal" />
+        <KpiCard label="Total de repasse" value={fmtBRL(totalRepasse)} tone="amber" />
+        <KpiCard label="Média de atendimentos/dia" value={mediaGeral.toFixed(1)} tone="coral" />
+        <KpiCard label="Valor bruto da clínica" value={fmtBRL(totalBruto)} />
+        <KpiCard label="Valor líquido da clínica" value={fmtBRL(totalLiquido)} tone="green" />
+      </div>
+      {!loading && porMedico.length > 0 && (
+        <ChartCard title="Valor produzido por profissional">
+          <BarChart data={porMedico}>
+            <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
+            <XAxis dataKey="medico" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-15} textAnchor="end" height={60} />
+            <YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} />
+            <Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+            <Bar dataKey="valorProduzido" fill={T.teal} radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ChartCard>
+      )}
+      <Card>
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Detalhamento por profissional</p>
+        {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> :
+          porMedico.length === 0 ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhum registro de plantão neste mês.</div> : (
+          <div className="overflow-x-auto -mx-5 px-5">
+            <table className="w-full text-sm min-w-[820px]">
+              <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Profissional</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Dias</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Pacientes</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Média/dia</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Produzido</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Repasse</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Clínica (bruto)</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Clínica (líquido)</th>
+              </tr></thead>
+              <tbody>{porMedico.map((m, i) => (
+                <tr key={i} style={{ borderBottom: `1px solid ${T.border}` }}>
+                  <td className="py-2 px-2 font-medium" style={{ color: T.text }}>{m.medico}</td>
+                  <td className="py-2 px-2">{m.diasTrabalhados}</td>
+                  <td className="py-2 px-2">{m.pacientes}</td>
+                  <td className="py-2 px-2">{m.mediaAtendimentos.toFixed(1)}</td>
+                  <td className="py-2 px-2">{fmtBRL(m.valorProduzido)}</td>
+                  <td className="py-2 px-2" style={{ color: T.amber }}>{fmtBRL(m.valorRepasseTotal)}</td>
+                  <td className="py-2 px-2">{fmtBRL(m.valorClinicaBruto)}</td>
+                  <td className="py-2 px-2" style={{ color: T.green, fontWeight: 600 }}>{fmtBRL(m.valorClinicaLiquido)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 function CadastroFornecedoresModulo() {
   const { data, add, update, remove, loading, erro } = useRecords("cadFornecedores");
   const fields = [
@@ -2003,11 +2148,12 @@ const ALL_MENU = [
   { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }] },
   { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" }] },
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }] },
+  { group: "Plantão", items: [{ key: "plantaoRegistro", label: "Registrar Plantão", icon: Stethoscope, tone: "teal" }, { key: "plantaoValores", label: "Valores por Convênio", icon: ClipboardList, tone: "coral" }, { key: "plantaoResumo", label: "Resumo Financeiro", icon: ClipboardList, tone: "coral" }] },
   { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
   { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas (E-mail/WhatsApp)", icon: Bell, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "contas", "faturamento", "repasse", "sublocacao", "equipe", "metas", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos"];
+const FINANCE_TABS = ["financeiro", "contas", "faturamento", "repasse", "sublocacao", "equipe", "metas", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "plantaoValores", "plantaoResumo"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
 const RESTRICTED_MENUS = {
   recepcao: { group: "Minha área", items: [
@@ -2062,6 +2208,9 @@ function AppInner() {
       case "equipe": return <EquipeModulo />;
       case "metas": return <MetasModulo />;
       case "relatorios": return <RelatoriosModulo />;
+      case "plantaoRegistro": return <PlantaoRegistroModulo />;
+      case "plantaoValores": return <PlantaoValoresConvenioModulo />;
+      case "plantaoResumo": return <PlantaoResumoModulo />;
       case "cadConvenios": return <CadastroConveniosModulo />;
       case "cadColaboradores": return <CadastroColaboradoresModulo />;
       case "cadProfissionais": return <CadastroProfissionaisModulo />;
