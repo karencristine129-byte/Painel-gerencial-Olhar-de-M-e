@@ -132,8 +132,8 @@ const MODULES = {
     toDb: (r) => ({ nome: r.nome, categoria: r.categoria, qtd: r.qtd, qtd_minima: r.qtdMinima, unidade_medida: r.unidade, valor_unitario: r.valorUnitario }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, categoria: r.categoria, qtd: r.qtd, qtdMinima: r.qtd_minima, unidade: r.unidade_medida, valorUnitario: r.valor_unitario }) },
   producao: { table: "producao_medica", order: "data_atendimento.desc",
-    toDb: (r) => ({ profissional: r.profissional, convenio: r.convenio, data_atendimento: r.data, mes: monthToDate(monthKey(r.data)), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipo_repasse: r.tipoRepasse || "Fixo", percentual_repasse: r.percentualRepasse || 0, desconto_pct: r.descontoPct || 0 }),
-    fromDb: (r) => ({ id: r.id, profissional: r.profissional, convenio: r.convenio, data: r.data_atendimento, mes: monthKey(r.mes), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipoRepasse: r.tipo_repasse, percentualRepasse: r.percentual_repasse, descontoPct: r.desconto_pct }) },
+    toDb: (r) => ({ profissional: r.profissional, convenio: r.convenio, data_atendimento: r.data, mes: monthToDate(monthKey(r.data)), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipo_repasse: r.tipoRepasse || "Fixo", percentual_repasse: r.percentualRepasse || 0, desconto_tipo: r.descontoTipo || "Nenhum", desconto_valor: r.descontoValor || 0 }),
+    fromDb: (r) => ({ id: r.id, profissional: r.profissional, convenio: r.convenio, data: r.data_atendimento, mes: monthKey(r.mes), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipoRepasse: r.tipo_repasse, percentualRepasse: r.percentual_repasse, descontoTipo: r.desconto_tipo, descontoValor: r.desconto_valor }) },
   contas: { table: "contas_pagar", order: "vencimento.asc",
     toDb: (r) => ({ descricao: r.descricao, categoria: r.categoria, valor: r.valor, vencimento: r.vencimento, status: r.status, data_pagamento: r.dataPagamento || null }),
     fromDb: (r) => ({ id: r.id, descricao: r.descricao, categoria: r.categoria, valor: r.valor, vencimento: r.vencimento, status: r.status, dataPagamento: r.data_pagamento }) },
@@ -1158,7 +1158,8 @@ function ProducaoConvenioModulo({ convenioFixo, titulo, subtitulo, icon }) {
     ...(convenioFixo ? [] : [{ key: "convenio", label: "Convênio", type: "select", options: opcoesConvenio.length ? opcoesConvenio : ["Cadastre em Cadastros → Convênios"] }]),
     { key: "data", label: "Data do atendimento", type: "date", default: todayISO() },
     { key: "atendimentos", label: "Atendimentos", type: "number" },
-    { key: "descontoPct", label: "Desconto (%)", type: "number", required: false, default: 0 },
+    { key: "descontoTipo", label: "Desconto — tipo", type: "select", options: ["Nenhum", "Reais", "Percentual"], required: false, default: "Nenhum" },
+    { key: "descontoValor", label: "Valor do desconto", type: "number", required: false, default: 0, showIf: (f) => f.descontoTipo && f.descontoTipo !== "Nenhum" },
   ];
   const computar = (r) => {
     const convenio = convenioFixo || r.convenio;
@@ -1170,9 +1171,12 @@ function ProducaoConvenioModulo({ convenioFixo, titulo, subtitulo, icon }) {
       const cfgConvenio = conveniosCadastro.find((c) => normalizarTexto(c.nome) === normalizarTexto(convenio));
       valorPorAtendimento = cfgConvenio ? Number(cfgConvenio.valorPadrao || 0) : 0;
     }
-    const desconto = Number(r.descontoPct || 0);
-    const receita = Number(r.atendimentos || 0) * valorPorAtendimento * (1 - desconto / 100);
-    return { convenio, receita, descontoPct: desconto };
+    const valorBruto = Number(r.atendimentos || 0) * valorPorAtendimento;
+    const descontoTipo = r.descontoTipo || "Nenhum";
+    const descontoValor = Number(r.descontoValor || 0);
+    const desconto = descontoTipo === "Reais" ? descontoValor : descontoTipo === "Percentual" ? valorBruto * (descontoValor / 100) : 0;
+    const receita = Math.max(valorBruto - desconto, 0);
+    return { convenio, receita, descontoTipo, descontoValor };
   };
   const onAddComputado = (record) => add({ ...record, ...computar(record) });
   const onUpdateComputado = (id, record) => update(id, { ...record, ...computar(record) });
@@ -1183,7 +1187,7 @@ function ProducaoConvenioModulo({ convenioFixo, titulo, subtitulo, icon }) {
     { key: "tipoRepasseInfo", label: "Tipo de repasse (cadastro)", render: (r) => <span className="text-xs" style={{ color: T.muted }}>{tipoRepasseDe(r.profissional)}</span> },
     ...(convenioFixo ? [] : [{ key: "convenio", label: "Convênio" }]),
     { key: "atendimentos", label: "Atendimentos" },
-    { key: "descontoPct", label: "Desconto", render: (r) => fmtPct(r.descontoPct) },
+    { key: "desconto", label: "Desconto", render: (r) => r.descontoTipo && r.descontoTipo !== "Nenhum" ? <span className="text-xs" style={{ color: T.muted }}>{r.descontoTipo === "Reais" ? fmtBRL(r.descontoValor) : fmtPct(r.descontoValor)}</span> : <span style={{ color: T.muted }}>—</span> },
     { key: "receita", label: "Receita (automática)", render: (r) => <span style={{ color: T.green, fontWeight: 600 }}>{fmtBRL(r.receita)}</span> },
   ];
 
