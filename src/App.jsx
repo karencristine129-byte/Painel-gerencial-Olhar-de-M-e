@@ -884,39 +884,40 @@ function InsumosModulo() {
 function ProducaoModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("producao");
   const { data: profissionais } = useRecords("cadProfissionais");
+  const { data: conveniosCadastro } = useRecords("cadConvenios");
   const nomesProfissionais = profissionais.map((p) => p.nome);
   const fields = [
     { key: "profissional", label: "Profissional", type: "select", options: nomesProfissionais.length ? nomesProfissionais : ["Cadastre em Cadastros → Profissionais"] },
     { key: "convenio", label: "Convênio", type: "select", options: CONVENIOS },
     { key: "mes", label: "Mês (AAAA-MM)", type: "text", placeholder: todayISO().slice(0, 7), default: todayISO().slice(0, 7) },
     { key: "atendimentos", label: "Atendimentos", type: "number" },
-    { key: "receita", label: "Receita gerada (R$)", type: "currency" },
-    { key: "tipoRepasse", label: "Tipo de repasse", type: "select", options: ["Fixo", "Percentual"], default: "Fixo" },
-    { key: "custo", label: "Custo/repasse (R$)", type: "currency", showIf: (f) => f.tipoRepasse !== "Percentual" },
-    { key: "percentualRepasse", label: "Percentual de repasse (%)", type: "number", required: false, showIf: (f) => f.tipoRepasse === "Percentual" },
   ];
   const computar = (r) => {
-    if (r.tipoRepasse === "Percentual") return { custo: Number(r.receita || 0) * (Number(r.percentualRepasse || 0) / 100) };
-    return { custo: Number(r.custo || 0) };
+    const cfgConvenio = conveniosCadastro.find((c) => c.nome === r.convenio);
+    const valorPorAtendimento = cfgConvenio ? Number(cfgConvenio.valorPadrao || 0) : 0;
+    return { receita: Number(r.atendimentos || 0) * valorPorAtendimento };
   };
   const onAddComputado = (record) => add({ ...record, ...computar(record) });
   const onUpdateComputado = (id, record) => update(id, { ...record, ...computar(record) });
+  const tipoRepasseDe = (nomeProfissional) => { const p = profissionais.find((x) => x.nome === nomeProfissional); return p && p.tipoSublocacao ? p.tipoSublocacao : "—"; };
   const columns = [
-    { key: "profissional", label: "Profissional" }, { key: "convenio", label: "Convênio" }, { key: "mes", label: "Mês" }, { key: "atendimentos", label: "Atendimentos" },
-    { key: "receita", label: "Receita", render: (r) => fmtBRL(r.receita) },
-    { key: "custo", label: "Custo", render: (r) => <span>{fmtBRL(r.custo)}{r.tipoRepasse === "Percentual" && <span className="text-xs" style={{ color: T.muted }}> ({r.percentualRepasse}%)</span>}</span> },
-    { key: "rentabilidade", label: "Rentabilidade", render: (r) => { const rent = r.receita - r.custo; return <span style={{ color: rent >= 0 ? T.green : T.red, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(rent)}</span>; } },
-    { key: "margem", label: "Margem", render: (r) => fmtPct(r.receita ? ((r.receita - r.custo) / r.receita) * 100 : 0) },
+    { key: "profissional", label: "Profissional" },
+    { key: "tipoRepasseInfo", label: "Tipo de repasse (cadastro)", render: (r) => <span className="text-xs" style={{ color: T.muted }}>{tipoRepasseDe(r.profissional)}</span> },
+    { key: "convenio", label: "Convênio" }, { key: "mes", label: "Mês" }, { key: "atendimentos", label: "Atendimentos" },
+    { key: "receita", label: "Receita (automática)", render: (r) => <span style={{ color: T.green, fontWeight: 600 }}>{fmtBRL(r.receita)}</span> },
   ];
-  const chartData = data.map((r) => ({ profissional: r.profissional.replace(/^Dr[a]?\.\s*/, ""), receita: r.receita, custo: r.custo, rentabilidade: r.receita - r.custo }));
+  const chartData = useMemo(() => { const map = {}; data.forEach((r) => { const nome = r.profissional.replace(/^Dr[a]?\.\s*/, ""); map[nome] = (map[nome] || 0) + Number(r.receita); }); return Object.entries(map).map(([profissional, receita]) => ({ profissional, receita })); }, [data]);
   const porConvenioProducao = useMemo(() => { const map = {}; data.forEach((r) => { map[r.convenio] = (map[r.convenio] || 0) + Number(r.receita); }); return Object.entries(map).filter(([k]) => k).map(([convenio, receita]) => ({ convenio, receita })).sort((a, b) => b.receita - a.receita); }, [data]);
-  const totalReceita = data.reduce((s, r) => s + r.receita, 0), totalCusto = data.reduce((s, r) => s + r.custo, 0); const maisRentavel = [...data].sort((a, b) => (b.receita - b.custo) - (a.receita - a.custo))[0];
+  const totalReceita = data.reduce((s, r) => s + Number(r.receita), 0);
+  const totalAtendimentos = data.reduce((s, r) => s + Number(r.atendimentos), 0);
+  const maisProdutivo = [...chartData].sort((a, b) => b.receita - a.receita)[0];
   return (
-    <ModuleShell icon={Stethoscope} title="Produção Médica" subtitle="Produção e rentabilidade por profissional" tone="teal" loading={loading} erro={erro}
+    <ModuleShell icon={Stethoscope} title="Produção Médica" subtitle="Receita calculada automaticamente por atendimentos × valor do convênio" tone="teal" loading={loading} erro={erro}
       dailyFields={fields} dailyCta="Registrar produção" fields={fields} columns={columns} rows={data} onAdd={onAddComputado} onUpdate={onUpdateComputado} onDelete={remove} onBulkImport={bulkAdd}
-      kpis={[{ label: "Receita gerada", value: fmtBRL(totalReceita), tone: "green" }, { label: "Custo/repasse", value: fmtBRL(totalCusto), tone: "red" }, { label: "Rentabilidade", value: fmtBRL(totalReceita - totalCusto), tone: (totalReceita - totalCusto) >= 0 ? "green" : "red" }, { label: "Mais rentável", value: maisRentavel ? maisRentavel.profissional.split(" ").slice(0, 2).join(" ") : "—", tone: "coral" }]}
+      kpis={[{ label: "Receita gerada", value: fmtBRL(totalReceita), tone: "green" }, { label: "Atendimentos", value: fmtNum(totalAtendimentos), tone: "teal" }, { label: "Mais produtivo(a)", value: maisProdutivo ? maisProdutivo.profissional : "—", tone: "coral" }]}
+      extra={conveniosCadastro.length === 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><span className="text-sm" style={{ color: T.text }}>Nenhum convênio cadastrado ainda em Cadastros → Convênios — cadastre lá o "valor padrão por atendimento" de cada convênio para a receita ser calculada aqui.</span></Card>}
       charts={<div className="grid md:grid-cols-2 gap-5">
-        <ChartCard title="Rentabilidade por profissional"><BarChart data={chartData}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="profissional" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="receita" name="Receita" fill={T.teal} radius={[4, 4, 0, 0]} /><Bar dataKey="custo" name="Custo" fill={`${T.teal}55`} radius={[4, 4, 0, 0]} /><Bar dataKey="rentabilidade" name="Rentabilidade" fill={T.green} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>
+        <ChartCard title="Receita por profissional"><BarChart data={chartData}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="profissional" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="receita" name="Receita" fill={T.teal} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>
         <ChartCard title="Receita por convênio"><PieChart><Pie data={porConvenioProducao} dataKey="receita" nameKey="convenio" innerRadius={55} outerRadius={85} paddingAngle={2}>{porConvenioProducao.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Pie><Tooltip formatter={(v) => fmtBRL(v)} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart></ChartCard>
       </div>} />
   );
