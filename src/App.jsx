@@ -132,8 +132,8 @@ const MODULES = {
     toDb: (r) => ({ nome: r.nome, categoria: r.categoria, qtd: r.qtd, qtd_minima: r.qtdMinima, unidade_medida: r.unidade, valor_unitario: r.valorUnitario }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, categoria: r.categoria, qtd: r.qtd, qtdMinima: r.qtd_minima, unidade: r.unidade_medida, valorUnitario: r.valor_unitario }) },
   producao: { table: "producao_medica", order: "data_atendimento.desc",
-    toDb: (r) => ({ profissional: r.profissional, convenio: r.convenio, data_atendimento: r.data, mes: monthToDate(monthKey(r.data)), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipo_repasse: r.tipoRepasse || "Fixo", percentual_repasse: r.percentualRepasse || 0 }),
-    fromDb: (r) => ({ id: r.id, profissional: r.profissional, convenio: r.convenio, data: r.data_atendimento, mes: monthKey(r.mes), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipoRepasse: r.tipo_repasse, percentualRepasse: r.percentual_repasse }) },
+    toDb: (r) => ({ profissional: r.profissional, convenio: r.convenio, data_atendimento: r.data, mes: monthToDate(monthKey(r.data)), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipo_repasse: r.tipoRepasse || "Fixo", percentual_repasse: r.percentualRepasse || 0, desconto_pct: r.descontoPct || 0 }),
+    fromDb: (r) => ({ id: r.id, profissional: r.profissional, convenio: r.convenio, data: r.data_atendimento, mes: monthKey(r.mes), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipoRepasse: r.tipo_repasse, percentualRepasse: r.percentual_repasse, descontoPct: r.desconto_pct }) },
   contas: { table: "contas_pagar", order: "vencimento.asc",
     toDb: (r) => ({ descricao: r.descricao, categoria: r.categoria, valor: r.valor, vencimento: r.vencimento, status: r.status, data_pagamento: r.dataPagamento || null }),
     fromDb: (r) => ({ id: r.id, descricao: r.descricao, categoria: r.categoria, valor: r.valor, vencimento: r.vencimento, status: r.status, dataPagamento: r.data_pagamento }) },
@@ -1157,12 +1157,21 @@ function ProducaoConvenioModulo({ convenioFixo, titulo, subtitulo, icon }) {
     ...(convenioFixo ? [] : [{ key: "convenio", label: "Convênio", type: "select", options: opcoesConvenio.length ? opcoesConvenio : ["Cadastre em Cadastros → Convênios"] }]),
     { key: "data", label: "Data do atendimento", type: "date", default: todayISO() },
     { key: "atendimentos", label: "Atendimentos", type: "number" },
+    { key: "descontoPct", label: "Desconto (%)", type: "number", required: false, default: 0 },
   ];
   const computar = (r) => {
     const convenio = convenioFixo || r.convenio;
-    const cfgConvenio = conveniosCadastro.find((c) => c.nome === convenio);
-    const valorPorAtendimento = cfgConvenio ? Number(cfgConvenio.valorPadrao || 0) : 0;
-    return { convenio, receita: Number(r.atendimentos || 0) * valorPorAtendimento };
+    let valorPorAtendimento = 0;
+    if (convenio === "Particular") {
+      const prof = profissionais.find((p) => p.nome === r.profissional);
+      valorPorAtendimento = prof ? Number(prof.valorConsultaParticular || 0) : 0;
+    } else {
+      const cfgConvenio = conveniosCadastro.find((c) => c.nome === convenio);
+      valorPorAtendimento = cfgConvenio ? Number(cfgConvenio.valorPadrao || 0) : 0;
+    }
+    const desconto = Number(r.descontoPct || 0);
+    const receita = Number(r.atendimentos || 0) * valorPorAtendimento * (1 - desconto / 100);
+    return { convenio, receita, descontoPct: desconto };
   };
   const onAddComputado = (record) => add({ ...record, ...computar(record) });
   const onUpdateComputado = (id, record) => update(id, { ...record, ...computar(record) });
@@ -1173,6 +1182,7 @@ function ProducaoConvenioModulo({ convenioFixo, titulo, subtitulo, icon }) {
     { key: "tipoRepasseInfo", label: "Tipo de repasse (cadastro)", render: (r) => <span className="text-xs" style={{ color: T.muted }}>{tipoRepasseDe(r.profissional)}</span> },
     ...(convenioFixo ? [] : [{ key: "convenio", label: "Convênio" }]),
     { key: "atendimentos", label: "Atendimentos" },
+    { key: "descontoPct", label: "Desconto", render: (r) => fmtPct(r.descontoPct) },
     { key: "receita", label: "Receita (automática)", render: (r) => <span style={{ color: T.green, fontWeight: 600 }}>{fmtBRL(r.receita)}</span> },
   ];
 
@@ -2121,9 +2131,9 @@ function GestaoDocumentosRH() {
 
 /* ============================== PAINEL DA EQUIPE (visão do gestor) ============================== */
 /* ============================== METAS ============================== */
-const CATEGORIAS_META = ["Receita Total", "Faturamento em Vacinas", "Faturamento em Convênios", "Atendimentos por Convênio", "Novos Leads Convertidos", "Procedimentos Concluídos"];
-const CATEGORIAS_COM_CONVENIO = ["Faturamento em Convênios", "Atendimentos por Convênio"];
-const CATEGORIAS_MOEDA = ["Receita Total", "Faturamento em Vacinas", "Faturamento em Convênios"];
+const CATEGORIAS_META = ["Receita Total", "Faturamento em Vacinas", "Faturamento em Convênios", "Atendimentos por Convênio", "Produção Médica (Eletivo)", "Atendimento Plantão", "Novos Leads Convertidos", "Procedimentos Concluídos"];
+const CATEGORIAS_COM_CONVENIO = ["Faturamento em Convênios", "Atendimentos por Convênio", "Produção Médica (Eletivo)", "Atendimento Plantão"];
+const CATEGORIAS_MOEDA = ["Receita Total", "Faturamento em Vacinas", "Faturamento em Convênios", "Produção Médica (Eletivo)"];
 /* ============================== CADASTROS (dados-mestre da clínica) ============================== */
 function CadastroConveniosModulo() {
   const { data, add, update, remove, loading, erro } = useRecords("cadConvenios");
@@ -2365,6 +2375,8 @@ function MetasModulo() {
   const atendimentos = useRecords("convenios");
   const leads = useRecords("marketing");
   const procedimentos = useRecords("procedimentos");
+  const producao = useRecords("producao");
+  const plantao = useRecords("plantaoAtendimentos");
 
   const realizadoPara = (categoria, mes, convenio) => {
     if (categoria === "Receita Total") return financeiro.data.filter((r) => r.tipo === "entrada" && monthKey(r.data) === mes).reduce((s, r) => s + r.valor, 0);
@@ -2377,6 +2389,14 @@ function MetasModulo() {
       const base = atendimentos.data.filter((r) => monthKey(r.data) === mes && (!convenio || r.convenio === convenio));
       return base.reduce((s, r) => s + Number(r.quantidade), 0);
     }
+    if (categoria === "Produção Médica (Eletivo)") {
+      const base = producao.data.filter((r) => monthKey(r.data) === mes && (!convenio || r.convenio === convenio));
+      return base.reduce((s, r) => s + Number(r.receita), 0);
+    }
+    if (categoria === "Atendimento Plantão") {
+      const base = plantao.data.filter((r) => monthKey(r.data) === mes && (!convenio || r.convenio === convenio));
+      return base.reduce((s, r) => s + Number(r.qtdPacientes), 0);
+    }
     if (categoria === "Novos Leads Convertidos") return leads.data.filter((r) => r.status === "Convertido" && monthKey(r.data) === mes).length;
     if (categoria === "Procedimentos Concluídos") return procedimentos.data.filter((r) => r.status === "Concluído" && monthKey(r.data) === mes).length;
     return 0;
@@ -2387,7 +2407,7 @@ function MetasModulo() {
   const fields = [
     { key: "mes", label: "Mês (AAAA-MM)", type: "text", default: todayISO().slice(0, 7) },
     { key: "categoria", label: "Categoria", type: "select", options: CATEGORIAS_META },
-    { key: "convenio", label: "Convênio (opcional — deixe vazio para todos)", type: "select", options: CONVENIOS, required: false, showIf: (form) => CATEGORIAS_COM_CONVENIO.includes(form.categoria) },
+    { key: "convenio", label: "Convênio (opcional — deixe vazio para todos, ou escolha \"Particular\")", type: "select", options: CONVENIOS, required: false, showIf: (form) => CATEGORIAS_COM_CONVENIO.includes(form.categoria) },
     { key: "valorMeta", label: "Valor da meta", type: "number" },
   ];
   const withRealizado = data.map((r) => { const realizado = realizadoPara(r.categoria, r.mes, r.convenio); const falta = Math.max(r.valorMeta - realizado, 0); const pct = r.valorMeta ? (realizado / r.valorMeta) * 100 : 0; return { ...r, realizado, falta, pct }; });
