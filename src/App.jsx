@@ -173,6 +173,12 @@ const MODULES = {
   plantaoAtendimentos: { table: "plantao_atendimentos", order: "data.desc",
     toDb: (r) => ({ data: r.data, medico: r.medico, convenio: r.convenio, qtd_pacientes: r.qtdPacientes }),
     fromDb: (r) => ({ id: r.id, data: r.data, medico: r.medico, convenio: r.convenio, qtdPacientes: r.qtd_pacientes }) },
+  metasColaborador: { table: "metas_colaborador", order: "mes.desc",
+    toDb: (r) => ({ colaborador_id: r.colaboradorId, colaborador_nome: r.colaboradorNome, tipo_meta: r.tipoMeta, mes: monthToDate(r.mes), quantidade_diaria: r.quantidadeDiaria, quantidade_total: r.quantidadeTotal, valor_repasse: r.valorRepasse || 0 }),
+    fromDb: (r) => ({ id: r.id, colaboradorId: r.colaborador_id, colaboradorNome: r.colaborador_nome, tipoMeta: r.tipo_meta, mes: monthKey(r.mes), quantidadeDiaria: r.quantidade_diaria, quantidadeTotal: r.quantidade_total, valorRepasse: r.valor_repasse }) },
+  metasEquipe: { table: "metas_equipe", order: "mes.desc",
+    toDb: (r) => ({ nome_equipe: r.nomeEquipe, colaboradores: r.colaboradores || [], tipo_meta: r.tipoMeta, mes: monthToDate(r.mes), quantidade_diaria: r.quantidadeDiaria, quantidade_total: r.quantidadeTotal, valor_repasse: r.valorRepasse || 0 }),
+    fromDb: (r) => ({ id: r.id, nomeEquipe: r.nome_equipe, colaboradores: r.colaboradores || [], tipoMeta: r.tipo_meta, mes: monthKey(r.mes), quantidadeDiaria: r.quantidade_diaria, quantidadeTotal: r.quantidade_total, valorRepasse: r.valor_repasse }) },
   vendasVacinas: { table: "vendas_vacinas", order: "data.desc",
     toDb: (r) => ({ vacina_id: r.vacinaId, data: r.data, quantidade: r.quantidade, valor_unitario: r.valorUnitario, desconto_pct: r.descontoPct, valor_total: r.valorTotal }),
     fromDb: (r) => ({ id: r.id, vacinaId: r.vacina_id, data: r.data, quantidade: r.quantidade, valorUnitario: r.valor_unitario, descontoPct: r.desconto_pct, valorTotal: r.valor_total }) },
@@ -631,6 +637,33 @@ function useRecords(moduleKey, enabled = true) {
 }
 
 /* Hook: registros pessoais do colaborador logado (Meu RH) */
+/* Hook: lista de colaboradores (logins) da unidade atual */
+function usePerfisDaUnidade() {
+  const { session } = useAuth();
+  const { unidadeId } = useUnidade();
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    setLoading(true);
+    sbRest(`perfis?unidade_id=eq.${unidadeId}&select=id,nome,cargo,papel&order=nome.asc`, { token: session.access_token })
+      .then((r) => setData(r || [])).catch(() => setData([])).finally(() => setLoading(false));
+  }, [unidadeId]);
+  return { data, loading };
+}
+/* Hook: produtividade diária de TODA a equipe (não só a própria) — para resumos de meta */
+function useProducaoDiariaEquipe() {
+  const { session } = useAuth();
+  const { unidadeId } = useUnidade();
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    setLoading(true);
+    sbRest(`producao_diaria_colaborador?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token })
+      .then((r) => setData(r || [])).catch(() => setData([])).finally(() => setLoading(false));
+  }, [unidadeId]);
+  return { data, loading };
+}
+
 function useOwnRecords(table, order = "data.desc") {
   const { session, perfil } = useAuth();
   const { unidadeId } = useUnidade();
@@ -1794,7 +1827,7 @@ function UnidadesModulo() {
 /* ============================== MEU RH (autoatendimento do colaborador) ============================== */
 function ProdutividadeDiaria() {
   const { data, add, loading } = useOwnRecords("producao_diaria_colaborador");
-  const [form, setForm] = useState({ data: todayISO(), ligacoes: "", mensagens: "", agendados: "", pacientesAgendadosVacinas: "", avaliacoesGoogle: "", novosPacientesRecepcao: "", novosPacientesVacinas: "" });
+  const [form, setForm] = useState({ data: todayISO(), ligacoes: "", mensagens: "", agendados: "", pacientesAgendadosVacinas: "", avaliacoesGoogle: "", novosPacientesRecepcao: "", novosPacientesVacinas: "", agendamentosPlantao: "", pacientesNovosFototerapia: "" });
   const [busy, setBusy] = useState(false);
   const mesAtual = todayISO().slice(0, 7);
   const doMes = data.filter((r) => r.data.slice(0, 7) === mesAtual);
@@ -1803,6 +1836,7 @@ function ProdutividadeDiaria() {
     ligacoes: somar("ligacoes"), mensagens: somar("mensagens"), agendados: somar("agendados"),
     pacientesAgendadosVacinas: somar("pacientes_agendados_vacinas"), avaliacoesGoogle: somar("avaliacoes_google"),
     novosPacientesRecepcao: somar("novos_pacientes_recepcao"), novosPacientesVacinas: somar("novos_pacientes_vacinas"),
+    agendamentosPlantao: somar("agendamentos_plantao"), pacientesNovosFototerapia: somar("pacientes_novos_fototerapia"),
   };
   return (
     <Card className="mb-5">
@@ -1812,18 +1846,21 @@ function ProdutividadeDiaria() {
         <Field label="Ligações atendidas"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.ligacoes} onChange={(e) => setForm((p) => ({ ...p, ligacoes: e.target.value }))} /></Field>
         <Field label="Mensagens respondidas"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.mensagens} onChange={(e) => setForm((p) => ({ ...p, mensagens: e.target.value }))} /></Field>
         <Field label="Pacientes agendados"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.agendados} onChange={(e) => setForm((p) => ({ ...p, agendados: e.target.value }))} /></Field>
+        <Field label="Agendamentos para plantão"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.agendamentosPlantao} onChange={(e) => setForm((p) => ({ ...p, agendamentosPlantao: e.target.value }))} /></Field>
         <Field label="Pacientes agendados vacinas"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.pacientesAgendadosVacinas} onChange={(e) => setForm((p) => ({ ...p, pacientesAgendadosVacinas: e.target.value }))} /></Field>
         <Field label="Avaliações Google"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.avaliacoesGoogle} onChange={(e) => setForm((p) => ({ ...p, avaliacoesGoogle: e.target.value }))} /></Field>
         <Field label="Novos pacientes recepção"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.novosPacientesRecepcao} onChange={(e) => setForm((p) => ({ ...p, novosPacientesRecepcao: e.target.value }))} /></Field>
         <Field label="Novos pacientes vacinas"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.novosPacientesVacinas} onChange={(e) => setForm((p) => ({ ...p, novosPacientesVacinas: e.target.value }))} /></Field>
+        <Field label="Pacientes novos — Fototerapia"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.pacientesNovosFototerapia} onChange={(e) => setForm((p) => ({ ...p, pacientesNovosFototerapia: e.target.value }))} /></Field>
         <Btn icon={busy ? undefined : Plus} disabled={busy} onClick={async () => {
           setBusy(true);
           await add({
             data: form.data, ligacoes: Number(form.ligacoes || 0), mensagens: Number(form.mensagens || 0), agendados: Number(form.agendados || 0),
             pacientes_agendados_vacinas: Number(form.pacientesAgendadosVacinas || 0), avaliacoes_google: Number(form.avaliacoesGoogle || 0),
             novos_pacientes_recepcao: Number(form.novosPacientesRecepcao || 0), novos_pacientes_vacinas: Number(form.novosPacientesVacinas || 0),
+            agendamentos_plantao: Number(form.agendamentosPlantao || 0), pacientes_novos_fototerapia: Number(form.pacientesNovosFototerapia || 0),
           });
-          setForm({ data: todayISO(), ligacoes: "", mensagens: "", agendados: "", pacientesAgendadosVacinas: "", avaliacoesGoogle: "", novosPacientesRecepcao: "", novosPacientesVacinas: "" });
+          setForm({ data: todayISO(), ligacoes: "", mensagens: "", agendados: "", pacientesAgendadosVacinas: "", avaliacoesGoogle: "", novosPacientesRecepcao: "", novosPacientesVacinas: "", agendamentosPlantao: "", pacientesNovosFototerapia: "" });
           setBusy(false);
         }}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Registrar</Btn>
       </div>
@@ -1831,10 +1868,12 @@ function ProdutividadeDiaria() {
         <KpiCard label="Ligações no mês" value={fmtNum(totais.ligacoes)} tone="coral" />
         <KpiCard label="Mensagens no mês" value={fmtNum(totais.mensagens)} tone="teal" />
         <KpiCard label="Agendados no mês" value={fmtNum(totais.agendados)} tone="green" />
+        <KpiCard label="Agend. plantão" value={fmtNum(totais.agendamentosPlantao)} tone="coral" />
         <KpiCard label="Agendados vacinas" value={fmtNum(totais.pacientesAgendadosVacinas)} tone="teal" />
         <KpiCard label="Avaliações Google" value={fmtNum(totais.avaliacoesGoogle)} tone="amber" />
         <KpiCard label="Novos pac. recepção" value={fmtNum(totais.novosPacientesRecepcao)} tone="coral" />
         <KpiCard label="Novos pac. vacinas" value={fmtNum(totais.novosPacientesVacinas)} tone="teal" />
+        <KpiCard label="Novos pac. fototerapia" value={fmtNum(totais.pacientesNovosFototerapia)} tone="purple" />
       </div>
       {!loading && doMes.length > 0 && (
         <div className="overflow-x-auto -mx-5 px-5">
@@ -1844,15 +1883,17 @@ function ProdutividadeDiaria() {
               <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Ligações</th>
               <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Mensagens</th>
               <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Agendados</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Agend. plantão</th>
               <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Agend. vacinas</th>
               <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Aval. Google</th>
               <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Novos (recepção)</th>
               <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Novos (vacinas)</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Novos (fototerapia)</th>
             </tr></thead>
             <tbody>{[...doMes].sort((a, b) => b.data.localeCompare(a.data)).map((r) => (
               <tr key={r.id} style={{ borderBottom: `1px solid ${T.border}` }}>
                 <td className="py-2 px-2">{fmtDate(r.data)}</td><td className="py-2 px-2">{r.ligacoes}</td><td className="py-2 px-2">{r.mensagens}</td><td className="py-2 px-2">{r.agendados}</td>
-                <td className="py-2 px-2">{r.pacientes_agendados_vacinas}</td><td className="py-2 px-2">{r.avaliacoes_google}</td><td className="py-2 px-2">{r.novos_pacientes_recepcao}</td><td className="py-2 px-2">{r.novos_pacientes_vacinas}</td>
+                <td className="py-2 px-2">{r.agendamentos_plantao}</td><td className="py-2 px-2">{r.pacientes_agendados_vacinas}</td><td className="py-2 px-2">{r.avaliacoes_google}</td><td className="py-2 px-2">{r.novos_pacientes_recepcao}</td><td className="py-2 px-2">{r.novos_pacientes_vacinas}</td><td className="py-2 px-2">{r.pacientes_novos_fototerapia}</td>
               </tr>
             ))}</tbody>
           </table>
@@ -2382,6 +2423,163 @@ function CadastroFornecedoresModulo() {
   );
 }
 
+/* ============================== METAS POR COLABORADOR E POR EQUIPE ============================== */
+const METRICA_CAMPO = {
+  "Agendamentos para Plantão": "agendamentos_plantao",
+  "Avaliações Google": "avaliacoes_google",
+  "Pacientes Novos — Vacinas": "novos_pacientes_vacinas",
+  "Pacientes Novos": "novos_pacientes_recepcao",
+  "Pacientes Novos — Fototerapia": "pacientes_novos_fototerapia",
+};
+const TIPOS_META_COLABORADOR = Object.keys(METRICA_CAMPO);
+function diasRestantesNoMes() {
+  const hoje = new Date();
+  const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
+  return ultimoDia - hoje.getDate() + 1;
+}
+
+function MetasColaboradorModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("metasColaborador");
+  const { data: colaboradores } = usePerfisDaUnidade();
+  const { data: producaoEquipe, loading: loadingProducao } = useProducaoDiariaEquipe();
+  const nomesColaboradores = colaboradores.map((c) => c.nome);
+  const fields = [
+    { key: "colaboradorNome", label: "Colaborador(a)", type: "select", options: nomesColaboradores.length ? nomesColaboradores : ["Peça para a pessoa criar a conta primeiro"] },
+    { key: "tipoMeta", label: "Tipo de meta", type: "select", options: TIPOS_META_COLABORADOR },
+    { key: "mes", label: "Mês (AAAA-MM)", type: "text", default: todayISO().slice(0, 7) },
+    { key: "quantidadeDiaria", label: "Quantidade diária", type: "number" },
+    { key: "quantidadeTotal", label: "Quantidade total do mês", type: "number" },
+    { key: "valorRepasse", label: "Valor de repasse por dia batido (R$)", type: "currency", required: false, default: 0 },
+  ];
+  const onAddComputado = (record) => { const colab = colaboradores.find((c) => c.nome === record.colaboradorNome); return add({ ...record, colaboradorId: colab ? colab.id : null }); };
+  const onUpdateComputado = (id, record) => { const colab = colaboradores.find((c) => c.nome === record.colaboradorNome); return update(id, { ...record, colaboradorId: colab ? colab.id : null }); };
+
+  const mesAtual = todayISO().slice(0, 7);
+  const hoje = todayISO();
+  const resumo = useMemo(() => data.filter((m) => m.mes === mesAtual).map((m) => {
+    const campo = METRICA_CAMPO[m.tipoMeta];
+    const registros = producaoEquipe.filter((p) => p.colaborador_id === m.colaboradorId);
+    const hojeValor = registros.filter((r) => r.data === hoje).reduce((s, r) => s + (Number(r[campo]) || 0), 0);
+    const mesValor = registros.filter((r) => r.data.slice(0, 7) === mesAtual).reduce((s, r) => s + (Number(r[campo]) || 0), 0);
+    const bateuHoje = hojeValor >= m.quantidadeDiaria && m.quantidadeDiaria > 0;
+    const falta = Math.max(m.quantidadeTotal - mesValor, 0);
+    const dRest = diasRestantesNoMes();
+    const mediaNecessaria = dRest > 0 ? falta / dRest : falta;
+    const pct = m.quantidadeTotal ? (mesValor / m.quantidadeTotal) * 100 : 0;
+    return { ...m, hojeValor, mesValor, bateuHoje, falta, mediaNecessaria, pct };
+  }), [data, producaoEquipe, mesAtual, hoje]);
+
+  const destaque = [...resumo].sort((a, b) => b.pct - a.pct)[0];
+  const columns = [
+    { key: "colaboradorNome", label: "Colaborador(a)" }, { key: "tipoMeta", label: "Tipo de meta" }, { key: "mes", label: "Mês" },
+    { key: "quantidadeDiaria", label: "Meta diária" }, { key: "quantidadeTotal", label: "Meta do mês" },
+    { key: "valorRepasse", label: "Repasse/dia", render: (r) => fmtBRL(r.valorRepasse) },
+  ];
+
+  return (
+    <ModuleShell icon={Users} title="Meta por Colaborador" subtitle="Defina o tipo de meta, quantidade diária e total, e o repasse por dia batido" tone="coral" loading={loading || loadingProducao} erro={erro}
+      dailyFields={fields} dailyCta="Definir meta" fields={fields} columns={columns} rows={data} onAdd={onAddComputado} onUpdate={onUpdateComputado} onDelete={remove}
+      kpis={[{ label: "Metas ativas no mês", value: resumo.length }, { label: "Bateram a meta hoje", value: resumo.filter((r) => r.bateuHoje).length, tone: "green" }, { label: "Destaque do mês", value: destaque ? destaque.colaboradorNome : "—", tone: "coral" }]}
+      extra={resumo.length > 0 && (
+        <Card className="mb-5">
+          <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Resumo — mês atual</p>
+          <div className="overflow-x-auto -mx-5 px-5">
+            <table className="w-full text-sm min-w-[820px]">
+              <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Colaborador(a)</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Tipo</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Hoje</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Bateu hoje?</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Repasse do dia</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Mês</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Falta</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Média necessária/dia</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Progresso</th>
+              </tr></thead>
+              <tbody>{resumo.sort((a, b) => b.pct - a.pct).map((r) => (
+                <tr key={r.id} style={{ borderBottom: `1px solid ${T.border}` }}>
+                  <td className="py-2 px-2 font-medium" style={{ color: T.text }}>{r.colaboradorNome}{destaque && r.id === destaque.id && " ⭐"}</td>
+                  <td className="py-2 px-2 text-xs" style={{ color: T.muted }}>{r.tipoMeta}</td>
+                  <td className="py-2 px-2">{r.hojeValor}/{r.quantidadeDiaria}</td>
+                  <td className="py-2 px-2">{r.bateuHoje ? <Badge tone="green">Sim</Badge> : <Badge tone="muted">Não</Badge>}</td>
+                  <td className="py-2 px-2">{r.bateuHoje ? <span style={{ color: T.green, fontWeight: 600 }}>{fmtBRL(r.valorRepasse)}</span> : "—"}</td>
+                  <td className="py-2 px-2">{r.mesValor}/{r.quantidadeTotal}</td>
+                  <td className="py-2 px-2" style={{ color: r.falta > 0 ? T.amber : T.green }}>{r.falta}</td>
+                  <td className="py-2 px-2">{r.mediaNecessaria.toFixed(1)}</td>
+                  <td className="py-2 px-2"><div className="flex items-center gap-2 min-w-[100px]"><Progress pct={r.pct} /><span className="text-xs">{fmtPct(r.pct)}</span></div></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </Card>
+      )} />
+  );
+}
+
+function MetasEquipeModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("metasEquipe");
+  const { data: colaboradores } = usePerfisDaUnidade();
+  const { data: producaoEquipe, loading: loadingProducao } = useProducaoDiariaEquipe();
+  const nomesColaboradores = colaboradores.map((c) => c.nome);
+  const fields = [
+    { key: "nomeEquipe", label: "Nome da equipe", type: "text" },
+    { key: "colaboradores", label: "Colaboradores da equipe", type: "multiselect", options: nomesColaboradores, default: [] },
+    { key: "tipoMeta", label: "Tipo de meta", type: "select", options: TIPOS_META_COLABORADOR },
+    { key: "mes", label: "Mês (AAAA-MM)", type: "text", default: todayISO().slice(0, 7) },
+    { key: "quantidadeDiaria", label: "Quantidade diária (da equipe)", type: "number" },
+    { key: "quantidadeTotal", label: "Quantidade total do mês (da equipe)", type: "number" },
+    { key: "valorRepasse", label: "Valor de repasse por dia batido (R$)", type: "currency", required: false, default: 0 },
+  ];
+  const columns = [
+    { key: "nomeEquipe", label: "Equipe" }, { key: "colaboradores", label: "Integrantes", render: (r) => <span className="text-xs" style={{ color: T.muted }}>{(r.colaboradores || []).join(", ")}</span> },
+    { key: "tipoMeta", label: "Tipo de meta" }, { key: "mes", label: "Mês" }, { key: "quantidadeTotal", label: "Meta do mês" },
+  ];
+
+  const mesAtual = todayISO().slice(0, 7);
+  const hoje = todayISO();
+  const resumo = useMemo(() => data.filter((m) => m.mes === mesAtual).map((m) => {
+    const campo = METRICA_CAMPO[m.tipoMeta];
+    const idsEquipe = colaboradores.filter((c) => (m.colaboradores || []).includes(c.nome)).map((c) => c.id);
+    const registros = producaoEquipe.filter((p) => idsEquipe.includes(p.colaborador_id));
+    const hojeValor = registros.filter((r) => r.data === hoje).reduce((s, r) => s + (Number(r[campo]) || 0), 0);
+    const mesValor = registros.filter((r) => r.data.slice(0, 7) === mesAtual).reduce((s, r) => s + (Number(r[campo]) || 0), 0);
+    const falta = Math.max(m.quantidadeTotal - mesValor, 0);
+    const dRest = diasRestantesNoMes();
+    const mediaNecessaria = dRest > 0 ? falta / dRest : falta;
+    const pct = m.quantidadeTotal ? (mesValor / m.quantidadeTotal) * 100 : 0;
+    return { ...m, hojeValor, mesValor, falta, mediaNecessaria, pct };
+  }), [data, producaoEquipe, colaboradores, mesAtual, hoje]);
+
+  const destaque = [...resumo].sort((a, b) => b.pct - a.pct)[0];
+  const perto = resumo.filter((r) => r.pct >= 80 && r.pct < 100);
+
+  return (
+    <ModuleShell icon={Users} title="Meta por Equipe" subtitle="Agrupe colaboradores em equipes e defina metas coletivas" tone="coral" loading={loading || loadingProducao} erro={erro}
+      dailyFields={fields} dailyCta="Definir meta de equipe" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove}
+      kpis={[{ label: "Equipes com meta no mês", value: resumo.length }, { label: "Equipe destaque", value: destaque ? destaque.nomeEquipe : "—", tone: "coral" }, { label: "Equipes perto de bater (80%+)", value: perto.length, tone: perto.length ? "amber" : "green" }]}
+      extra={resumo.length > 0 && (
+        <Card className="mb-5">
+          <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Resumo — mês atual</p>
+          <div className="flex flex-col gap-2">
+            {resumo.sort((a, b) => b.pct - a.pct).map((r) => (
+              <div key={r.id} className="rounded-xl px-4 py-3" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-semibold text-sm" style={{ color: T.text }}>{r.nomeEquipe}{destaque && r.id === destaque.id && " 🏆"} <span className="text-xs font-normal" style={{ color: T.muted }}>({r.tipoMeta})</span></span>
+                  <span className="text-xs" style={{ color: T.muted }}>{r.mesValor}/{r.quantidadeTotal} — falta {r.falta}</span>
+                </div>
+                <Progress pct={r.pct} />
+                <div className="flex justify-between text-xs mt-1.5" style={{ color: T.muted }}>
+                  <span>Hoje: {r.hojeValor} (meta diária da equipe: {r.quantidadeDiaria})</span>
+                  <span>Média necessária: {r.mediaNecessaria.toFixed(1)}/dia para bater</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )} />
+  );
+}
+
 function MetasModulo() {
   const { data, add, update, remove, loading, erro } = useRecords("metas");
   const financeiro = useRecords("financeiro");
@@ -2680,11 +2878,11 @@ const ALL_MENU = [
   { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" }] },
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }] },
   { group: "Plantão", items: [{ key: "plantaoRegistro", label: "Registrar Plantão", icon: Stethoscope, tone: "teal" }, { key: "plantaoValores", label: "Valores por Convênio", icon: ClipboardList, tone: "coral" }, { key: "plantaoResumo", label: "Resumo Financeiro", icon: ClipboardList, tone: "coral" }] },
-  { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
+  { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "metasColaborador", label: "Meta por Colaborador", icon: Users, tone: "coral" }, { key: "metasEquipe", label: "Meta por Equipe", icon: Users, tone: "coral" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
   { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas (E-mail/WhatsApp)", icon: Bell, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "contas", "faturamento", "repasse", "sublocacao", "equipe", "metas", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico"];
+const FINANCE_TABS = ["financeiro", "contas", "faturamento", "repasse", "sublocacao", "equipe", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
 const RESTRICTED_MENUS = {
   recepcao: { group: "Minha área", items: [
@@ -2765,6 +2963,8 @@ function AppInner() {
       case "sublocacao": return <SublocacaoModulo />;
       case "equipe": return <EquipeModulo />;
       case "metas": return <MetasModulo />;
+      case "metasColaborador": return <MetasColaboradorModulo />;
+      case "metasEquipe": return <MetasEquipeModulo />;
       case "relatorios": return <RelatoriosModulo />;
       case "plantaoRegistro": return <PlantaoRegistroModulo />;
       case "plantaoValores": return <PlantaoValoresConvenioModulo />;
