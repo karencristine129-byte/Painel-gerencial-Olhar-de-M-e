@@ -156,8 +156,8 @@ const MODULES = {
     toDb: (r) => ({ mes: monthToDate(r.mes), categoria: r.categoria, valor_meta: r.valorMeta, convenio: r.convenio || null }),
     fromDb: (r) => ({ id: r.id, mes: monthKey(r.mes), categoria: r.categoria, valorMeta: r.valor_meta, convenio: r.convenio }) },
   cadConvenios: { table: "cadastro_convenios", order: "nome.asc",
-    toDb: (r) => ({ nome: r.nome, valor_padrao: r.valorPadrao, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes }),
-    fromDb: (r) => ({ id: r.id, nome: r.nome, valorPadrao: r.valor_padrao, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes }) },
+    toDb: (r) => ({ nome: r.nome, valor_padrao: r.valorPadrao, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes, atende_plantao: !!r.atendePlantao }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, valorPadrao: r.valor_padrao, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes, atendePlantao: r.atende_plantao }) },
   cadColaboradores: { table: "cadastro_colaboradores", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, cargo: r.cargo, tipo: r.tipo || "Interno", telefone: r.telefone, observacoes: r.observacoes, carga_horaria_mensal: r.cargaHorariaMensal || 0, horario_entrada_padrao: r.horarioEntradaPadrao || null, horario_saida_almoco_padrao: r.horarioSaidaAlmocoPadrao || null, horario_volta_almoco_padrao: r.horarioVoltaAlmocoPadrao || null, horario_saida_padrao: r.horarioSaidaPadrao || null }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, cargo: r.cargo, tipo: r.tipo, telefone: r.telefone, observacoes: r.observacoes, cargaHorariaMensal: r.carga_horaria_mensal, horarioEntradaPadrao: r.horario_entrada_padrao, horarioSaidaAlmocoPadrao: r.horario_saida_almoco_padrao, horarioVoltaAlmocoPadrao: r.horario_volta_almoco_padrao, horarioSaidaPadrao: r.horario_saida_padrao }) },
@@ -1139,6 +1139,7 @@ function InsumosModulo() {
 }
 
 const CONVENIOS_TELA_PROPRIA = ["Particular", "Bradesco Clínica", "Aurora Saúde", "IPSM"];
+const normalizarTexto = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 
 function ProducaoConvenioModulo({ convenioFixo, titulo, subtitulo, icon }) {
   const { data: todaProducao, add, bulkAdd, update, remove, loading, erro } = useRecords("producao");
@@ -1166,7 +1167,7 @@ function ProducaoConvenioModulo({ convenioFixo, titulo, subtitulo, icon }) {
       const prof = profissionais.find((p) => p.nome === r.profissional);
       valorPorAtendimento = prof ? Number(prof.valorConsultaParticular || 0) : 0;
     } else {
-      const cfgConvenio = conveniosCadastro.find((c) => c.nome === convenio);
+      const cfgConvenio = conveniosCadastro.find((c) => normalizarTexto(c.nome) === normalizarTexto(convenio));
       valorPorAtendimento = cfgConvenio ? Number(cfgConvenio.valorPadrao || 0) : 0;
     }
     const desconto = Number(r.descontoPct || 0);
@@ -1207,6 +1208,9 @@ function ProducaoConvenioModulo({ convenioFixo, titulo, subtitulo, icon }) {
       kpis={[{ label: "Receita gerada", value: fmtBRL(totalReceita), tone: "green" }, { label: "Atendimentos", value: fmtNum(totalAtendimentos), tone: "teal" }, { label: "Mais produtivo(a)", value: maisProdutivo ? maisProdutivo.profissional : "—", tone: "coral" }]}
       extra={<>
         {conveniosCadastro.length === 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><span className="text-sm" style={{ color: T.text }}>Nenhum convênio cadastrado ainda em Cadastros → Convênios — cadastre lá o "valor padrão por atendimento" para a receita ser calculada aqui.</span></Card>}
+        {convenioFixo && convenioFixo !== "Particular" && !conveniosCadastro.find((c) => normalizarTexto(c.nome) === normalizarTexto(convenioFixo)) && (
+          <Card className="mb-5" style={{ borderColor: `${T.red}55` }}><span className="text-sm" style={{ color: T.red }}>Não encontrei "{convenioFixo}" em Cadastros → Convênios — por isso a receita está saindo R$ 0,00. Cadastre esse convênio lá (o nome não precisa ser idêntico letra por letra, mas precisa existir).</span></Card>
+        )}
         {convenioFixo && convenioFixo !== "Particular" && profissionaisDoConvenio.length === 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><span className="text-sm" style={{ color: T.text }}>Nenhum profissional marcado como atendendo "{convenioFixo}" ainda em Cadastros → Profissionais — por enquanto mostrando todos.</span></Card>}
         {resumoPorProfissional.length > 0 && (
           <Card className="mb-5">
@@ -2140,13 +2144,14 @@ function CadastroConveniosModulo() {
   const fields = [
     { key: "nome", label: "Nome do convênio", type: "text" },
     { key: "valorPadrao", label: "Valor padrão por atendimento (R$)", type: "currency" },
+    { key: "atendePlantao", label: "Atende plantão?", type: "checkbox", required: false, default: false },
     { key: "contato", label: "Contato / responsável", type: "text", required: false },
     { key: "telefone", label: "Telefone", type: "text", required: false },
     { key: "observacoes", label: "Observações", type: "text", required: false },
   ];
-  const columns = [{ key: "nome", label: "Convênio" }, { key: "valorPadrao", label: "Valor padrão", render: (r) => fmtBRL(r.valorPadrao) }, { key: "contato", label: "Contato" }, { key: "telefone", label: "Telefone" }];
+  const columns = [{ key: "nome", label: "Convênio" }, { key: "valorPadrao", label: "Valor padrão", render: (r) => fmtBRL(r.valorPadrao) }, { key: "atendePlantao", label: "Plantão", render: (r) => r.atendePlantao ? <Badge tone="teal">Sim</Badge> : <span style={{ color: T.muted }}>Não</span> }, { key: "contato", label: "Contato" }, { key: "telefone", label: "Telefone" }];
   return (
-    <ModuleShell icon={HeartHandshake} title="Cadastro de Convênios" subtitle="Convênios parceiros e valores de referência por atendimento" tone="coral" loading={loading} erro={erro}
+    <ModuleShell icon={HeartHandshake} title="Cadastro de Convênios" subtitle="Convênios parceiros, valores de referência e quais atendem plantão" tone="coral" loading={loading} erro={erro}
       dailyFields={fields} dailyCta="Cadastrar convênio" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
   );
 }
@@ -2235,11 +2240,14 @@ function PlantaoValoresConvenioModulo() {
 function PlantaoRegistroModulo() {
   const { data, add, update, remove, loading, erro } = useRecords("plantaoAtendimentos");
   const { data: profissionais } = useRecords("cadProfissionais");
+  const { data: conveniosCadastro } = useRecords("cadConvenios");
   const nomesProfissionais = profissionais.map((p) => p.nome);
+  const conveniosPlantao = conveniosCadastro.filter((c) => c.atendePlantao).map((c) => c.nome);
+  const opcoesConvenioPlantao = conveniosPlantao.length ? conveniosPlantao : CONVENIOS;
   const fields = [
     { key: "data", label: "Data do plantão", type: "date", default: todayISO() },
     { key: "medico", label: "Médico(a)", type: "select", options: nomesProfissionais.length ? nomesProfissionais : ["Cadastre em Cadastros → Profissionais"] },
-    { key: "convenio", label: "Convênio", type: "select", options: CONVENIOS },
+    { key: "convenio", label: "Convênio", type: "select", options: opcoesConvenioPlantao },
     { key: "qtdPacientes", label: "Quantidade de pacientes atendidos", type: "number" },
   ];
   const columns = [{ key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "medico", label: "Médico(a)" }, { key: "convenio", label: "Convênio" }, { key: "qtdPacientes", label: "Pacientes" }];
@@ -2247,7 +2255,8 @@ function PlantaoRegistroModulo() {
   return (
     <ModuleShell icon={Stethoscope} title="Registrar Plantão" subtitle="Lançamento diário — médico, convênio e quantidade de pacientes atendidos" tone="teal" loading={loading} erro={erro}
       dailyFields={fields} dailyCta="Registrar plantão" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove}
-      kpis={[{ label: "Registros no período", value: data.length }, { label: "Pacientes atendidos", value: fmtNum(totalPacientes), tone: "teal" }]} />
+      kpis={[{ label: "Registros no período", value: data.length }, { label: "Pacientes atendidos", value: fmtNum(totalPacientes), tone: "teal" }]}
+      extra={conveniosPlantao.length === 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><span className="text-sm" style={{ color: T.text }}>Nenhum convênio marcado como "Atende plantão?" ainda em Cadastros → Convênios — por enquanto mostrando todos os convênios.</span></Card>} />
   );
 }
 
