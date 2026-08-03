@@ -99,7 +99,7 @@ function applyTheme(primary, secondary) {
   PALETTES.coral = T.coral; PALETTES.purple = T.coral; PALETTES.teal = T.teal; PALETTES.rose = T.teal;
   CHART_SET[0] = T.teal; CHART_SET[1] = T.coral; CHART_SET[2] = T.tealDeep; CHART_SET[4] = T.coralDeep; CHART_SET[5] = T.tealLight;
 }
-const CONVENIOS = ["Bradesco Saúde", "Unimed", "IPSM", "AMMP", "Orizon", "Sancoop", "Particular"];
+const CONVENIOS = ["Bradesco Saúde", "Bradesco Clínica", "Unimed", "IPSM", "AMMP", "Orizon", "Sancoop", "Aurora Saúde", "Particular"];
 
 const fmtBRL = (v) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtNum = (v) => (Number(v) || 0).toLocaleString("pt-BR");
@@ -132,8 +132,8 @@ const MODULES = {
     toDb: (r) => ({ nome: r.nome, categoria: r.categoria, qtd: r.qtd, qtd_minima: r.qtdMinima, unidade_medida: r.unidade, valor_unitario: r.valorUnitario }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, categoria: r.categoria, qtd: r.qtd, qtdMinima: r.qtd_minima, unidade: r.unidade_medida, valorUnitario: r.valor_unitario }) },
   producao: { table: "producao_medica", order: "mes.desc",
-    toDb: (r) => ({ profissional: r.profissional, mes: monthToDate(r.mes), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipo_repasse: r.tipoRepasse || "Fixo", percentual_repasse: r.percentualRepasse || 0 }),
-    fromDb: (r) => ({ id: r.id, profissional: r.profissional, mes: monthKey(r.mes), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipoRepasse: r.tipo_repasse, percentualRepasse: r.percentual_repasse }) },
+    toDb: (r) => ({ profissional: r.profissional, convenio: r.convenio, mes: monthToDate(r.mes), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipo_repasse: r.tipoRepasse || "Fixo", percentual_repasse: r.percentualRepasse || 0 }),
+    fromDb: (r) => ({ id: r.id, profissional: r.profissional, convenio: r.convenio, mes: monthKey(r.mes), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipoRepasse: r.tipo_repasse, percentualRepasse: r.percentual_repasse }) },
   contas: { table: "contas_pagar", order: "vencimento.asc",
     toDb: (r) => ({ descricao: r.descricao, categoria: r.categoria, valor: r.valor, vencimento: r.vencimento, status: r.status, data_pagamento: r.dataPagamento || null }),
     fromDb: (r) => ({ id: r.id, descricao: r.descricao, categoria: r.categoria, valor: r.valor, vencimento: r.vencimento, status: r.status, dataPagamento: r.data_pagamento }) },
@@ -887,6 +887,7 @@ function ProducaoModulo() {
   const nomesProfissionais = profissionais.map((p) => p.nome);
   const fields = [
     { key: "profissional", label: "Profissional", type: "select", options: nomesProfissionais.length ? nomesProfissionais : ["Cadastre em Cadastros → Profissionais"] },
+    { key: "convenio", label: "Convênio", type: "select", options: CONVENIOS },
     { key: "mes", label: "Mês (AAAA-MM)", type: "text", placeholder: todayISO().slice(0, 7), default: todayISO().slice(0, 7) },
     { key: "atendimentos", label: "Atendimentos", type: "number" },
     { key: "receita", label: "Receita gerada (R$)", type: "currency" },
@@ -901,19 +902,23 @@ function ProducaoModulo() {
   const onAddComputado = (record) => add({ ...record, ...computar(record) });
   const onUpdateComputado = (id, record) => update(id, { ...record, ...computar(record) });
   const columns = [
-    { key: "profissional", label: "Profissional" }, { key: "mes", label: "Mês" }, { key: "atendimentos", label: "Atendimentos" },
+    { key: "profissional", label: "Profissional" }, { key: "convenio", label: "Convênio" }, { key: "mes", label: "Mês" }, { key: "atendimentos", label: "Atendimentos" },
     { key: "receita", label: "Receita", render: (r) => fmtBRL(r.receita) },
     { key: "custo", label: "Custo", render: (r) => <span>{fmtBRL(r.custo)}{r.tipoRepasse === "Percentual" && <span className="text-xs" style={{ color: T.muted }}> ({r.percentualRepasse}%)</span>}</span> },
     { key: "rentabilidade", label: "Rentabilidade", render: (r) => { const rent = r.receita - r.custo; return <span style={{ color: rent >= 0 ? T.green : T.red, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(rent)}</span>; } },
     { key: "margem", label: "Margem", render: (r) => fmtPct(r.receita ? ((r.receita - r.custo) / r.receita) * 100 : 0) },
   ];
   const chartData = data.map((r) => ({ profissional: r.profissional.replace(/^Dr[a]?\.\s*/, ""), receita: r.receita, custo: r.custo, rentabilidade: r.receita - r.custo }));
+  const porConvenioProducao = useMemo(() => { const map = {}; data.forEach((r) => { map[r.convenio] = (map[r.convenio] || 0) + Number(r.receita); }); return Object.entries(map).filter(([k]) => k).map(([convenio, receita]) => ({ convenio, receita })).sort((a, b) => b.receita - a.receita); }, [data]);
   const totalReceita = data.reduce((s, r) => s + r.receita, 0), totalCusto = data.reduce((s, r) => s + r.custo, 0); const maisRentavel = [...data].sort((a, b) => (b.receita - b.custo) - (a.receita - a.custo))[0];
   return (
     <ModuleShell icon={Stethoscope} title="Produção Médica" subtitle="Produção e rentabilidade por profissional" tone="teal" loading={loading} erro={erro}
       dailyFields={fields} dailyCta="Registrar produção" fields={fields} columns={columns} rows={data} onAdd={onAddComputado} onUpdate={onUpdateComputado} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Receita gerada", value: fmtBRL(totalReceita), tone: "green" }, { label: "Custo/repasse", value: fmtBRL(totalCusto), tone: "red" }, { label: "Rentabilidade", value: fmtBRL(totalReceita - totalCusto), tone: (totalReceita - totalCusto) >= 0 ? "green" : "red" }, { label: "Mais rentável", value: maisRentavel ? maisRentavel.profissional.split(" ").slice(0, 2).join(" ") : "—", tone: "coral" }]}
-      charts={<ChartCard title="Rentabilidade por profissional"><BarChart data={chartData}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="profissional" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="receita" name="Receita" fill={T.teal} radius={[4, 4, 0, 0]} /><Bar dataKey="custo" name="Custo" fill={`${T.teal}55`} radius={[4, 4, 0, 0]} /><Bar dataKey="rentabilidade" name="Rentabilidade" fill={T.green} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>} />
+      charts={<div className="grid md:grid-cols-2 gap-5">
+        <ChartCard title="Rentabilidade por profissional"><BarChart data={chartData}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="profissional" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="receita" name="Receita" fill={T.teal} radius={[4, 4, 0, 0]} /><Bar dataKey="custo" name="Custo" fill={`${T.teal}55`} radius={[4, 4, 0, 0]} /><Bar dataKey="rentabilidade" name="Rentabilidade" fill={T.green} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>
+        <ChartCard title="Receita por convênio"><PieChart><Pie data={porConvenioProducao} dataKey="receita" nameKey="convenio" innerRadius={55} outerRadius={85} paddingAngle={2}>{porConvenioProducao.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Pie><Tooltip formatter={(v) => fmtBRL(v)} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart></ChartCard>
+      </div>} />
   );
 }
 
@@ -2175,16 +2180,28 @@ const RESTRICTED_MENUS = {
     { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
     { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" },
   ] },
+  vacinacao: { group: "Minha área", items: [
+    { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
+    { key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" },
+    { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" },
+    { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" },
+    { key: "insumos", label: "Estoque de Insumos", icon: Package, tone: "teal" },
+  ] },
 };
 
 /* ============================== APP INTERNO (autenticado) ============================== */
 function AppInner() {
   const { logout, perfil } = useAuth();
-  const isRestrito = perfil && RESTRICTED_MENUS[perfil.papel];
-  const [tab, setTab] = useState(isRestrito ? "meurh" : "visao");
+  const ALL_ITEMS = useMemo(() => ALL_MENU.flatMap((g) => g.items), []);
+  const customKeys = perfil && Array.isArray(perfil.menu_customizado) && perfil.menu_customizado.length > 0 ? perfil.menu_customizado : null;
+  const papelRestrito = perfil && RESTRICTED_MENUS[perfil.papel];
+  const isRestrito = customKeys || papelRestrito;
+  const [tab, setTab] = useState(customKeys ? customKeys[0] : (papelRestrito ? "meurh" : "visao"));
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const canFinance = perfil && perfil.papel !== "operacional";
-  const MENU = isRestrito ? [RESTRICTED_MENUS[perfil.papel]] : (canFinance ? ALL_MENU : ALL_MENU.map((g) => ({ ...g, items: g.items.filter((i) => !FINANCE_TABS.includes(i.key)) })).filter((g) => g.items.length > 0));
+  const MENU = customKeys
+    ? [{ group: "Minha área", items: ALL_ITEMS.filter((i) => customKeys.includes(i.key)) }]
+    : (papelRestrito ? [papelRestrito] : (canFinance ? ALL_MENU : ALL_MENU.map((g) => ({ ...g, items: g.items.filter((i) => !FINANCE_TABS.includes(i.key)) })).filter((g) => g.items.length > 0)));
   const activeMeta = MENU.flatMap((g) => g.items).find((i) => i.key === tab) || MENU[0].items[0];
   const renderTab = () => {
     if (!canFinance && FINANCE_TABS.includes(tab)) return <VisaoGeral />;
