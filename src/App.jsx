@@ -159,11 +159,11 @@ const MODULES = {
     toDb: (r) => ({ nome: r.nome, valor_padrao: r.valorPadrao, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, valorPadrao: r.valor_padrao, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes }) },
   cadColaboradores: { table: "cadastro_colaboradores", order: "nome.asc",
-    toDb: (r) => ({ nome: r.nome, cargo: r.cargo, tipo: r.tipo, telefone: r.telefone, observacoes: r.observacoes, carga_horaria_mensal: r.cargaHorariaMensal || 0 }),
-    fromDb: (r) => ({ id: r.id, nome: r.nome, cargo: r.cargo, tipo: r.tipo, telefone: r.telefone, observacoes: r.observacoes, cargaHorariaMensal: r.carga_horaria_mensal }) },
+    toDb: (r) => ({ nome: r.nome, cargo: r.cargo, tipo: r.tipo || "Interno", telefone: r.telefone, observacoes: r.observacoes, carga_horaria_mensal: r.cargaHorariaMensal || 0, horario_entrada_padrao: r.horarioEntradaPadrao || null, horario_saida_almoco_padrao: r.horarioSaidaAlmocoPadrao || null, horario_volta_almoco_padrao: r.horarioVoltaAlmocoPadrao || null, horario_saida_padrao: r.horarioSaidaPadrao || null }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, cargo: r.cargo, tipo: r.tipo, telefone: r.telefone, observacoes: r.observacoes, cargaHorariaMensal: r.carga_horaria_mensal, horarioEntradaPadrao: r.horario_entrada_padrao, horarioSaidaAlmocoPadrao: r.horario_saida_almoco_padrao, horarioVoltaAlmocoPadrao: r.horario_volta_almoco_padrao, horarioSaidaPadrao: r.horario_saida_padrao }) },
   cadProfissionais: { table: "cadastro_profissionais", order: "nome.asc",
-    toDb: (r) => ({ nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcao_sublocacao: r.direcaoSublocacao || null, tipo_sublocacao: r.tipoSublocacao || null, percentual_sublocacao: r.percentualSublocacao || 0, valor_fixo_sublocacao: r.valorFixoSublocacao || 0, valor_abatimento: r.valorAbatimento || 0, valor_plantao_fixo: r.valorPlantaoFixo || 0, valor_repasse_atendimento_plantao: r.valorRepasseAtendimentoPlantao || 0 }),
-    fromDb: (r) => ({ id: r.id, nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcaoSublocacao: r.direcao_sublocacao, tipoSublocacao: r.tipo_sublocacao, percentualSublocacao: r.percentual_sublocacao, valorFixoSublocacao: r.valor_fixo_sublocacao, valorAbatimento: r.valor_abatimento, valorPlantaoFixo: r.valor_plantao_fixo, valorRepasseAtendimentoPlantao: r.valor_repasse_atendimento_plantao }) },
+    toDb: (r) => ({ nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcao_sublocacao: r.direcaoSublocacao || null, tipo_sublocacao: r.tipoSublocacao || null, percentual_sublocacao: r.percentualSublocacao || 0, valor_fixo_sublocacao: r.valorFixoSublocacao || 0, valor_abatimento: r.valorAbatimento || 0, valor_plantao_fixo: r.valorPlantaoFixo || 0, valor_repasse_atendimento_plantao: r.valorRepasseAtendimentoPlantao || 0, valor_consulta_particular: r.valorConsultaParticular || 0, convenios_atendidos: r.conveniosAtendidos || [] }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcaoSublocacao: r.direcao_sublocacao, tipoSublocacao: r.tipo_sublocacao, percentualSublocacao: r.percentual_sublocacao, valorFixoSublocacao: r.valor_fixo_sublocacao, valorAbatimento: r.valor_abatimento, valorPlantaoFixo: r.valor_plantao_fixo, valorRepasseAtendimentoPlantao: r.valor_repasse_atendimento_plantao, valorConsultaParticular: r.valor_consulta_particular, conveniosAtendidos: r.convenios_atendidos || [] }) },
   cadTestesGeneticos: { table: "cadastro_testes_geneticos", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, valor_teste: r.valorTeste, valor_repasse_clinica: r.valorRepasseClinica }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, valorTeste: r.valor_teste, valorRepasseClinica: r.valor_repasse_clinica }) },
@@ -264,6 +264,19 @@ function FieldInput({ f, value, onChange }) {
   }
   if (f.type === "checkbox") {
     return <div className="flex items-center h-[38px]"><input type="checkbox" className="w-4 h-4" checked={!!value} onChange={(e) => onChange(e.target.checked)} /></div>;
+  }
+  if (f.type === "multiselect") {
+    const arr = Array.isArray(value) ? value : [];
+    return (
+      <div className="flex flex-col gap-1.5 max-h-32 overflow-y-auto p-2.5 rounded-lg" style={{ border: `1px solid ${T.border}`, background: "#FBFAF6" }}>
+        {f.options.length === 0 && <span className="text-xs" style={{ color: T.muted }}>Nenhuma opção cadastrada ainda.</span>}
+        {f.options.map((o) => (
+          <label key={o} className="flex items-center gap-2 text-sm" style={{ color: T.text }}>
+            <input type="checkbox" checked={arr.includes(o)} onChange={(e) => onChange(e.target.checked ? [...arr, o] : arr.filter((x) => x !== o))} /> {o}
+          </label>
+        ))}
+      </div>
+    );
   }
   return <input type={f.type === "currency" ? "number" : f.type} step={f.type === "currency" || f.type === "number" ? "0.01" : undefined}
     className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={value} onChange={(e) => onChange(e.target.value)} placeholder={f.placeholder || ""} />;
@@ -906,7 +919,10 @@ function ProducaoConvenioModulo({ convenioFixo, titulo, subtitulo, icon }) {
   const { data: todaProducao, add, bulkAdd, update, remove, loading, erro } = useRecords("producao");
   const { data: profissionais } = useRecords("cadProfissionais");
   const { data: conveniosCadastro } = useRecords("cadConvenios");
-  const nomesProfissionais = profissionais.map((p) => p.nome);
+  const profissionaisDoConvenio = (convenioFixo && convenioFixo !== "Particular")
+    ? profissionais.filter((p) => Array.isArray(p.conveniosAtendidos) && p.conveniosAtendidos.includes(convenioFixo))
+    : profissionais;
+  const nomesProfissionais = (profissionaisDoConvenio.length ? profissionaisDoConvenio : profissionais).map((p) => p.nome);
   const opcoesConvenio = convenioFixo ? [convenioFixo] : conveniosCadastro.map((c) => c.nome).filter((n) => !CONVENIOS_TELA_PROPRIA.includes(n));
 
   const data = convenioFixo ? todaProducao.filter((r) => r.convenio === convenioFixo) : todaProducao.filter((r) => r.convenio && !CONVENIOS_TELA_PROPRIA.includes(r.convenio));
@@ -956,6 +972,7 @@ function ProducaoConvenioModulo({ convenioFixo, titulo, subtitulo, icon }) {
       kpis={[{ label: "Receita gerada", value: fmtBRL(totalReceita), tone: "green" }, { label: "Atendimentos", value: fmtNum(totalAtendimentos), tone: "teal" }, { label: "Mais produtivo(a)", value: maisProdutivo ? maisProdutivo.profissional : "—", tone: "coral" }]}
       extra={<>
         {conveniosCadastro.length === 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><span className="text-sm" style={{ color: T.text }}>Nenhum convênio cadastrado ainda em Cadastros → Convênios — cadastre lá o "valor padrão por atendimento" para a receita ser calculada aqui.</span></Card>}
+        {convenioFixo && convenioFixo !== "Particular" && profissionaisDoConvenio.length === 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><span className="text-sm" style={{ color: T.text }}>Nenhum profissional marcado como atendendo "{convenioFixo}" ainda em Cadastros → Profissionais — por enquanto mostrando todos.</span></Card>}
         {resumoPorProfissional.length > 0 && (
           <Card className="mb-5">
             <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Resumo por profissional (lançamentos do mesmo dia já somados)</p>
@@ -1900,25 +1917,35 @@ function CadastroColaboradoresModulo() {
   const fields = [
     { key: "nome", label: "Nome", type: "text" },
     { key: "cargo", label: "Cargo", type: "text", required: false },
-    { key: "tipo", label: "Tipo", type: "select", options: ["Interno", "Terceirizado"] },
+    { key: "tipo", label: "Tipo", type: "select", options: ["Interno", "Terceirizado"], required: false, default: "Interno" },
     { key: "telefone", label: "Telefone", type: "text", required: false },
     { key: "cargaHorariaMensal", label: "Carga horária mensal (horas)", type: "number", required: false, placeholder: "ex: 220" },
+    { key: "horarioEntradaPadrao", label: "Horário padrão de entrada", type: "time", required: false },
+    { key: "horarioSaidaAlmocoPadrao", label: "Horário padrão de saída (almoço)", type: "time", required: false },
+    { key: "horarioVoltaAlmocoPadrao", label: "Horário padrão de volta (almoço)", type: "time", required: false },
+    { key: "horarioSaidaPadrao", label: "Horário padrão de saída", type: "time", required: false },
     { key: "observacoes", label: "Observações", type: "text", required: false },
   ];
-  const columns = [{ key: "nome", label: "Nome" }, { key: "cargo", label: "Cargo" }, { key: "tipo", label: "Tipo", render: (r) => <Badge tone={r.tipo === "Interno" ? "teal" : "amber"}>{r.tipo}</Badge> }, { key: "cargaHorariaMensal", label: "Carga horária/mês", render: (r) => r.cargaHorariaMensal ? `${r.cargaHorariaMensal} h` : "—" }, { key: "telefone", label: "Telefone" }];
+  const columns = [{ key: "nome", label: "Nome" }, { key: "cargo", label: "Cargo" }, { key: "tipo", label: "Tipo", render: (r) => <Badge tone={r.tipo === "Interno" ? "teal" : "amber"}>{r.tipo || "—"}</Badge> }, { key: "cargaHorariaMensal", label: "Carga horária/mês", render: (r) => r.cargaHorariaMensal ? `${r.cargaHorariaMensal} h` : "—" },
+    { key: "horarioPadrao", label: "Horário padrão", render: (r) => (r.horarioEntradaPadrao || r.horarioSaidaPadrao) ? <span className="text-xs" style={{ color: T.muted }}>{r.horarioEntradaPadrao || "—"} às {r.horarioSaidaPadrao || "—"}{r.horarioSaidaAlmocoPadrao ? ` (almoço ${r.horarioSaidaAlmocoPadrao}–${r.horarioVoltaAlmocoPadrao || "—"})` : ""}</span> : "—" },
+    { key: "telefone", label: "Telefone" }];
   return (
-    <ModuleShell icon={Users} title="Cadastro de Colaboradores" subtitle="Equipe interna e terceirizados, com carga horária mensal" tone="coral" loading={loading} erro={erro}
+    <ModuleShell icon={Users} title="Cadastro de Colaboradores" subtitle="Equipe interna e terceirizados, com carga horária e horário padrão de trabalho" tone="coral" loading={loading} erro={erro}
       dailyFields={fields} dailyCta="Cadastrar colaborador(a)" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
   );
 }
 function CadastroProfissionaisModulo() {
   const { data, add, update, remove, loading, erro } = useRecords("cadProfissionais");
+  const { data: conveniosCadastro } = useRecords("cadConvenios");
+  const nomesConveniosCadastro = conveniosCadastro.map((c) => c.nome);
   const fields = [
     { key: "nome", label: "Nome do(a) profissional", type: "text" },
     { key: "especialidade", label: "Especialidade", type: "text", required: false },
     { key: "crm", label: "CRM", type: "text", required: false },
     { key: "telefone", label: "Telefone", type: "text", required: false },
     { key: "email", label: "E-mail", type: "text", required: false },
+    { key: "valorConsultaParticular", label: "Valor da consulta particular (R$)", type: "currency", required: false },
+    { key: "conveniosAtendidos", label: "Convênios que atende (aparece na tela de produção de cada um)", type: "multiselect", options: nomesConveniosCadastro, required: false, default: [] },
     { key: "direcaoSublocacao", label: "Sublocação — direção do pagamento", type: "select", options: ["Clínica paga ao profissional", "Profissional paga à clínica"], required: false },
     { key: "tipoSublocacao", label: "Sublocação — forma de cálculo", type: "select", options: ["Percentual", "Valor fixo sem abatimento", "Valor fixo com abatimento"], required: false, showIf: (f) => !!f.direcaoSublocacao },
     { key: "percentualSublocacao", label: "Percentual (%)", type: "number", required: false, showIf: (f) => f.tipoSublocacao === "Percentual" },
@@ -1929,11 +1956,13 @@ function CadastroProfissionaisModulo() {
   ];
   const columns = [
     { key: "nome", label: "Nome" }, { key: "especialidade", label: "Especialidade" }, { key: "telefone", label: "Telefone" },
+    { key: "valorConsultaParticular", label: "Consulta particular", render: (r) => r.valorConsultaParticular ? fmtBRL(r.valorConsultaParticular) : "—" },
+    { key: "conveniosAtendidos", label: "Convênios", render: (r) => Array.isArray(r.conveniosAtendidos) && r.conveniosAtendidos.length ? <span className="text-xs" style={{ color: T.muted }}>{r.conveniosAtendidos.join(", ")}</span> : <span style={{ color: T.muted }}>—</span> },
     { key: "sublocacao", label: "Sublocação", render: (r) => r.direcaoSublocacao ? <Badge tone={r.direcaoSublocacao.startsWith("Profissional") ? "green" : "amber"}>{r.tipoSublocacao === "Percentual" ? `${r.percentualSublocacao}%` : fmtBRL(r.valorFixoSublocacao)} — {r.direcaoSublocacao.startsWith("Profissional") ? "recebemos" : "pagamos"}</Badge> : <span style={{ color: T.muted }}>—</span> },
     { key: "plantao", label: "Plantão", render: (r) => (r.valorPlantaoFixo || r.valorRepasseAtendimentoPlantao) ? <span className="text-xs" style={{ color: T.muted }}>{fmtBRL(r.valorPlantaoFixo)}/dia + {fmtBRL(r.valorRepasseAtendimentoPlantao)}/atend.</span> : <span style={{ color: T.muted }}>—</span> },
   ];
   return (
-    <ModuleShell icon={Stethoscope} title="Cadastro de Profissionais" subtitle="Médicos e demais profissionais — inclui a forma de pagamento da sublocação" tone="coral" loading={loading} erro={erro}
+    <ModuleShell icon={Stethoscope} title="Cadastro de Profissionais" subtitle="Médicos e demais profissionais — inclui consulta particular, convênios atendidos e sublocação" tone="coral" loading={loading} erro={erro}
       dailyFields={fields} dailyCta="Cadastrar profissional" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
   );
 }
