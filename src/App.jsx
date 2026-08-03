@@ -126,8 +126,8 @@ const MODULES = {
     toDb: (r) => ({ data: r.data, convenio: r.convenio, quantidade: r.quantidade, valor: r.valor, valor_unitario: r.valorUnitario, aliquota_imposto: r.aliquotaImposto, valor_liquido: r.valorLiquido }),
     fromDb: (r) => ({ id: r.id, data: r.data, convenio: r.convenio, quantidade: r.quantidade, valor: r.valor, valorUnitario: r.valor_unitario, aliquotaImposto: r.aliquota_imposto, valorLiquido: r.valor_liquido }) },
   vacinas: { table: "estoque_vacinas", order: "nome.asc",
-    toDb: (r) => ({ nome: r.nome, qtd_estoque: r.qtdEstoque, qtd_vendida_mes: r.qtdVendidaMes, qtd_minima: r.qtdMinima, valor_compra: r.valorCompra, valor_venda: r.valorVenda }),
-    fromDb: (r) => ({ id: r.id, nome: r.nome, qtdEstoque: r.qtd_estoque, qtdVendidaMes: r.qtd_vendida_mes, qtdMinima: r.qtd_minima, valorCompra: r.valor_compra, valorVenda: r.valor_venda }) },
+    toDb: (r) => ({ nome: r.nome, qtd_estoque: r.qtdEstoque, qtd_vendida_mes: r.qtdVendidaMes, qtd_minima: r.qtdMinima, valor_compra: r.valorCompra, valor_venda: r.valorVenda, validade: r.validade || null }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, qtdEstoque: r.qtd_estoque, qtdVendidaMes: r.qtd_vendida_mes, qtdMinima: r.qtd_minima, valorCompra: r.valor_compra, valorVenda: r.valor_venda, validade: r.validade }) },
   insumos: { table: "estoque_insumos", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, categoria: r.categoria, qtd: r.qtd, qtd_minima: r.qtdMinima, unidade_medida: r.unidade, valor_unitario: r.valorUnitario }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, categoria: r.categoria, qtd: r.qtd, qtdMinima: r.qtd_minima, unidade: r.unidade_medida, valorUnitario: r.valor_unitario }) },
@@ -176,6 +176,12 @@ const MODULES = {
   vendasVacinas: { table: "vendas_vacinas", order: "data.desc",
     toDb: (r) => ({ vacina_id: r.vacinaId, data: r.data, quantidade: r.quantidade, valor_unitario: r.valorUnitario, desconto_pct: r.descontoPct, valor_total: r.valorTotal }),
     fromDb: (r) => ({ id: r.id, vacinaId: r.vacina_id, data: r.data, quantidade: r.quantidade, valorUnitario: r.valor_unitario, descontoPct: r.desconto_pct, valorTotal: r.valor_total }) },
+  entradasEstoqueVacinas: { table: "entradas_estoque_vacinas", order: "data.desc",
+    toDb: (r) => ({ vacina_id: r.vacinaId, data: r.data, quantidade: r.quantidade }),
+    fromDb: (r) => ({ id: r.id, vacinaId: r.vacina_id, data: r.data, quantidade: r.quantidade }) },
+  vendasVacinasPacotes: { table: "vendas_vacinas_pacotes", order: "data.desc",
+    toDb: (r) => ({ data: r.data, paciente: r.paciente, itens: r.itens, desconto_tipo: r.descontoTipo, desconto_valor: r.descontoValor, valor_total: r.valorTotal }),
+    fromDb: (r) => ({ id: r.id, data: r.data, paciente: r.paciente, itens: r.itens, descontoTipo: r.desconto_tipo, descontoValor: r.desconto_valor, valorTotal: r.valor_total }) },
   posVenda: { table: "pos_venda_ligacoes", order: "data.desc",
     toDb: (r) => ({ data: r.data, paciente: r.paciente, telefone: r.telefone, convertida: !!r.convertida, agendamento_feito: !!r.agendamentoFeito, data_agendamento: r.dataAgendamento || null, observacoes: r.observacoes }),
     fromDb: (r) => ({ id: r.id, data: r.data, paciente: r.paciente, telefone: r.telefone, convertida: r.convertida, agendamentoFeito: r.agendamento_feito, dataAgendamento: r.data_agendamento, observacoes: r.observacoes }) },
@@ -792,18 +798,25 @@ function ConveniosModulo() {
 
 function VacinasModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("vacinas");
-  const fields = [{ key: "nome", label: "Nome da vacina", type: "text" }, { key: "qtdEstoque", label: "Qtd. em estoque", type: "number" }, { key: "qtdVendidaMes", label: "Vendida no mês", type: "number" }, { key: "qtdMinima", label: "Estoque mínimo", type: "number" }, { key: "valorCompra", label: "Valor compra (un.)", type: "currency" }, { key: "valorVenda", label: "Valor revenda (un.)", type: "currency" }];
+  const fields = [{ key: "nome", label: "Nome da vacina", type: "text" }, { key: "qtdEstoque", label: "Qtd. em estoque", type: "number" }, { key: "qtdVendidaMes", label: "Vendida no mês", type: "number" }, { key: "qtdMinima", label: "Estoque mínimo", type: "number" }, { key: "valorCompra", label: "Valor compra (un.)", type: "currency" }, { key: "valorVenda", label: "Valor revenda (un.)", type: "currency" }, { key: "validade", label: "Validade (lote atual)", type: "date", required: false }];
+  const diasParaVencer = (validade) => validade ? Math.ceil((new Date(validade) - new Date(todayISO())) / 86400000) : null;
   const columns = [{ key: "nome", label: "Vacina" }, { key: "qtdEstoque", label: "Em estoque", render: (r) => <span className="flex items-center gap-1.5">{r.qtdEstoque}{r.qtdEstoque < r.qtdMinima && <AlertTriangle size={12} style={{ color: T.red }} />}</span> }, { key: "qtdVendidaMes", label: "Vendidas/mês" }, { key: "valorCompra", label: "Compra (un.)", render: (r) => fmtBRL(r.valorCompra) }, { key: "valorVenda", label: "Venda (un.)", render: (r) => fmtBRL(r.valorVenda) }, { key: "margem", label: "Margem", render: (r) => <span style={{ color: T.green }}>{fmtPct(r.valorVenda ? ((r.valorVenda - r.valorCompra) / r.valorVenda) * 100 : 0)}</span> },
-    { key: "chegada", label: "Chegou essa semana", render: (r) => <AjusteEstoqueCell placeholder="qtd" tone="teal" onAjustar={async (qtd) => update(r.id, { qtdEstoque: Number(r.qtdEstoque) + qtd })} /> },
+    { key: "validade", label: "Validade", render: (r) => { const dias = diasParaVencer(r.validade); if (!r.validade) return <span style={{ color: T.muted }}>—</span>; return <span style={{ color: dias <= 45 ? T.red : dias <= 90 ? T.amber : T.text }}>{fmtDate(r.validade)}{dias <= 90 && <span className="block text-xs">{dias < 0 ? "vencida" : `${dias} dias`}</span>}</span>; } },
   ];
   const valorEstoqueCompra = data.reduce((s, r) => s + r.qtdEstoque * r.valorCompra, 0), valorEstoqueVenda = data.reduce((s, r) => s + r.qtdEstoque * r.valorVenda, 0), receitaVendasMes = data.reduce((s, r) => s + r.qtdVendidaMes * r.valorVenda, 0);
   const abaixoMinimo = data.filter((r) => r.qtdEstoque < r.qtdMinima);
+  const vencendo90 = data.filter((r) => { const d = diasParaVencer(r.validade); return d !== null && d <= 90 && d > 45; });
+  const vencendo45 = data.filter((r) => { const d = diasParaVencer(r.validade); return d !== null && d <= 45; });
   return (
-    <ModuleShell icon={Syringe} title="Estoque de Vacinas" subtitle="Vendas, estoque atual, valor de compra e de revenda" tone="teal" loading={loading} erro={erro}
+    <ModuleShell icon={Syringe} title="Estoque de Vacinas" subtitle="Cadastro, estoque atual, valor de compra e revenda, e validade" tone="teal" loading={loading} erro={erro}
       dailyFields={fields} dailyCta="Atualizar/cadastrar vacina" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Estoque (custo)", value: fmtBRL(valorEstoqueCompra) }, { label: "Estoque (revenda)", value: fmtBRL(valorEstoqueVenda), tone: "green" }, { label: "Receita de vendas/mês", value: fmtBRL(receitaVendasMes), tone: "coral" }, { label: "Abaixo do mínimo", value: abaixoMinimo.length, tone: abaixoMinimo.length ? "red" : "green" }]}
       charts={<ChartCard title="Estoque atual x estoque mínimo, por vacina"><BarChart data={data}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="nome" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-15} textAnchor="end" height={60} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="qtdEstoque" name="Em estoque" fill={T.amber} radius={[4, 4, 0, 0]} /><Bar dataKey="qtdMinima" name="Mínimo" fill={`${T.amber}55`} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>}
-      extra={abaixoMinimo.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.red}55` }}><div className="flex items-center gap-2 mb-1"><AlertTriangle size={15} style={{ color: T.red }} /><span className="font-semibold text-sm" style={{ color: T.red }}>Reposição necessária</span></div><p className="text-sm" style={{ color: T.muted }}>{abaixoMinimo.map((r) => r.nome).join(", ")} — abaixo do estoque mínimo.</p></Card>} />
+      extra={<>
+        {abaixoMinimo.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.red}55` }}><div className="flex items-center gap-2 mb-1"><AlertTriangle size={15} style={{ color: T.red }} /><span className="font-semibold text-sm" style={{ color: T.red }}>Reposição necessária</span></div><p className="text-sm" style={{ color: T.muted }}>{abaixoMinimo.map((r) => r.nome).join(", ")} — abaixo do estoque mínimo.</p></Card>}
+        {vencendo45.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.red}55` }}><div className="flex items-center gap-2 mb-1"><AlertTriangle size={15} style={{ color: T.red }} /><span className="font-semibold text-sm" style={{ color: T.red }}>Vencimento em até 45 dias</span></div><p className="text-sm" style={{ color: T.muted }}>{vencendo45.map((r) => r.nome).join(", ")}.</p></Card>}
+        {vencendo90.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><div className="flex items-center gap-2 mb-1"><AlertTriangle size={15} style={{ color: T.amber }} /><span className="font-semibold text-sm" style={{ color: T.text }}>Vencimento em até 90 dias</span></div><p className="text-sm" style={{ color: T.muted }}>{vencendo90.map((r) => r.nome).join(", ")}.</p></Card>}
+      </>} />
   );
 }
 
@@ -842,6 +855,7 @@ function PosVendaModulo() {
 function VendasVacinasModulo() {
   const { data: vendas, add, update, remove, loading, erro } = useRecords("vendasVacinas");
   const { data: vacinasCat, update: updateVacina, loading: loadingVacinas } = useRecords("vacinas");
+  const { data: metas } = useRecords("metas");
   const nomesVacinas = vacinasCat.map((v) => v.nome);
   const fields = [
     { key: "vacina", label: "Vacina", type: "select", options: nomesVacinas.length ? nomesVacinas : ["Cadastre em Estoque de Vacinas primeiro"] },
@@ -865,9 +879,24 @@ function VendasVacinasModulo() {
     await updateVacina(calc.vac.id, { qtdEstoque: Math.max((calc.vac.qtdEstoque || 0) - calc.qtd, 0), qtdVendidaMes: (calc.vac.qtdVendidaMes || 0) + calc.qtd });
   };
   const onUpdateVenda = async (id, record) => {
+    const vendaAnterior = vendas.find((v) => v.id === id);
     const calc = computarVenda(record);
     if (!calc) return alert("Selecione uma vacina cadastrada.");
+    // desfaz o efeito da venda antiga no estoque antes de aplicar a nova
+    if (vendaAnterior) {
+      const vacAnterior = vacinasCat.find((v) => v.id === vendaAnterior.vacinaId);
+      if (vacAnterior) await updateVacina(vacAnterior.id, { qtdEstoque: Number(vacAnterior.qtdEstoque) + Number(vendaAnterior.quantidade), qtdVendidaMes: Math.max(Number(vacAnterior.qtdVendidaMes) - Number(vendaAnterior.quantidade), 0) });
+    }
     await update(id, { vacinaId: calc.vac.id, data: record.data, quantidade: calc.qtd, valorUnitario: calc.valorUnitario, descontoPct: calc.descontoPct, valorTotal: calc.valorTotal });
+    await updateVacina(calc.vac.id, { qtdEstoque: Math.max((calc.vac.qtdEstoque || 0) - calc.qtd, 0), qtdVendidaMes: (calc.vac.qtdVendidaMes || 0) + calc.qtd });
+  };
+  const onRemoveVenda = async (id) => {
+    const venda = vendas.find((v) => v.id === id);
+    if (venda) {
+      const vac = vacinasCat.find((v) => v.id === venda.vacinaId);
+      if (vac) await updateVacina(vac.id, { qtdEstoque: Number(vac.qtdEstoque) + Number(venda.quantidade), qtdVendidaMes: Math.max(Number(vac.qtdVendidaMes) - Number(venda.quantidade), 0) });
+    }
+    await remove(id);
   };
   const rowsEnriquecidas = vendas.map((v) => ({ ...v, vacina: (vacinasCat.find((x) => x.id === v.vacinaId) || {}).nome || "—" }));
   const columns = [
@@ -879,11 +908,171 @@ function VendasVacinasModulo() {
   const totalVendido = vendas.reduce((s, r) => s + r.valorTotal, 0);
   const totalQtd = vendas.reduce((s, r) => s + Number(r.quantidade), 0);
   const porVacina = useMemo(() => { const map = {}; rowsEnriquecidas.forEach((r) => { map[r.vacina] = (map[r.vacina] || 0) + r.valorTotal; }); return Object.entries(map).map(([vacina, valor]) => ({ vacina, valor })).sort((a, b) => b.valor - a.valor); }, [rowsEnriquecidas]);
+
+  const mesAtual = todayISO().slice(0, 7);
+  const totalVendidoMes = vendas.filter((r) => r.data.slice(0, 7) === mesAtual).reduce((s, r) => s + Number(r.valorTotal), 0);
+  const metaVacinasMes = metas.find((m) => m.mes === mesAtual && m.categoria === "Faturamento em Vacinas");
+  const faltaMeta = metaVacinasMes ? Math.max(Number(metaVacinasMes.valorMeta) - totalVendidoMes, 0) : null;
+  const pctMeta = metaVacinasMes && metaVacinasMes.valorMeta ? (totalVendidoMes / metaVacinasMes.valorMeta) * 100 : null;
+
   return (
     <ModuleShell icon={Syringe} title="Vendas de Vacinas" subtitle="Selecione a vacina já cadastrada — valor e estoque atualizam automaticamente" tone="teal" loading={loading || loadingVacinas} erro={erro}
-      dailyFields={fields} dailyCta="Registrar venda" fields={fields} columns={columns} rows={rowsEnriquecidas} onAdd={onAddVenda} onUpdate={onUpdateVenda} onDelete={remove}
+      dailyFields={fields} dailyCta="Registrar venda" fields={fields} columns={columns} rows={rowsEnriquecidas} onAdd={onAddVenda} onUpdate={onUpdateVenda} onDelete={onRemoveVenda}
       kpis={[{ label: "Vendas registradas", value: vendas.length }, { label: "Doses vendidas", value: fmtNum(totalQtd) }, { label: "Valor total vendido", value: fmtBRL(totalVendido), tone: "green" }]}
+      extra={metaVacinasMes && (
+        <Card className="mb-5" style={{ borderColor: `${T.teal}55` }}>
+          <div className="flex items-center gap-2 mb-2"><ClipboardList size={15} style={{ color: T.teal }} /><span className="font-semibold text-sm" style={{ color: T.text }}>Meta do mês — Faturamento em Vacinas</span></div>
+          <Progress pct={pctMeta} />
+          <div className="flex justify-between text-sm mt-2">
+            <span style={{ color: T.muted }}>Vendido: <b style={{ color: T.text }}>{fmtBRL(totalVendidoMes)}</b> de {fmtBRL(metaVacinasMes.valorMeta)}</span>
+            <span style={{ color: faltaMeta > 0 ? T.amber : T.green, fontWeight: 600 }}>{faltaMeta > 0 ? `Falta ${fmtBRL(faltaMeta)}` : "Meta batida! 🎉"}</span>
+          </div>
+        </Card>
+      )}
       charts={<ChartCard title="Valor vendido por vacina"><BarChart data={porVacina}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="vacina" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-15} textAnchor="end" height={60} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="valor" fill={T.teal} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>} />
+  );
+}
+
+function EntradaEstoqueVacinasModulo() {
+  const { data: entradas, add, remove, loading, erro } = useRecords("entradasEstoqueVacinas");
+  const { data: vacinasCat, update: updateVacina, loading: loadingVacinas } = useRecords("vacinas");
+  const nomesVacinas = vacinasCat.map((v) => v.nome);
+  const fields = [
+    { key: "vacina", label: "Vacina", type: "select", options: nomesVacinas.length ? nomesVacinas : ["Cadastre em Estoque de Vacinas primeiro"] },
+    { key: "data", label: "Data (competência)", type: "date", default: todayISO() },
+    { key: "quantidade", label: "Quantidade que chegou", type: "number" },
+  ];
+  const onAddEntrada = async (record) => {
+    const vac = vacinasCat.find((v) => v.nome === record.vacina);
+    if (!vac) return alert("Selecione uma vacina cadastrada.");
+    const qtd = Number(record.quantidade) || 0;
+    await add({ vacinaId: vac.id, data: record.data, quantidade: qtd });
+    await updateVacina(vac.id, { qtdEstoque: Number(vac.qtdEstoque || 0) + qtd });
+  };
+  const onRemoveEntrada = async (id) => {
+    const entrada = entradas.find((e) => e.id === id);
+    if (entrada) {
+      const vac = vacinasCat.find((v) => v.id === entrada.vacinaId);
+      if (vac) await updateVacina(vac.id, { qtdEstoque: Math.max(Number(vac.qtdEstoque) - Number(entrada.quantidade), 0) });
+    }
+    await remove(id);
+  };
+  const rowsEnriquecidas = entradas.map((e) => ({ ...e, vacina: (vacinasCat.find((x) => x.id === e.vacinaId) || {}).nome || "—" }));
+  const columns = [{ key: "data", label: "Data (competência)", render: (r) => fmtDate(r.data) }, { key: "vacina", label: "Vacina" }, { key: "quantidade", label: "Quantidade" }];
+  const totalQtd = entradas.reduce((s, r) => s + Number(r.quantidade), 0);
+  const porVacina = useMemo(() => { const map = {}; rowsEnriquecidas.forEach((r) => { map[r.vacina] = (map[r.vacina] || 0) + Number(r.quantidade); }); return Object.entries(map).map(([vacina, quantidade]) => ({ vacina, quantidade })).sort((a, b) => b.quantidade - a.quantidade); }, [rowsEnriquecidas]);
+  return (
+    <ModuleShell icon={Syringe} title="Entrada de Estoque — Vacinas" subtitle="Registre semanalmente o que chegou, com data de competência — exporte quando quiser" tone="teal" loading={loading || loadingVacinas} erro={erro}
+      dailyFields={fields} dailyCta="Registrar entrada" fields={fields} columns={columns} rows={rowsEnriquecidas} onAdd={onAddEntrada} onUpdate={() => {}} onDelete={onRemoveEntrada}
+      kpis={[{ label: "Entradas registradas", value: entradas.length }, { label: "Doses recebidas", value: fmtNum(totalQtd), tone: "teal" }]}
+      charts={<ChartCard title="Doses recebidas por vacina"><BarChart data={porVacina}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="vacina" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-15} textAnchor="end" height={60} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="quantidade" fill={T.teal} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>} />
+  );
+}
+
+/* ============================== PACOTE PERSONALIZADO DE VACINAS ============================== */
+function PacoteVacinasModulo() {
+  const { data: vacinasCat, update: updateVacina, loading: loadingVacinas } = useRecords("vacinas");
+  const { data: pacotes, add, remove, loading, erro } = useRecords("vendasVacinasPacotes");
+  const [paciente, setPaciente] = useState("");
+  const [data, setData] = useState(todayISO());
+  const [itens, setItens] = useState([]);
+  const [descontoTipo, setDescontoTipo] = useState("Nenhum");
+  const [descontoValor, setDescontoValor] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [selecionada, setSelecionada] = useState("");
+  const [qtdSelecionada, setQtdSelecionada] = useState(1);
+
+  const adicionarItem = () => {
+    const vac = vacinasCat.find((v) => v.nome === selecionada);
+    if (!vac) return;
+    setItens((p) => [...p, { vacinaId: vac.id, nome: vac.nome, quantidade: Number(qtdSelecionada) || 1, valorUnitario: vac.valorVenda, subtotal: (Number(qtdSelecionada) || 1) * vac.valorVenda }]);
+    setSelecionada(""); setQtdSelecionada(1);
+  };
+  const removerItem = (idx) => setItens((p) => p.filter((_, i) => i !== idx));
+
+  const subtotalGeral = itens.reduce((s, i) => s + i.subtotal, 0);
+  const valorDesconto = descontoTipo === "Reais" ? Number(descontoValor || 0) : descontoTipo === "Percentual" ? subtotalGeral * (Number(descontoValor || 0) / 100) : 0;
+  const valorFinal = Math.max(subtotalGeral - valorDesconto, 0);
+
+  const finalizarPacote = async () => {
+    if (!paciente || itens.length === 0) return alert("Informe o paciente e adicione ao menos uma vacina.");
+    setBusy(true);
+    await add({ data, paciente, itens, descontoTipo, descontoValor: Number(descontoValor || 0), valorTotal: valorFinal });
+    for (const item of itens) {
+      const vac = vacinasCat.find((v) => v.id === item.vacinaId);
+      if (vac) await updateVacina(vac.id, { qtdEstoque: Math.max(Number(vac.qtdEstoque) - item.quantidade, 0), qtdVendidaMes: Number(vac.qtdVendidaMes) + item.quantidade });
+    }
+    setPaciente(""); setItens([]); setDescontoTipo("Nenhum"); setDescontoValor(""); setData(todayISO());
+    setBusy(false);
+  };
+
+  const totalPacotes = pacotes.reduce((s, p) => s + Number(p.valorTotal), 0);
+
+  return (
+    <div>
+      <SectionHeader icon={Syringe} title="Pacote Personalizado de Vacinas" subtitle="Monte um pacote com várias vacinas, aplique desconto e o total calcula sozinho" tone="teal" />
+      <Card className="mb-5">
+        <div className="flex flex-wrap gap-3 items-end mb-4">
+          <Field label="Paciente"><input className="rounded-lg px-3 py-2 text-sm outline-none w-48" style={inputStyle} value={paciente} onChange={(e) => setPaciente(e.target.value)} /></Field>
+          <Field label="Data"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={data} onChange={(e) => setData(e.target.value)} /></Field>
+        </div>
+        <p className="text-[11px] font-semibold uppercase mb-2" style={{ color: T.muted, letterSpacing: "0.06em" }}>Adicionar vacina ao pacote</p>
+        <div className="flex flex-wrap gap-3 items-end mb-4">
+          <Field label="Vacina">
+            <select className="rounded-lg px-3 py-2 text-sm outline-none w-56" style={inputStyle} value={selecionada} onChange={(e) => setSelecionada(e.target.value)}>
+              <option value="" disabled>Selecione…</option>
+              {vacinasCat.map((v) => <option key={v.id} value={v.nome}>{v.nome} — {fmtBRL(v.valorVenda)}</option>)}
+            </select>
+          </Field>
+          <Field label="Quantidade"><input type="number" min="1" className="rounded-lg px-3 py-2 text-sm outline-none w-24" style={inputStyle} value={qtdSelecionada} onChange={(e) => setQtdSelecionada(e.target.value)} /></Field>
+          <Btn small tone="teal" icon={Plus} onClick={adicionarItem}>Adicionar ao pacote</Btn>
+        </div>
+        {itens.length > 0 && (
+          <div className="mb-4">
+            <table className="w-full text-sm">
+              <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Vacina</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Qtd.</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Valor unit.</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Subtotal</th><th></th></tr></thead>
+              <tbody>{itens.map((item, idx) => (
+                <tr key={idx} style={{ borderBottom: `1px solid ${T.border}` }}>
+                  <td className="py-2 px-2" style={{ color: T.text }}>{item.nome}</td><td className="py-2 px-2">{item.quantidade}</td><td className="py-2 px-2">{fmtBRL(item.valorUnitario)}</td><td className="py-2 px-2">{fmtBRL(item.subtotal)}</td>
+                  <td className="py-2 px-2 text-right"><button onClick={() => removerItem(idx)}><Trash2 size={13} style={{ color: T.red }} /></button></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+        <div className="flex flex-wrap gap-3 items-end mb-4">
+          <Field label="Desconto — tipo"><select className="rounded-lg px-3 py-2 text-sm outline-none w-40" style={inputStyle} value={descontoTipo} onChange={(e) => setDescontoTipo(e.target.value)}><option value="Nenhum">Nenhum</option><option value="Reais">Em Reais (R$)</option><option value="Percentual">Em Porcentagem (%)</option></select></Field>
+          {descontoTipo !== "Nenhum" && <Field label={descontoTipo === "Reais" ? "Valor do desconto (R$)" : "Desconto (%)"}><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-32" style={inputStyle} value={descontoValor} onChange={(e) => setDescontoValor(e.target.value)} /></Field>}
+        </div>
+        <div className="rounded-xl p-4 mb-4" style={{ background: `${T.teal}10`, border: `1px solid ${T.teal}30` }}>
+          <div className="flex justify-between text-sm mb-1"><span style={{ color: T.muted }}>Subtotal</span><span style={{ color: T.text }}>{fmtBRL(subtotalGeral)}</span></div>
+          {valorDesconto > 0 && <div className="flex justify-between text-sm mb-1"><span style={{ color: T.muted }}>Desconto</span><span style={{ color: T.red }}>- {fmtBRL(valorDesconto)}</span></div>}
+          <div className="flex justify-between text-base font-bold mt-2 pt-2" style={{ borderTop: `1px solid ${T.teal}30` }}><span style={{ color: T.text }}>Total do pacote</span><span style={{ color: T.green }}>{fmtBRL(valorFinal)}</span></div>
+        </div>
+        <Btn disabled={busy || loadingVacinas} onClick={finalizarPacote}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Finalizar pacote</Btn>
+      </Card>
+      <Card>
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Pacotes registrados ({fmtBRL(totalPacotes)} no total)</p>
+        {erro && <p className="text-sm mb-3" style={{ color: T.red }}>{erro}</p>}
+        {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> :
+          pacotes.length === 0 ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhum pacote registrado ainda.</div> : (
+          <div className="flex flex-col gap-2">
+            {pacotes.map((p) => (
+              <div key={p.id} className="rounded-xl px-4 py-3" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-sm" style={{ color: T.text }}>{p.paciente} — {fmtDate(p.data)}</span>
+                  <div className="flex items-center gap-3">
+                    <span style={{ color: T.green, fontWeight: 700 }}>{fmtBRL(p.valorTotal)}</span>
+                    <button onClick={() => { if (confirm("Remover este pacote? (não devolve ao estoque automaticamente)")) remove(p.id); }}><Trash2 size={13} style={{ color: T.red }} /></button>
+                  </div>
+                </div>
+                <p className="text-xs" style={{ color: T.muted }}>{(p.itens || []).map((i) => `${i.nome} (${i.quantidade}x)`).join(", ")}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
 
@@ -1405,6 +1594,7 @@ function PainelCriticoModulo() {
 
   const itens = [
     ...vacinas.data.filter((v) => v.qtdEstoque < v.qtdMinima).map((v) => ({ area: "Estoque de Vacinas", texto: `"${v.nome}" abaixo do mínimo (${v.qtdEstoque}/${v.qtdMinima})`, tone: "red" })),
+    ...vacinas.data.filter((v) => { if (!v.validade) return false; const dias = Math.ceil((new Date(v.validade) - new Date(todayISO())) / 86400000); return dias <= 90; }).map((v) => { const dias = Math.ceil((new Date(v.validade) - new Date(todayISO())) / 86400000); return { area: "Estoque de Vacinas", texto: `"${v.nome}" ${dias < 0 ? "vencida" : `vence em ${dias} dias`} — validade ${fmtDate(v.validade)}`, tone: dias <= 45 ? "red" : "amber" }; }),
     ...insumos.data.filter((i) => i.qtd < i.qtdMinima).map((i) => ({ area: "Estoque de Insumos", texto: `"${i.nome}" em ponto crítico (${i.qtd}/${i.qtdMinima})`, tone: "red" })),
     ...contas.data.filter((c) => c.status !== "Pago" && c.vencimento < todayISO()).map((c) => ({ area: "Contas a Pagar", texto: `"${c.descricao}" vencida em ${fmtDate(c.vencimento)} — ${fmtBRL(c.valor)}`, tone: "red" })),
     ...contas.data.filter((c) => c.status === "Pendente" && c.vencimento === diasAFrente(2)).map((c) => ({ area: "Contas a Pagar", texto: `"${c.descricao}" vence em 2 dias — ${fmtBRL(c.valor)}`, tone: "amber" })),
@@ -2330,13 +2520,18 @@ const REPORT_MODULES = [
   { key: "financeiro", label: "Financeiro (entradas e saídas)", icon: Wallet, tone: "coral", dateKey: "data", valueKey: "valor", financeOnly: true },
   { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral", dateKey: "vencimento", valueKey: "valor", financeOnly: true },
   { key: "faturamento", label: "Faturamento de Convênios", icon: ClipboardList, tone: "coral", dateKey: "dataProtocolo", valueKey: "valor", financeOnly: true },
+  { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral", dateKey: null, valueKey: null, financeOnly: true },
   { key: "convenios", label: "Atendimentos por Convênio", icon: HeartHandshake, tone: "teal", dateKey: "data", valueKey: "valor" },
-  { key: "producao", label: "Produção Médica", icon: Stethoscope, tone: "teal", dateKey: null, valueKey: "receita" },
+  { key: "producao", label: "Produção Médica (todas as telas)", icon: Stethoscope, tone: "teal", dateKey: "data", valueKey: "receita" },
   { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal", dateKey: "data", valueKey: "valor" },
-  { key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal", dateKey: null, valueKey: null },
+  { key: "vacinas", label: "Estoque de Vacinas (cadastro)", icon: Syringe, tone: "teal", dateKey: null, valueKey: null },
+  { key: "entradasEstoqueVacinas", label: "Entradas de Estoque — Vacinas", icon: Syringe, tone: "teal", dateKey: "data", valueKey: null },
+  { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal", dateKey: "data", valueKey: "valorTotal" },
   { key: "insumos", label: "Estoque de Insumos", icon: Package, tone: "teal", dateKey: null, valueKey: null },
   { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple", dateKey: null, valueKey: null },
   { key: "marketing", label: "Marketing — Leads", icon: Megaphone, tone: "rose", dateKey: "data", valueKey: null },
+  { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose", dateKey: "data", valueKey: null },
+  { key: "plantaoAtendimentos", label: "Registro de Plantão", icon: Stethoscope, tone: "coral", dateKey: "data", valueKey: null },
 ];
 
 function RelatoriosModulo() {
@@ -2408,7 +2603,8 @@ function RelatoriosModulo() {
 const ALL_MENU = [
   { group: "Visão", items: [{ key: "visao", label: "Dashboard", icon: LayoutDashboard, tone: "coral" }, { key: "painelCritico", label: "Painel Crítico", icon: AlertTriangle, tone: "coral" }] },
   { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }, { key: "sublocacao", label: "Receita de Sublocação", icon: Building2, tone: "coral" }] },
-  { group: "Atendimento", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producaoParticulares", label: "Produção — Particulares", icon: Stethoscope, tone: "teal" }, { key: "producaoConveniosGeral", label: "Produção — Convênios", icon: Stethoscope, tone: "teal" }, { key: "producaoBradescoClinica", label: "Produção — Bradesco Clínica", icon: Stethoscope, tone: "teal" }, { key: "producaoAuroraSaude", label: "Produção — Aurora Saúde", icon: Stethoscope, tone: "teal" }, { key: "producaoIpsm", label: "Produção — IPSM", icon: Stethoscope, tone: "teal" }, { key: "producaoResumoGeral", label: "Produção — Valores Gerais", icon: Stethoscope, tone: "coral" }, { key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
+  { group: "Atendimento", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producaoParticulares", label: "Produção — Particulares", icon: Stethoscope, tone: "teal" }, { key: "producaoConveniosGeral", label: "Produção — Convênios", icon: Stethoscope, tone: "teal" }, { key: "producaoBradescoClinica", label: "Produção — Bradesco Clínica", icon: Stethoscope, tone: "teal" }, { key: "producaoAuroraSaude", label: "Produção — Aurora Saúde", icon: Stethoscope, tone: "teal" }, { key: "producaoIpsm", label: "Produção — IPSM", icon: Stethoscope, tone: "teal" }, { key: "producaoResumoGeral", label: "Produção — Valores Gerais", icon: Stethoscope, tone: "coral" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
+  { group: "Setor de Vacinas", items: [{ key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "entradaEstoqueVacinas", label: "Entrada de Estoque", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "pacoteVacinas", label: "Pacote Personalizado", icon: Syringe, tone: "coral" }] },
   { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }] },
   { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" }] },
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }] },
@@ -2442,7 +2638,9 @@ const RESTRICTED_MENUS = {
   vacinacao: { group: "Minha área", items: [
     { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
     { key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" },
+    { key: "entradaEstoqueVacinas", label: "Entrada de Estoque", icon: Syringe, tone: "teal" },
     { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" },
+    { key: "pacoteVacinas", label: "Pacote Personalizado", icon: Syringe, tone: "coral" },
     { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" },
     { key: "insumos", label: "Estoque de Insumos", icon: Package, tone: "teal" },
   ] },
@@ -2475,6 +2673,8 @@ function AppInner() {
       case "convenios": return <ConveniosModulo />;
       case "vacinas": return <VacinasModulo />;
       case "vendasVacinas": return <VendasVacinasModulo />;
+      case "entradaEstoqueVacinas": return <EntradaEstoqueVacinasModulo />;
+      case "pacoteVacinas": return <PacoteVacinasModulo />;
       case "insumos": return <InsumosModulo />;
       case "producao": return <ProducaoConveniosGeralModulo />;
       case "producaoParticulares": return <ProducaoParticularesModulo />;
@@ -2573,6 +2773,7 @@ function NotificationsMenu({ setTab }) {
 
   const notificacoes = [
     ...vacinas.data.filter((v) => v.qtdEstoque < v.qtdMinima).map((v) => ({ texto: `Vacina "${v.nome}" abaixo do estoque mínimo`, tone: "red", tab: "vacinas" })),
+    ...vacinas.data.filter((v) => { if (!v.validade) return false; const dias = Math.ceil((new Date(v.validade) - new Date(todayISO())) / 86400000); return dias <= 90; }).map((v) => { const dias = Math.ceil((new Date(v.validade) - new Date(todayISO())) / 86400000); return { texto: `Vacina "${v.nome}" ${dias < 0 ? "vencida" : `vence em ${dias} dias`} (${fmtDate(v.validade)})`, tone: dias <= 45 ? "red" : "amber", tab: "vacinas" }; }),
     ...insumos.data.filter((i) => i.qtd < i.qtdMinima).map((i) => ({ texto: `Insumo "${i.nome}" em ponto crítico`, tone: "red", tab: "insumos" })),
     ...(somenteAdmin ? contas.data.filter((c) => c.status !== "Pago" && c.vencimento < todayISO()).map((c) => ({ texto: `Conta vencida: "${c.descricao}" — vencimento ${fmtDate(c.vencimento)}`, tone: "red", tab: "contas" })) : []),
     ...(somenteAdmin ? contas.data.filter((c) => c.status === "Pendente" && c.vencimento === diasAFrente(2)).map((c) => ({ texto: `Conta "${c.descricao}" vence em 2 dias — ${fmtDate(c.vencimento)}`, tone: "amber", tab: "contas" })) : []),
