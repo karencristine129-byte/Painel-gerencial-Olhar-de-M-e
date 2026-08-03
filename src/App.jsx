@@ -1373,11 +1373,16 @@ function UnidadesModulo() {
 /* ============================== MEU RH (autoatendimento do colaborador) ============================== */
 function ProdutividadeDiaria() {
   const { data, add, loading } = useOwnRecords("producao_diaria_colaborador");
-  const [form, setForm] = useState({ data: todayISO(), ligacoes: "", mensagens: "", agendados: "" });
+  const [form, setForm] = useState({ data: todayISO(), ligacoes: "", mensagens: "", agendados: "", pacientesAgendadosVacinas: "", avaliacoesGoogle: "", novosPacientesRecepcao: "", novosPacientesVacinas: "" });
   const [busy, setBusy] = useState(false);
   const mesAtual = todayISO().slice(0, 7);
   const doMes = data.filter((r) => r.data.slice(0, 7) === mesAtual);
-  const totais = doMes.reduce((s, r) => ({ ligacoes: s.ligacoes + r.ligacoes, mensagens: s.mensagens + r.mensagens, agendados: s.agendados + r.agendados }), { ligacoes: 0, mensagens: 0, agendados: 0 });
+  const somar = (campo) => doMes.reduce((s, r) => s + (Number(r[campo]) || 0), 0);
+  const totais = {
+    ligacoes: somar("ligacoes"), mensagens: somar("mensagens"), agendados: somar("agendados"),
+    pacientesAgendadosVacinas: somar("pacientes_agendados_vacinas"), avaliacoesGoogle: somar("avaliacoes_google"),
+    novosPacientesRecepcao: somar("novos_pacientes_recepcao"), novosPacientesVacinas: somar("novos_pacientes_vacinas"),
+  };
   return (
     <Card className="mb-5">
       <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Produtividade — lançamento de hoje</p>
@@ -1386,23 +1391,49 @@ function ProdutividadeDiaria() {
         <Field label="Ligações atendidas"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.ligacoes} onChange={(e) => setForm((p) => ({ ...p, ligacoes: e.target.value }))} /></Field>
         <Field label="Mensagens respondidas"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.mensagens} onChange={(e) => setForm((p) => ({ ...p, mensagens: e.target.value }))} /></Field>
         <Field label="Pacientes agendados"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.agendados} onChange={(e) => setForm((p) => ({ ...p, agendados: e.target.value }))} /></Field>
+        <Field label="Pacientes agendados vacinas"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.pacientesAgendadosVacinas} onChange={(e) => setForm((p) => ({ ...p, pacientesAgendadosVacinas: e.target.value }))} /></Field>
+        <Field label="Avaliações Google"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.avaliacoesGoogle} onChange={(e) => setForm((p) => ({ ...p, avaliacoesGoogle: e.target.value }))} /></Field>
+        <Field label="Novos pacientes recepção"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.novosPacientesRecepcao} onChange={(e) => setForm((p) => ({ ...p, novosPacientesRecepcao: e.target.value }))} /></Field>
+        <Field label="Novos pacientes vacinas"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.novosPacientesVacinas} onChange={(e) => setForm((p) => ({ ...p, novosPacientesVacinas: e.target.value }))} /></Field>
         <Btn icon={busy ? undefined : Plus} disabled={busy} onClick={async () => {
           setBusy(true);
-          await add({ data: form.data, ligacoes: Number(form.ligacoes || 0), mensagens: Number(form.mensagens || 0), agendados: Number(form.agendados || 0) });
-          setForm({ data: todayISO(), ligacoes: "", mensagens: "", agendados: "" });
+          await add({
+            data: form.data, ligacoes: Number(form.ligacoes || 0), mensagens: Number(form.mensagens || 0), agendados: Number(form.agendados || 0),
+            pacientes_agendados_vacinas: Number(form.pacientesAgendadosVacinas || 0), avaliacoes_google: Number(form.avaliacoesGoogle || 0),
+            novos_pacientes_recepcao: Number(form.novosPacientesRecepcao || 0), novos_pacientes_vacinas: Number(form.novosPacientesVacinas || 0),
+          });
+          setForm({ data: todayISO(), ligacoes: "", mensagens: "", agendados: "", pacientesAgendadosVacinas: "", avaliacoesGoogle: "", novosPacientesRecepcao: "", novosPacientesVacinas: "" });
           setBusy(false);
         }}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Registrar</Btn>
       </div>
-      <div className="grid grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         <KpiCard label="Ligações no mês" value={fmtNum(totais.ligacoes)} tone="coral" />
         <KpiCard label="Mensagens no mês" value={fmtNum(totais.mensagens)} tone="teal" />
         <KpiCard label="Agendados no mês" value={fmtNum(totais.agendados)} tone="green" />
+        <KpiCard label="Agendados vacinas" value={fmtNum(totais.pacientesAgendadosVacinas)} tone="teal" />
+        <KpiCard label="Avaliações Google" value={fmtNum(totais.avaliacoesGoogle)} tone="amber" />
+        <KpiCard label="Novos pac. recepção" value={fmtNum(totais.novosPacientesRecepcao)} tone="coral" />
+        <KpiCard label="Novos pac. vacinas" value={fmtNum(totais.novosPacientesVacinas)} tone="teal" />
       </div>
       {!loading && doMes.length > 0 && (
         <div className="overflow-x-auto -mx-5 px-5">
           <table className="w-full text-sm">
-            <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Data</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Ligações</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Mensagens</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Agendados</th></tr></thead>
-            <tbody>{[...doMes].sort((a, b) => b.data.localeCompare(a.data)).map((r) => (<tr key={r.id} style={{ borderBottom: `1px solid ${T.border}` }}><td className="py-2 px-2">{fmtDate(r.data)}</td><td className="py-2 px-2">{r.ligacoes}</td><td className="py-2 px-2">{r.mensagens}</td><td className="py-2 px-2">{r.agendados}</td></tr>))}</tbody>
+            <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Data</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Ligações</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Mensagens</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Agendados</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Agend. vacinas</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Aval. Google</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Novos (recepção)</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Novos (vacinas)</th>
+            </tr></thead>
+            <tbody>{[...doMes].sort((a, b) => b.data.localeCompare(a.data)).map((r) => (
+              <tr key={r.id} style={{ borderBottom: `1px solid ${T.border}` }}>
+                <td className="py-2 px-2">{fmtDate(r.data)}</td><td className="py-2 px-2">{r.ligacoes}</td><td className="py-2 px-2">{r.mensagens}</td><td className="py-2 px-2">{r.agendados}</td>
+                <td className="py-2 px-2">{r.pacientes_agendados_vacinas}</td><td className="py-2 px-2">{r.avaliacoes_google}</td><td className="py-2 px-2">{r.novos_pacientes_recepcao}</td><td className="py-2 px-2">{r.novos_pacientes_vacinas}</td>
+              </tr>
+            ))}</tbody>
           </table>
         </div>
       )}
@@ -1982,6 +2013,10 @@ function EquipeModulo() {
       ligacoes: pdMes.reduce((s, p) => s + p.ligacoes, 0),
       mensagens: pdMes.reduce((s, p) => s + p.mensagens, 0),
       agendados: pdMes.reduce((s, p) => s + p.agendados, 0),
+      agendadosVacinas: pdMes.reduce((s, p) => s + (Number(p.pacientes_agendados_vacinas) || 0), 0),
+      avaliacoesGoogle: pdMes.reduce((s, p) => s + (Number(p.avaliacoes_google) || 0), 0),
+      novosRecepcao: pdMes.reduce((s, p) => s + (Number(p.novos_pacientes_recepcao) || 0), 0),
+      novosVacinas: pdMes.reduce((s, p) => s + (Number(p.novos_pacientes_vacinas) || 0), 0),
       horasTotal: hrMes.reduce((s, h) => s + (Number(h.horas_total) || 0), 0),
       atestados: atMes.length,
     };
@@ -2002,7 +2037,7 @@ function EquipeModulo() {
         <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Colaboradores — resumo do mês atual</p>
         {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> : (
           <div className="overflow-x-auto -mx-5 px-5">
-            <table className="w-full text-sm min-w-[640px]">
+            <table className="w-full text-sm min-w-[900px]">
               <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Nome</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Cargo</th>
@@ -2010,6 +2045,10 @@ function EquipeModulo() {
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Ligações</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Mensagens</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Agendados</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Agend. vacinas</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Aval. Google</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Novos (recepção)</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Novos (vacinas)</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Horas</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Atestados</th>
               </tr></thead>
@@ -2021,6 +2060,10 @@ function EquipeModulo() {
                   <td className="py-2 px-2">{r.ligacoes}</td>
                   <td className="py-2 px-2">{r.mensagens}</td>
                   <td className="py-2 px-2">{r.agendados}</td>
+                  <td className="py-2 px-2">{r.agendadosVacinas}</td>
+                  <td className="py-2 px-2">{r.avaliacoesGoogle}</td>
+                  <td className="py-2 px-2">{r.novosRecepcao}</td>
+                  <td className="py-2 px-2">{r.novosVacinas}</td>
                   <td className="py-2 px-2">{r.horasTotal.toFixed(1)}</td>
                   <td className="py-2 px-2">{r.atestados}</td>
                 </tr>
