@@ -177,8 +177,8 @@ const MODULES = {
     toDb: (r) => ({ vacina_id: r.vacinaId, data: r.data, quantidade: r.quantidade, valor_unitario: r.valorUnitario, desconto_pct: r.descontoPct, valor_total: r.valorTotal }),
     fromDb: (r) => ({ id: r.id, vacinaId: r.vacina_id, data: r.data, quantidade: r.quantidade, valorUnitario: r.valor_unitario, descontoPct: r.desconto_pct, valorTotal: r.valor_total }) },
   entradasEstoqueVacinas: { table: "entradas_estoque_vacinas", order: "data.desc",
-    toDb: (r) => ({ vacina_id: r.vacinaId, data: r.data, quantidade: r.quantidade }),
-    fromDb: (r) => ({ id: r.id, vacinaId: r.vacina_id, data: r.data, quantidade: r.quantidade }) },
+    toDb: (r) => ({ vacina_id: r.vacinaId, data: r.data, quantidade: r.quantidade, lote: r.lote, validade: r.validade || null }),
+    fromDb: (r) => ({ id: r.id, vacinaId: r.vacina_id, data: r.data, quantidade: r.quantidade, lote: r.lote, validade: r.validade }) },
   vendasVacinasPacotes: { table: "vendas_vacinas_pacotes", order: "data.desc",
     toDb: (r) => ({ data: r.data, paciente: r.paciente, itens: r.itens, desconto_tipo: r.descontoTipo, desconto_valor: r.descontoValor, valor_total: r.valorTotal }),
     fromDb: (r) => ({ id: r.id, data: r.data, paciente: r.paciente, itens: r.itens, descontoTipo: r.desconto_tipo, descontoValor: r.desconto_valor, valorTotal: r.valor_total }) },
@@ -941,12 +941,14 @@ function EntradaEstoqueVacinasModulo() {
     { key: "vacina", label: "Vacina", type: "select", options: nomesVacinas.length ? nomesVacinas : ["Cadastre em Estoque de Vacinas primeiro"] },
     { key: "data", label: "Data (competência)", type: "date", default: todayISO() },
     { key: "quantidade", label: "Quantidade que chegou", type: "number" },
+    { key: "validade", label: "Validade deste lote", type: "date", required: false },
   ];
+  const gerarLote = (data) => (data || todayISO()).replace(/-/g, "");
   const onAddEntrada = async (record) => {
     const vac = vacinasCat.find((v) => v.nome === record.vacina);
     if (!vac) return alert("Selecione uma vacina cadastrada.");
     const qtd = Number(record.quantidade) || 0;
-    await add({ vacinaId: vac.id, data: record.data, quantidade: qtd });
+    await add({ vacinaId: vac.id, data: record.data, quantidade: qtd, lote: gerarLote(record.data), validade: record.validade || null });
     await updateVacina(vac.id, { qtdEstoque: Number(vac.qtdEstoque || 0) + qtd });
   };
   const onRemoveEntrada = async (id) => {
@@ -957,14 +959,34 @@ function EntradaEstoqueVacinasModulo() {
     }
     await remove(id);
   };
+  const diasParaVencer = (validade) => validade ? Math.ceil((new Date(validade) - new Date(todayISO())) / 86400000) : null;
   const rowsEnriquecidas = entradas.map((e) => ({ ...e, vacina: (vacinasCat.find((x) => x.id === e.vacinaId) || {}).nome || "—" }));
-  const columns = [{ key: "data", label: "Data (competência)", render: (r) => fmtDate(r.data) }, { key: "vacina", label: "Vacina" }, { key: "quantidade", label: "Quantidade" }];
+  const columns = [
+    { key: "data", label: "Data (competência)", render: (r) => fmtDate(r.data) },
+    { key: "lote", label: "Lote", render: (r) => <span className="text-xs" style={{ color: T.muted, fontFamily: "'Roboto', sans-serif" }}>{r.lote || "—"}</span> },
+    { key: "vacina", label: "Vacina" }, { key: "quantidade", label: "Quantidade" },
+    { key: "validade", label: "Validade", render: (r) => { if (!r.validade) return <span style={{ color: T.muted }}>—</span>; const dias = diasParaVencer(r.validade); return <span style={{ color: dias <= 45 ? T.red : dias <= 90 ? T.amber : T.text }}>{fmtDate(r.validade)}{dias <= 90 && <span className="block text-xs">{dias < 0 ? "vencido" : `${dias} dias`}</span>}</span>; } },
+  ];
   const totalQtd = entradas.reduce((s, r) => s + Number(r.quantidade), 0);
   const porVacina = useMemo(() => { const map = {}; rowsEnriquecidas.forEach((r) => { map[r.vacina] = (map[r.vacina] || 0) + Number(r.quantidade); }); return Object.entries(map).map(([vacina, quantidade]) => ({ vacina, quantidade })).sort((a, b) => b.quantidade - a.quantidade); }, [rowsEnriquecidas]);
+  const lotesVencendo = rowsEnriquecidas.filter((r) => { const d = diasParaVencer(r.validade); return d !== null && d <= 90; }).sort((a, b) => diasParaVencer(a.validade) - diasParaVencer(b.validade));
   return (
-    <ModuleShell icon={Syringe} title="Entrada de Estoque — Vacinas" subtitle="Registre semanalmente o que chegou, com data de competência — exporte quando quiser" tone="teal" loading={loading || loadingVacinas} erro={erro}
+    <ModuleShell icon={Syringe} title="Entrada de Estoque — Vacinas" subtitle="Registre por lote (data + validade) tudo que chegou — cada lote fica guardado, nada é sobrescrito" tone="teal" loading={loading || loadingVacinas} erro={erro}
       dailyFields={fields} dailyCta="Registrar entrada" fields={fields} columns={columns} rows={rowsEnriquecidas} onAdd={onAddEntrada} onUpdate={() => {}} onDelete={onRemoveEntrada}
-      kpis={[{ label: "Entradas registradas", value: entradas.length }, { label: "Doses recebidas", value: fmtNum(totalQtd), tone: "teal" }]}
+      kpis={[{ label: "Entradas registradas", value: entradas.length }, { label: "Doses recebidas", value: fmtNum(totalQtd), tone: "teal" }, { label: "Lotes vencendo (90 dias)", value: lotesVencendo.length, tone: lotesVencendo.length ? "amber" : "green" }]}
+      extra={lotesVencendo.length > 0 && (
+        <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}>
+          <div className="flex items-center gap-2 mb-2"><AlertTriangle size={15} style={{ color: T.amber }} /><span className="font-semibold text-sm" style={{ color: T.text }}>Lotes próximos do vencimento</span></div>
+          <div className="flex flex-col gap-1.5">
+            {lotesVencendo.map((r) => { const dias = diasParaVencer(r.validade); return (
+              <div key={r.id} className="flex justify-between text-sm">
+                <span style={{ color: T.muted }}>{r.vacina} — lote {r.lote} ({r.quantidade} un.)</span>
+                <span style={{ color: dias <= 45 ? T.red : T.amber, fontWeight: 600 }}>{dias < 0 ? "vencido" : `${dias} dias`} — {fmtDate(r.validade)}</span>
+              </div>
+            ); })}
+          </div>
+        </Card>
+      )}
       charts={<ChartCard title="Doses recebidas por vacina"><BarChart data={porVacina}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="vacina" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-15} textAnchor="end" height={60} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="quantidade" fill={T.teal} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>} />
   );
 }
@@ -1586,15 +1608,17 @@ function VisaoGeral() {
 /* ============================== PAINEL CRÍTICO ============================== */
 function PainelCriticoModulo() {
   const vacinas = useRecords("vacinas");
+  const lotesVacinas = useRecords("entradasEstoqueVacinas");
   const insumos = useRecords("insumos");
   const contas = useRecords("contas");
   const faturamento = useRecords("faturamento");
   const leads = useRecords("marketing");
-  const loading = [vacinas, insumos, contas, faturamento, leads].some((m) => m.loading);
+  const loading = [vacinas, lotesVacinas, insumos, contas, faturamento, leads].some((m) => m.loading);
+  const nomeVacina = (id) => (vacinas.data.find((v) => v.id === id) || {}).nome || "—";
 
   const itens = [
     ...vacinas.data.filter((v) => v.qtdEstoque < v.qtdMinima).map((v) => ({ area: "Estoque de Vacinas", texto: `"${v.nome}" abaixo do mínimo (${v.qtdEstoque}/${v.qtdMinima})`, tone: "red" })),
-    ...vacinas.data.filter((v) => { if (!v.validade) return false; const dias = Math.ceil((new Date(v.validade) - new Date(todayISO())) / 86400000); return dias <= 90; }).map((v) => { const dias = Math.ceil((new Date(v.validade) - new Date(todayISO())) / 86400000); return { area: "Estoque de Vacinas", texto: `"${v.nome}" ${dias < 0 ? "vencida" : `vence em ${dias} dias`} — validade ${fmtDate(v.validade)}`, tone: dias <= 45 ? "red" : "amber" }; }),
+    ...lotesVacinas.data.filter((l) => { if (!l.validade) return false; const dias = Math.ceil((new Date(l.validade) - new Date(todayISO())) / 86400000); return dias <= 90; }).map((l) => { const dias = Math.ceil((new Date(l.validade) - new Date(todayISO())) / 86400000); return { area: "Estoque de Vacinas", texto: `"${nomeVacina(l.vacinaId)}" — lote ${l.lote} ${dias < 0 ? "vencido" : `vence em ${dias} dias`} (${fmtDate(l.validade)})`, tone: dias <= 45 ? "red" : "amber" }; }),
     ...insumos.data.filter((i) => i.qtd < i.qtdMinima).map((i) => ({ area: "Estoque de Insumos", texto: `"${i.nome}" em ponto crítico (${i.qtd}/${i.qtdMinima})`, tone: "red" })),
     ...contas.data.filter((c) => c.status !== "Pago" && c.vencimento < todayISO()).map((c) => ({ area: "Contas a Pagar", texto: `"${c.descricao}" vencida em ${fmtDate(c.vencimento)} — ${fmtBRL(c.valor)}`, tone: "red" })),
     ...contas.data.filter((c) => c.status === "Pendente" && c.vencimento === diasAFrente(2)).map((c) => ({ area: "Contas a Pagar", texto: `"${c.descricao}" vence em 2 dias — ${fmtBRL(c.valor)}`, tone: "amber" })),
@@ -2766,14 +2790,16 @@ function NotificationsMenu({ setTab }) {
   const somenteAdmin = perfil && perfil.papel === "admin";
   const [open, setOpen] = useState(false);
   const vacinas = useRecords("vacinas");
+  const lotesVacinas = useRecords("entradasEstoqueVacinas");
   const insumos = useRecords("insumos");
   const contas = useRecords("contas", somenteAdmin);
   const leads = useRecords("marketing");
-  const loading = vacinas.loading || insumos.loading || contas.loading || leads.loading;
+  const loading = vacinas.loading || lotesVacinas.loading || insumos.loading || contas.loading || leads.loading;
+  const nomeVacina = (id) => (vacinas.data.find((v) => v.id === id) || {}).nome || "—";
 
   const notificacoes = [
     ...vacinas.data.filter((v) => v.qtdEstoque < v.qtdMinima).map((v) => ({ texto: `Vacina "${v.nome}" abaixo do estoque mínimo`, tone: "red", tab: "vacinas" })),
-    ...vacinas.data.filter((v) => { if (!v.validade) return false; const dias = Math.ceil((new Date(v.validade) - new Date(todayISO())) / 86400000); return dias <= 90; }).map((v) => { const dias = Math.ceil((new Date(v.validade) - new Date(todayISO())) / 86400000); return { texto: `Vacina "${v.nome}" ${dias < 0 ? "vencida" : `vence em ${dias} dias`} (${fmtDate(v.validade)})`, tone: dias <= 45 ? "red" : "amber", tab: "vacinas" }; }),
+    ...lotesVacinas.data.filter((l) => { if (!l.validade) return false; const dias = Math.ceil((new Date(l.validade) - new Date(todayISO())) / 86400000); return dias <= 90; }).map((l) => { const dias = Math.ceil((new Date(l.validade) - new Date(todayISO())) / 86400000); return { texto: `"${nomeVacina(l.vacinaId)}" — lote ${l.lote} ${dias < 0 ? "vencido" : `vence em ${dias} dias`} (${fmtDate(l.validade)})`, tone: dias <= 45 ? "red" : "amber", tab: "entradaEstoqueVacinas" }; }),
     ...insumos.data.filter((i) => i.qtd < i.qtdMinima).map((i) => ({ texto: `Insumo "${i.nome}" em ponto crítico`, tone: "red", tab: "insumos" })),
     ...(somenteAdmin ? contas.data.filter((c) => c.status !== "Pago" && c.vencimento < todayISO()).map((c) => ({ texto: `Conta vencida: "${c.descricao}" — vencimento ${fmtDate(c.vencimento)}`, tone: "red", tab: "contas" })) : []),
     ...(somenteAdmin ? contas.data.filter((c) => c.status === "Pendente" && c.vencimento === diasAFrente(2)).map((c) => ({ texto: `Conta "${c.descricao}" vence em 2 dias — ${fmtDate(c.vencimento)}`, tone: "amber", tab: "contas" })) : []),
