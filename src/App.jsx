@@ -798,24 +798,38 @@ function ConveniosModulo() {
 
 function VacinasModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("vacinas");
-  const fields = [{ key: "nome", label: "Nome da vacina", type: "text" }, { key: "qtdEstoque", label: "Qtd. em estoque", type: "number" }, { key: "qtdVendidaMes", label: "Vendida no mês", type: "number" }, { key: "qtdMinima", label: "Estoque mínimo", type: "number" }, { key: "valorCompra", label: "Valor compra (un.)", type: "currency" }, { key: "valorVenda", label: "Valor revenda (un.)", type: "currency" }, { key: "validade", label: "Validade (lote atual)", type: "date", required: false }];
+  const { data: lotes, loading: loadingLotes } = useRecords("entradasEstoqueVacinas");
+  const fields = [{ key: "nome", label: "Nome da vacina", type: "text" }, { key: "qtdEstoque", label: "Qtd. em estoque", type: "number" }, { key: "qtdVendidaMes", label: "Vendida no mês", type: "number" }, { key: "qtdMinima", label: "Estoque mínimo", type: "number" }, { key: "valorCompra", label: "Valor compra (un.)", type: "currency" }, { key: "valorVenda", label: "Valor revenda (un.)", type: "currency" }];
   const diasParaVencer = (validade) => validade ? Math.ceil((new Date(validade) - new Date(todayISO())) / 86400000) : null;
+  const lotesDaVacina = (vacinaId) => lotes.filter((l) => l.vacinaId === vacinaId && l.validade).sort((a, b) => a.validade.localeCompare(b.validade));
   const columns = [{ key: "nome", label: "Vacina" }, { key: "qtdEstoque", label: "Em estoque", render: (r) => <span className="flex items-center gap-1.5">{r.qtdEstoque}{r.qtdEstoque < r.qtdMinima && <AlertTriangle size={12} style={{ color: T.red }} />}</span> }, { key: "qtdVendidaMes", label: "Vendidas/mês" }, { key: "valorCompra", label: "Compra (un.)", render: (r) => fmtBRL(r.valorCompra) }, { key: "valorVenda", label: "Venda (un.)", render: (r) => fmtBRL(r.valorVenda) }, { key: "margem", label: "Margem", render: (r) => <span style={{ color: T.green }}>{fmtPct(r.valorVenda ? ((r.valorVenda - r.valorCompra) / r.valorVenda) * 100 : 0)}</span> },
-    { key: "validade", label: "Validade", render: (r) => { const dias = diasParaVencer(r.validade); if (!r.validade) return <span style={{ color: T.muted }}>—</span>; return <span style={{ color: dias <= 45 ? T.red : dias <= 90 ? T.amber : T.text }}>{fmtDate(r.validade)}{dias <= 90 && <span className="block text-xs">{dias < 0 ? "vencida" : `${dias} dias`}</span>}</span>; } },
+    { key: "lotes", label: "Lotes — Validade", render: (r) => {
+      const ls = lotesDaVacina(r.id);
+      if (ls.length === 0) return <span className="text-xs" style={{ color: T.muted }}>Sem lote registrado</span>;
+      return (
+        <div className="flex flex-col gap-0.5">
+          {ls.map((l) => { const dias = diasParaVencer(l.validade); const cor = dias <= 45 ? T.red : dias <= 90 ? T.amber : T.text; return (
+            <span key={l.id} className="text-xs" style={{ color: cor }}>{l.lote} — {fmtDate(l.validade)}{dias <= 90 && ` (${dias < 0 ? "vencido" : `${dias}d`})`}</span>
+          ); })}
+        </div>
+      );
+    } },
   ];
   const valorEstoqueCompra = data.reduce((s, r) => s + r.qtdEstoque * r.valorCompra, 0), valorEstoqueVenda = data.reduce((s, r) => s + r.qtdEstoque * r.valorVenda, 0), receitaVendasMes = data.reduce((s, r) => s + r.qtdVendidaMes * r.valorVenda, 0);
   const abaixoMinimo = data.filter((r) => r.qtdEstoque < r.qtdMinima);
-  const vencendo90 = data.filter((r) => { const d = diasParaVencer(r.validade); return d !== null && d <= 90 && d > 45; });
-  const vencendo45 = data.filter((r) => { const d = diasParaVencer(r.validade); return d !== null && d <= 45; });
+  const todosLotesComValidade = lotes.filter((l) => l.validade);
+  const vencendo90 = todosLotesComValidade.filter((l) => { const d = diasParaVencer(l.validade); return d !== null && d <= 90 && d > 45; });
+  const vencendo45 = todosLotesComValidade.filter((l) => { const d = diasParaVencer(l.validade); return d !== null && d <= 45; });
+  const nomeVacina = (id) => (data.find((v) => v.id === id) || {}).nome || "—";
   return (
-    <ModuleShell icon={Syringe} title="Estoque de Vacinas" subtitle="Cadastro, estoque atual, valor de compra e revenda, e validade" tone="teal" loading={loading} erro={erro}
+    <ModuleShell icon={Syringe} title="Estoque de Vacinas" subtitle="Cadastro, estoque atual, valor de compra e revenda — validade por lote" tone="teal" loading={loading || loadingLotes} erro={erro}
       dailyFields={fields} dailyCta="Atualizar/cadastrar vacina" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Estoque (custo)", value: fmtBRL(valorEstoqueCompra) }, { label: "Estoque (revenda)", value: fmtBRL(valorEstoqueVenda), tone: "green" }, { label: "Receita de vendas/mês", value: fmtBRL(receitaVendasMes), tone: "coral" }, { label: "Abaixo do mínimo", value: abaixoMinimo.length, tone: abaixoMinimo.length ? "red" : "green" }]}
       charts={<ChartCard title="Estoque atual x estoque mínimo, por vacina"><BarChart data={data}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="nome" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-15} textAnchor="end" height={60} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="qtdEstoque" name="Em estoque" fill={T.amber} radius={[4, 4, 0, 0]} /><Bar dataKey="qtdMinima" name="Mínimo" fill={`${T.amber}55`} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>}
       extra={<>
         {abaixoMinimo.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.red}55` }}><div className="flex items-center gap-2 mb-1"><AlertTriangle size={15} style={{ color: T.red }} /><span className="font-semibold text-sm" style={{ color: T.red }}>Reposição necessária</span></div><p className="text-sm" style={{ color: T.muted }}>{abaixoMinimo.map((r) => r.nome).join(", ")} — abaixo do estoque mínimo.</p></Card>}
-        {vencendo45.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.red}55` }}><div className="flex items-center gap-2 mb-1"><AlertTriangle size={15} style={{ color: T.red }} /><span className="font-semibold text-sm" style={{ color: T.red }}>Vencimento em até 45 dias</span></div><p className="text-sm" style={{ color: T.muted }}>{vencendo45.map((r) => r.nome).join(", ")}.</p></Card>}
-        {vencendo90.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><div className="flex items-center gap-2 mb-1"><AlertTriangle size={15} style={{ color: T.amber }} /><span className="font-semibold text-sm" style={{ color: T.text }}>Vencimento em até 90 dias</span></div><p className="text-sm" style={{ color: T.muted }}>{vencendo90.map((r) => r.nome).join(", ")}.</p></Card>}
+        {vencendo45.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.red}55` }}><div className="flex items-center gap-2 mb-1"><AlertTriangle size={15} style={{ color: T.red }} /><span className="font-semibold text-sm" style={{ color: T.red }}>Lotes vencendo em até 45 dias</span></div><p className="text-sm" style={{ color: T.muted }}>{vencendo45.map((l) => `${nomeVacina(l.vacinaId)} (lote ${l.lote})`).join(", ")}.</p></Card>}
+        {vencendo90.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><div className="flex items-center gap-2 mb-1"><AlertTriangle size={15} style={{ color: T.amber }} /><span className="font-semibold text-sm" style={{ color: T.text }}>Lotes vencendo em até 90 dias</span></div><p className="text-sm" style={{ color: T.muted }}>{vencendo90.map((l) => `${nomeVacina(l.vacinaId)} (lote ${l.lote})`).join(", ")}.</p></Card>}
       </>} />
   );
 }
@@ -941,7 +955,7 @@ function EntradaEstoqueVacinasModulo() {
     { key: "vacina", label: "Vacina", type: "select", options: nomesVacinas.length ? nomesVacinas : ["Cadastre em Estoque de Vacinas primeiro"] },
     { key: "data", label: "Data (competência)", type: "date", default: todayISO() },
     { key: "quantidade", label: "Quantidade que chegou", type: "number" },
-    { key: "validade", label: "Validade deste lote", type: "date", required: false },
+    { key: "validade", label: "Validade deste lote", type: "date" },
   ];
   const gerarLote = (data) => (data || todayISO()).replace(/-/g, "");
   const onAddEntrada = async (record) => {
