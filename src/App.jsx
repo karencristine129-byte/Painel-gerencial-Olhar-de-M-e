@@ -1186,7 +1186,7 @@ function VisaoGeral() {
   const alertas = [
     alertaVacinas > 0 && { texto: `${alertaVacinas} vacina(s) abaixo do estoque mínimo`, tone: "red" },
     alertaInsumos > 0 && { texto: `${alertaInsumos} insumo(s) em ponto crítico`, tone: "red" },
-    canFinance && contasAtrasadas > 0 && { texto: `${contasAtrasadas} conta(s) atrasada(s) ou vencendo`, tone: "amber" },
+    canFinance && perfil.papel === "admin" && contasAtrasadas > 0 && { texto: `${contasAtrasadas} conta(s) atrasada(s) ou vencendo`, tone: "amber" },
     canFinance && resultado < 0 && { texto: "Resultado financeiro do período está negativo", tone: "red" },
   ].filter(Boolean);
 
@@ -2337,19 +2337,19 @@ function AppInner() {
 }
 function NotificationsMenu({ setTab }) {
   const { perfil } = useAuth();
-  const canFinance = perfil && perfil.papel !== "operacional";
+  const somenteAdmin = perfil && perfil.papel === "admin";
   const [open, setOpen] = useState(false);
   const vacinas = useRecords("vacinas");
   const insumos = useRecords("insumos");
-  const contas = useRecords("contas", canFinance);
+  const contas = useRecords("contas", somenteAdmin);
   const leads = useRecords("marketing");
   const loading = vacinas.loading || insumos.loading || contas.loading || leads.loading;
 
   const notificacoes = [
     ...vacinas.data.filter((v) => v.qtdEstoque < v.qtdMinima).map((v) => ({ texto: `Vacina "${v.nome}" abaixo do estoque mínimo`, tone: "red", tab: "vacinas" })),
     ...insumos.data.filter((i) => i.qtd < i.qtdMinima).map((i) => ({ texto: `Insumo "${i.nome}" em ponto crítico`, tone: "red", tab: "insumos" })),
-    ...(canFinance ? contas.data.filter((c) => c.status !== "Pago" && c.vencimento < todayISO()).map((c) => ({ texto: `Conta vencida: "${c.descricao}" — vencimento ${fmtDate(c.vencimento)}`, tone: "red", tab: "contas" })) : []),
-    ...(canFinance ? contas.data.filter((c) => c.status === "Pendente" && c.vencimento === diasAFrente(2)).map((c) => ({ texto: `Conta "${c.descricao}" vence em 2 dias — ${fmtDate(c.vencimento)}`, tone: "amber", tab: "contas" })) : []),
+    ...(somenteAdmin ? contas.data.filter((c) => c.status !== "Pago" && c.vencimento < todayISO()).map((c) => ({ texto: `Conta vencida: "${c.descricao}" — vencimento ${fmtDate(c.vencimento)}`, tone: "red", tab: "contas" })) : []),
+    ...(somenteAdmin ? contas.data.filter((c) => c.status === "Pendente" && c.vencimento === diasAFrente(2)).map((c) => ({ texto: `Conta "${c.descricao}" vence em 2 dias — ${fmtDate(c.vencimento)}`, tone: "amber", tab: "contas" })) : []),
     ...leads.data.filter((l) => l.status === "Novo").map((l) => ({ texto: `Lead novo: ${l.nome} — ainda não contatado`, tone: "teal", tab: "marketing" })),
   ];
 
