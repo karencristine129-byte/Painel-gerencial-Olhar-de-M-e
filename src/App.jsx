@@ -634,11 +634,15 @@ function useOwnRecords(table, order = "data.desc") {
     try { await sbRest(table, { method: "POST", token: session.access_token, body: { ...record, unidade_id: unidadeId, colaborador_id: perfil.id } }); await reload(); return true; }
     catch (e) { alert("Não foi possível salvar: " + e.message); return false; }
   };
+  const update = async (id, record) => {
+    try { await sbRest(`${table}?id=eq.${id}`, { method: "PATCH", token: session.access_token, body: record }); await reload(); return true; }
+    catch (e) { alert("Não foi possível salvar: " + e.message); return false; }
+  };
   const remove = async (id) => {
     try { await sbRest(`${table}?id=eq.${id}`, { method: "DELETE", token: session.access_token }); await reload(); }
     catch (e) { alert("Não foi possível remover: " + e.message); }
   };
-  return { data, add, remove, reload, loading, erro };
+  return { data, add, update, remove, reload, loading, erro };
 }
 
 function normalizeForm(fields, form) {
@@ -776,7 +780,9 @@ function ConveniosModulo() {
 function VacinasModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("vacinas");
   const fields = [{ key: "nome", label: "Nome da vacina", type: "text" }, { key: "qtdEstoque", label: "Qtd. em estoque", type: "number" }, { key: "qtdVendidaMes", label: "Vendida no mês", type: "number" }, { key: "qtdMinima", label: "Estoque mínimo", type: "number" }, { key: "valorCompra", label: "Valor compra (un.)", type: "currency" }, { key: "valorVenda", label: "Valor revenda (un.)", type: "currency" }];
-  const columns = [{ key: "nome", label: "Vacina" }, { key: "qtdEstoque", label: "Em estoque", render: (r) => <span className="flex items-center gap-1.5">{r.qtdEstoque}{r.qtdEstoque < r.qtdMinima && <AlertTriangle size={12} style={{ color: T.red }} />}</span> }, { key: "qtdVendidaMes", label: "Vendidas/mês" }, { key: "valorCompra", label: "Compra (un.)", render: (r) => fmtBRL(r.valorCompra) }, { key: "valorVenda", label: "Venda (un.)", render: (r) => fmtBRL(r.valorVenda) }, { key: "margem", label: "Margem", render: (r) => <span style={{ color: T.green }}>{fmtPct(r.valorVenda ? ((r.valorVenda - r.valorCompra) / r.valorVenda) * 100 : 0)}</span> }];
+  const columns = [{ key: "nome", label: "Vacina" }, { key: "qtdEstoque", label: "Em estoque", render: (r) => <span className="flex items-center gap-1.5">{r.qtdEstoque}{r.qtdEstoque < r.qtdMinima && <AlertTriangle size={12} style={{ color: T.red }} />}</span> }, { key: "qtdVendidaMes", label: "Vendidas/mês" }, { key: "valorCompra", label: "Compra (un.)", render: (r) => fmtBRL(r.valorCompra) }, { key: "valorVenda", label: "Venda (un.)", render: (r) => fmtBRL(r.valorVenda) }, { key: "margem", label: "Margem", render: (r) => <span style={{ color: T.green }}>{fmtPct(r.valorVenda ? ((r.valorVenda - r.valorCompra) / r.valorVenda) * 100 : 0)}</span> },
+    { key: "chegada", label: "Chegou essa semana", render: (r) => <AjusteEstoqueCell placeholder="qtd" tone="teal" onAjustar={async (qtd) => update(r.id, { qtdEstoque: Number(r.qtdEstoque) + qtd })} /> },
+  ];
   const valorEstoqueCompra = data.reduce((s, r) => s + r.qtdEstoque * r.valorCompra, 0), valorEstoqueVenda = data.reduce((s, r) => s + r.qtdEstoque * r.valorVenda, 0), receitaVendasMes = data.reduce((s, r) => s + r.qtdVendidaMes * r.valorVenda, 0);
   const abaixoMinimo = data.filter((r) => r.qtdEstoque < r.qtdMinima);
   return (
@@ -868,10 +874,23 @@ function VendasVacinasModulo() {
   );
 }
 
+function AjusteEstoqueCell({ onAjustar, placeholder, tone = "ink" }) {
+  const [valor, setValor] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="flex items-center gap-1.5">
+      <input type="number" min="0" className="rounded-lg px-2 py-1.5 text-xs outline-none w-16" style={inputStyle} placeholder={placeholder} value={valor} onChange={(e) => setValor(e.target.value)} />
+      <Btn small tone={tone} disabled={busy || !valor} onClick={async () => { setBusy(true); await onAjustar(Number(valor)); setValor(""); setBusy(false); }}>{busy ? "…" : "OK"}</Btn>
+    </div>
+  );
+}
+
 function InsumosModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("insumos");
   const fields = [{ key: "nome", label: "Item", type: "text" }, { key: "categoria", label: "Categoria", type: "select", options: ["Material médico", "EPI", "Limpeza", "Escritório", "Outros"] }, { key: "qtd", label: "Qtd. atual", type: "number" }, { key: "qtdMinima", label: "Qtd. mínima", type: "number" }, { key: "unidade", label: "Unidade", type: "text", placeholder: "caixa, litro…" }, { key: "valorUnitario", label: "Valor unitário (R$)", type: "currency" }];
-  const columns = [{ key: "nome", label: "Item" }, { key: "categoria", label: "Categoria" }, { key: "qtd", label: "Qtd.", render: (r) => <span className="flex items-center gap-1.5">{r.qtd} {r.unidade}{r.qtd < r.qtdMinima && <AlertTriangle size={12} style={{ color: T.red }} />}</span> }, { key: "qtdMinima", label: "Mínimo" }, { key: "valorUnitario", label: "Valor unit.", render: (r) => fmtBRL(r.valorUnitario) }, { key: "total", label: "Valor total", render: (r) => fmtBRL(r.qtd * r.valorUnitario) }];
+  const columns = [{ key: "nome", label: "Item" }, { key: "categoria", label: "Categoria" }, { key: "qtd", label: "Qtd.", render: (r) => <span className="flex items-center gap-1.5">{r.qtd} {r.unidade}{r.qtd < r.qtdMinima && <AlertTriangle size={12} style={{ color: T.red }} />}</span> }, { key: "qtdMinima", label: "Mínimo" }, { key: "valorUnitario", label: "Valor unit.", render: (r) => fmtBRL(r.valorUnitario) }, { key: "total", label: "Valor total", render: (r) => fmtBRL(r.qtd * r.valorUnitario) },
+    { key: "retirar", label: "Registrar retirada", render: (r) => <AjusteEstoqueCell placeholder="qtd" tone="coral" onAjustar={async (qtd) => update(r.id, { qtd: Math.max(Number(r.qtd) - qtd, 0) })} /> },
+  ];
   const valorTotal = data.reduce((s, r) => s + r.qtd * r.valorUnitario, 0); const critico = data.filter((r) => r.qtd < r.qtdMinima);
   return (
     <ModuleShell icon={Package} title="Estoque de Insumos" subtitle="Materiais médicos, EPIs, limpeza e escritório" tone="teal" loading={loading} erro={erro}
@@ -881,21 +900,28 @@ function InsumosModulo() {
   );
 }
 
-function ProducaoModulo() {
-  const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("producao");
+const CONVENIOS_TELA_PROPRIA = ["Particular", "Bradesco Clínica", "Aurora Saúde", "IPSM"];
+
+function ProducaoConvenioModulo({ convenioFixo, titulo, subtitulo, icon }) {
+  const { data: todaProducao, add, bulkAdd, update, remove, loading, erro } = useRecords("producao");
   const { data: profissionais } = useRecords("cadProfissionais");
   const { data: conveniosCadastro } = useRecords("cadConvenios");
   const nomesProfissionais = profissionais.map((p) => p.nome);
+  const opcoesConvenio = convenioFixo ? [convenioFixo] : conveniosCadastro.map((c) => c.nome).filter((n) => !CONVENIOS_TELA_PROPRIA.includes(n));
+
+  const data = convenioFixo ? todaProducao.filter((r) => r.convenio === convenioFixo) : todaProducao.filter((r) => r.convenio && !CONVENIOS_TELA_PROPRIA.includes(r.convenio));
+
   const fields = [
     { key: "profissional", label: "Profissional", type: "select", options: nomesProfissionais.length ? nomesProfissionais : ["Cadastre em Cadastros → Profissionais"] },
-    { key: "convenio", label: "Convênio", type: "select", options: CONVENIOS },
+    ...(convenioFixo ? [] : [{ key: "convenio", label: "Convênio", type: "select", options: opcoesConvenio.length ? opcoesConvenio : ["Cadastre em Cadastros → Convênios"] }]),
     { key: "data", label: "Data do atendimento", type: "date", default: todayISO() },
     { key: "atendimentos", label: "Atendimentos", type: "number" },
   ];
   const computar = (r) => {
-    const cfgConvenio = conveniosCadastro.find((c) => c.nome === r.convenio);
+    const convenio = convenioFixo || r.convenio;
+    const cfgConvenio = conveniosCadastro.find((c) => c.nome === convenio);
     const valorPorAtendimento = cfgConvenio ? Number(cfgConvenio.valorPadrao || 0) : 0;
-    return { receita: Number(r.atendimentos || 0) * valorPorAtendimento };
+    return { convenio, receita: Number(r.atendimentos || 0) * valorPorAtendimento };
   };
   const onAddComputado = (record) => add({ ...record, ...computar(record) });
   const onUpdateComputado = (id, record) => update(id, { ...record, ...computar(record) });
@@ -904,44 +930,102 @@ function ProducaoModulo() {
     { key: "data", label: "Data", render: (r) => fmtDate(r.data) },
     { key: "profissional", label: "Profissional" },
     { key: "tipoRepasseInfo", label: "Tipo de repasse (cadastro)", render: (r) => <span className="text-xs" style={{ color: T.muted }}>{tipoRepasseDe(r.profissional)}</span> },
-    { key: "convenio", label: "Convênio" }, { key: "atendimentos", label: "Atendimentos" },
+    ...(convenioFixo ? [] : [{ key: "convenio", label: "Convênio" }]),
+    { key: "atendimentos", label: "Atendimentos" },
     { key: "receita", label: "Receita (automática)", render: (r) => <span style={{ color: T.green, fontWeight: 600 }}>{fmtBRL(r.receita)}</span> },
   ];
-  const chartData = useMemo(() => { const map = {}; data.forEach((r) => { const nome = r.profissional.replace(/^Dr[a]?\.\s*/, ""); map[nome] = (map[nome] || 0) + Number(r.receita); }); return Object.entries(map).map(([profissional, receita]) => ({ profissional, receita })); }, [data]);
-  const porConvenioProducao = useMemo(() => { const map = {}; data.forEach((r) => { if (!map[r.convenio]) map[r.convenio] = { convenio: r.convenio, atendimentos: 0, receita: 0 }; map[r.convenio].atendimentos += Number(r.atendimentos); map[r.convenio].receita += Number(r.receita); }); return Object.values(map).filter((x) => x.convenio).sort((a, b) => b.receita - a.receita); }, [data]);
+
+  // Resumo por profissional — junta automaticamente vários lançamentos do mesmo profissional
+  const resumoPorProfissional = useMemo(() => {
+    const map = {};
+    data.forEach((r) => {
+      if (!map[r.profissional]) map[r.profissional] = { profissional: r.profissional, atendimentos: 0, receita: 0 };
+      map[r.profissional].atendimentos += Number(r.atendimentos);
+      map[r.profissional].receita += Number(r.receita);
+    });
+    return Object.values(map).sort((a, b) => b.receita - a.receita);
+  }, [data]);
+
   const totalReceita = data.reduce((s, r) => s + Number(r.receita), 0);
   const totalAtendimentos = data.reduce((s, r) => s + Number(r.atendimentos), 0);
-  const maisProdutivo = [...chartData].sort((a, b) => b.receita - a.receita)[0];
+  const maisProdutivo = resumoPorProfissional[0];
+
   return (
-    <ModuleShell icon={Stethoscope} title="Produção Médica" subtitle="Receita calculada automaticamente por atendimentos × valor do convênio" tone="teal" loading={loading} erro={erro}
+    <ModuleShell icon={icon || Stethoscope} title={titulo} subtitle={subtitulo} tone="teal" loading={loading} erro={erro}
       dailyFields={fields} dailyCta="Registrar produção" fields={fields} columns={columns} rows={data} onAdd={onAddComputado} onUpdate={onUpdateComputado} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Receita gerada", value: fmtBRL(totalReceita), tone: "green" }, { label: "Atendimentos", value: fmtNum(totalAtendimentos), tone: "teal" }, { label: "Mais produtivo(a)", value: maisProdutivo ? maisProdutivo.profissional : "—", tone: "coral" }]}
       extra={<>
-        {conveniosCadastro.length === 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><span className="text-sm" style={{ color: T.text }}>Nenhum convênio cadastrado ainda em Cadastros → Convênios — cadastre lá o "valor padrão por atendimento" de cada convênio para a receita ser calculada aqui.</span></Card>}
-        {porConvenioProducao.length > 0 && (
+        {conveniosCadastro.length === 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><span className="text-sm" style={{ color: T.text }}>Nenhum convênio cadastrado ainda em Cadastros → Convênios — cadastre lá o "valor padrão por atendimento" para a receita ser calculada aqui.</span></Card>}
+        {resumoPorProfissional.length > 0 && (
           <Card className="mb-5">
-            <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Resumo final por convênio</p>
+            <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Resumo por profissional (lançamentos do mesmo dia já somados)</p>
             <div className="overflow-x-auto -mx-5 px-5">
               <table className="w-full text-sm">
-                <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Convênio</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Atendimentos</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Receita</th></tr></thead>
-                <tbody>{porConvenioProducao.map((c) => (<tr key={c.convenio} style={{ borderBottom: `1px solid ${T.border}` }}><td className="py-2 px-2 font-medium" style={{ color: T.text }}>{c.convenio}</td><td className="py-2 px-2">{fmtNum(c.atendimentos)}</td><td className="py-2 px-2" style={{ color: T.green, fontWeight: 600 }}>{fmtBRL(c.receita)}</td></tr>))}</tbody>
+                <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Profissional</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Atendimentos</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Receita</th></tr></thead>
+                <tbody>{resumoPorProfissional.map((c) => (<tr key={c.profissional} style={{ borderBottom: `1px solid ${T.border}` }}><td className="py-2 px-2 font-medium" style={{ color: T.text }}>{c.profissional}</td><td className="py-2 px-2">{fmtNum(c.atendimentos)}</td><td className="py-2 px-2" style={{ color: T.green, fontWeight: 600 }}>{fmtBRL(c.receita)}</td></tr>))}</tbody>
                 <tfoot><tr><td className="py-2 px-2 font-bold" style={{ color: T.text }}>Total</td><td className="py-2 px-2 font-bold">{fmtNum(totalAtendimentos)}</td><td className="py-2 px-2 font-bold" style={{ color: T.green }}>{fmtBRL(totalReceita)}</td></tr></tfoot>
               </table>
             </div>
           </Card>
         )}
       </>}
-      charts={<div className="grid md:grid-cols-2 gap-5">
-        <ChartCard title="Receita por profissional"><BarChart data={chartData}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="profissional" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="receita" name="Receita" fill={T.teal} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>
-        <ChartCard title="Receita por convênio"><PieChart><Pie data={porConvenioProducao} dataKey="receita" nameKey="convenio" innerRadius={55} outerRadius={85} paddingAngle={2}>{porConvenioProducao.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Pie><Tooltip formatter={(v) => fmtBRL(v)} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart></ChartCard>
-      </div>} />
+      charts={<ChartCard title="Receita por profissional"><BarChart data={resumoPorProfissional}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="profissional" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="receita" name="Receita" fill={T.teal} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>} />
+  );
+}
+function ProducaoParticularesModulo() { return <ProducaoConvenioModulo convenioFixo="Particular" titulo="Produção Médica — Particulares" subtitulo="Atendimentos particulares" icon={Stethoscope} />; }
+function ProducaoConveniosGeralModulo() { return <ProducaoConvenioModulo titulo="Produção Médica — Convênios" subtitulo="Demais convênios cadastrados" icon={HeartHandshake} />; }
+function ProducaoBradescoClinicaModulo() { return <ProducaoConvenioModulo convenioFixo="Bradesco Clínica" titulo="Produção Médica — Bradesco Clínica" subtitulo="Atendimentos pelo convênio Bradesco Clínica" icon={HeartHandshake} />; }
+function ProducaoAuroraSaudeModulo() { return <ProducaoConvenioModulo convenioFixo="Aurora Saúde" titulo="Produção Médica — Aurora Saúde" subtitulo="Atendimentos pelo convênio Aurora Saúde" icon={HeartHandshake} />; }
+function ProducaoIpsmModulo() { return <ProducaoConvenioModulo convenioFixo="IPSM" titulo="Produção Médica — IPSM" subtitulo="Atendimentos pelo convênio IPSM" icon={HeartHandshake} />; }
+
+function ProducaoResumoGeralModulo() {
+  const { data, loading, erro } = useRecords("producao");
+  const porMedico = useMemo(() => { const map = {}; data.forEach((r) => { if (!map[r.profissional]) map[r.profissional] = { profissional: r.profissional, atendimentos: 0, receita: 0 }; map[r.profissional].atendimentos += Number(r.atendimentos); map[r.profissional].receita += Number(r.receita); }); return Object.values(map).sort((a, b) => b.receita - a.receita); }, [data]);
+  const porConvenio = useMemo(() => { const map = {}; data.forEach((r) => { if (!r.convenio) return; if (!map[r.convenio]) map[r.convenio] = { convenio: r.convenio, atendimentos: 0, receita: 0 }; map[r.convenio].atendimentos += Number(r.atendimentos); map[r.convenio].receita += Number(r.receita); }); return Object.values(map).sort((a, b) => b.receita - a.receita); }, [data]);
+  const totalReceita = data.reduce((s, r) => s + Number(r.receita), 0);
+  const totalAtendimentos = data.reduce((s, r) => s + Number(r.atendimentos), 0);
+  return (
+    <div>
+      <SectionHeader icon={Stethoscope} title="Produção Médica — Valores Gerais" subtitle="Resumo de todas as telas de produção (particular, convênios) somadas — só administradores e gestores" tone="coral" />
+      {erro && <Card className="mb-5" style={{ borderColor: `${T.red}55` }}><span className="text-sm" style={{ color: T.red }}>Erro ao carregar: {erro}</span></Card>}
+      <div className="grid gap-3 mb-6 md:grid-cols-3">
+        <KpiCard label="Receita total produzida" value={fmtBRL(totalReceita)} tone="green" />
+        <KpiCard label="Atendimentos totais" value={fmtNum(totalAtendimentos)} tone="teal" />
+        <KpiCard label="Profissionais ativos" value={porMedico.length} tone="coral" />
+      </div>
+      <div className="grid md:grid-cols-2 gap-5 mb-5">
+        <ChartCard title="Valor produzido por médico"><BarChart data={porMedico}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="profissional" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-15} textAnchor="end" height={60} /><YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="receita" fill={T.teal} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>
+        <ChartCard title="Valor produzido por convênio"><PieChart><Pie data={porConvenio} dataKey="receita" nameKey="convenio" innerRadius={55} outerRadius={85} paddingAngle={2}>{porConvenio.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Pie><Tooltip formatter={(v) => fmtBRL(v)} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart></ChartCard>
+      </div>
+      <div className="grid md:grid-cols-2 gap-5">
+        <Card>
+          <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Atendimentos e valor por médico</p>
+          {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> : (
+            <div className="overflow-x-auto -mx-5 px-5"><table className="w-full text-sm"><thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Médico</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Atendimentos</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Valor</th></tr></thead>
+              <tbody>{porMedico.map((m) => (<tr key={m.profissional} style={{ borderBottom: `1px solid ${T.border}` }}><td className="py-2 px-2 font-medium" style={{ color: T.text }}>{m.profissional}</td><td className="py-2 px-2">{fmtNum(m.atendimentos)}</td><td className="py-2 px-2" style={{ color: T.green, fontWeight: 600 }}>{fmtBRL(m.receita)}</td></tr>))}</tbody>
+            </table></div>
+          )}
+        </Card>
+        <Card>
+          <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Atendimentos e valor por convênio</p>
+          {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> : (
+            <div className="overflow-x-auto -mx-5 px-5"><table className="w-full text-sm"><thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Convênio</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Atendimentos</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Valor</th></tr></thead>
+              <tbody>{porConvenio.map((c) => (<tr key={c.convenio} style={{ borderBottom: `1px solid ${T.border}` }}><td className="py-2 px-2 font-medium" style={{ color: T.text }}>{c.convenio}</td><td className="py-2 px-2">{fmtNum(c.atendimentos)}</td><td className="py-2 px-2" style={{ color: T.green, fontWeight: 600 }}>{fmtBRL(c.receita)}</td></tr>))}</tbody>
+            </table></div>
+          )}
+        </Card>
+      </div>
+    </div>
   );
 }
 
 function ContasModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("contas");
   const fields = [{ key: "descricao", label: "Descrição", type: "text" }, { key: "categoria", label: "Categoria", type: "select", options: ["Fornecedores", "Aluguel", "Salários", "Impostos", "Serviços", "Outros"] }, { key: "valor", label: "Valor (R$)", type: "currency" }, { key: "vencimento", label: "Vencimento", type: "date", default: todayISO() }, { key: "status", label: "Status", type: "select", options: ["Pendente", "Pago", "Atrasado"] }, { key: "dataPagamento", label: "Data de pagamento", type: "date", required: false }];
-  const columns = [{ key: "descricao", label: "Descrição" }, { key: "categoria", label: "Categoria" }, { key: "valor", label: "Valor", render: (r) => fmtBRL(r.valor) }, { key: "vencimento", label: "Vencimento", render: (r) => fmtDate(r.vencimento) }, { key: "status", label: "Status", render: (r) => <Badge tone={r.status === "Pago" ? "green" : r.status === "Atrasado" ? "red" : "amber"}>{r.status}</Badge> }];
+  const columns = [{ key: "descricao", label: "Descrição" }, { key: "categoria", label: "Categoria" }, { key: "valor", label: "Valor", render: (r) => fmtBRL(r.valor) }, { key: "vencimento", label: "Vencimento", render: (r) => fmtDate(r.vencimento) },
+    { key: "status", label: "Status", render: (r) => <Badge tone={r.status === "Pago" ? "green" : r.status === "Atrasado" ? "red" : "amber"}>{r.status}</Badge> },
+    { key: "acaoPagar", label: "", render: (r) => r.status !== "Pago" ? <Btn small tone="green" onClick={() => update(r.id, { status: "Pago", dataPagamento: todayISO() })}>Marcar como pago</Btn> : <span className="text-xs" style={{ color: T.muted }}>Pago em {fmtDate(r.dataPagamento)}</span> },
+  ];
   const pendentes = data.filter((r) => r.status !== "Pago"), pagos = data.filter((r) => r.status === "Pago"); const atrasados = data.filter((r) => r.status === "Atrasado" || (r.status === "Pendente" && r.vencimento < todayISO()));
   const totalPendente = pendentes.reduce((s, r) => s + r.valor, 0), totalPago = pagos.reduce((s, r) => s + r.valor, 0);
   const proximos = pendentes.filter((r) => { const diff = (new Date(r.vencimento) - new Date(todayISO())) / 86400000; return diff >= 0 && diff <= 7; }).sort((a, b) => a.vencimento.localeCompare(b.vencimento));
@@ -1293,6 +1377,65 @@ function VisaoGeral() {
 }
 
 /* ============================== UNIDADES ============================== */
+/* ============================== PAINEL CRÍTICO ============================== */
+function PainelCriticoModulo() {
+  const vacinas = useRecords("vacinas");
+  const insumos = useRecords("insumos");
+  const contas = useRecords("contas");
+  const faturamento = useRecords("faturamento");
+  const leads = useRecords("marketing");
+  const loading = [vacinas, insumos, contas, faturamento, leads].some((m) => m.loading);
+
+  const itens = [
+    ...vacinas.data.filter((v) => v.qtdEstoque < v.qtdMinima).map((v) => ({ area: "Estoque de Vacinas", texto: `"${v.nome}" abaixo do mínimo (${v.qtdEstoque}/${v.qtdMinima})`, tone: "red" })),
+    ...insumos.data.filter((i) => i.qtd < i.qtdMinima).map((i) => ({ area: "Estoque de Insumos", texto: `"${i.nome}" em ponto crítico (${i.qtd}/${i.qtdMinima})`, tone: "red" })),
+    ...contas.data.filter((c) => c.status !== "Pago" && c.vencimento < todayISO()).map((c) => ({ area: "Contas a Pagar", texto: `"${c.descricao}" vencida em ${fmtDate(c.vencimento)} — ${fmtBRL(c.valor)}`, tone: "red" })),
+    ...contas.data.filter((c) => c.status === "Pendente" && c.vencimento === diasAFrente(2)).map((c) => ({ area: "Contas a Pagar", texto: `"${c.descricao}" vence em 2 dias — ${fmtBRL(c.valor)}`, tone: "amber" })),
+    ...faturamento.data.filter((f) => f.status === "Vencida").map((f) => ({ area: "Contas a Receber", texto: `Guia ${f.numeroGuia || ""} (${f.convenio}) vencida — ${fmtBRL(f.valor)}`, tone: "red" })),
+    ...leads.data.filter((l) => l.status === "Novo").map((l) => ({ area: "Marketing", texto: `Lead "${l.nome}" ainda não contatado`, tone: "amber" })),
+  ];
+
+  const porArea = useMemo(() => { const map = {}; itens.forEach((i) => { map[i.area] = (map[i.area] || 0) + 1; }); return Object.entries(map).map(([area, total]) => ({ area, total })).sort((a, b) => b.total - a.total); }, [itens]);
+  const criticos = itens.filter((i) => i.tone === "red");
+  const atencao = itens.filter((i) => i.tone === "amber");
+
+  return (
+    <div>
+      <SectionHeader icon={AlertTriangle} title="Painel Crítico" subtitle="Tudo que precisa da sua atenção agora, reunido num lugar só" tone="coral" />
+      <div className="grid gap-3 mb-6 md:grid-cols-3">
+        <KpiCard label="Total de pontos" value={itens.length} tone={itens.length ? "amber" : "green"} />
+        <KpiCard label="Críticos (vermelho)" value={criticos.length} tone={criticos.length ? "red" : "green"} />
+        <KpiCard label="Atenção (amarelo)" value={atencao.length} tone={atencao.length ? "amber" : "green"} />
+      </div>
+      {!loading && porArea.length > 0 && (
+        <ChartCard title="Pontos de atenção por área">
+          <BarChart data={porArea}>
+            <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
+            <XAxis dataKey="area" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-15} textAnchor="end" height={60} />
+            <YAxis tick={{ fontSize: 11, fill: T.muted }} allowDecimals={false} />
+            <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+            <Bar dataKey="total" fill={T.coral} radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ChartCard>
+      )}
+      <Card>
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Detalhamento</p>
+        {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> :
+          itens.length === 0 ? <div className="text-center py-10 text-sm" style={{ color: T.green }}>Tudo em dia — nenhum ponto crítico no momento. 🎉</div> : (
+          <div className="flex flex-col gap-2">
+            {itens.map((i, idx) => (
+              <div key={idx} className="flex items-start gap-3 rounded-xl px-4 py-3" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}>
+                <span className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: i.tone === "red" ? T.red : T.amber }} />
+                <div><Badge tone={i.tone === "red" ? "red" : "amber"}>{i.area}</Badge><div className="text-sm mt-1" style={{ color: T.text }}>{i.texto}</div></div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 function AlertasModulo() {
   const { unidade, atualizarContatosAlerta } = useUnidade();
   const [email, setEmail] = useState((unidade && unidade.email_alertas) || "");
@@ -1522,10 +1665,11 @@ function EnviarAtestado() {
 
 function MeusHorarios() {
   const { perfil } = useAuth();
-  const { data, add, remove, loading } = useOwnRecords("rh_horas");
+  const { data, add, update, remove, loading } = useOwnRecords("rh_horas");
   const { data: colaboradoresCat } = useRecords("cadColaboradores");
   const [form, setForm] = useState({ data: todayISO(), hora_entrada: "", hora_saida: "", hora_saida_almoco: "", hora_volta_almoco: "" });
   const [busy, setBusy] = useState(false);
+  const [busyPonto, setBusyPonto] = useState(false);
   const paraMinutos = (h) => { const [hh, mm] = h.split(":").map(Number); return hh * 60 + mm; };
   const calcHoras = (e, s, almocoSaida, almocoVolta) => {
     if (!e || !s) return null;
@@ -1534,6 +1678,19 @@ function MeusHorarios() {
     if (almocoSaida && almocoVolta) { let almoco = paraMinutos(almocoVolta) - paraMinutos(almocoSaida); if (almoco < 0) almoco += 24 * 60; mins -= almoco; }
     return Math.round((mins / 60) * 100) / 100;
   };
+  const hoje = todayISO();
+  const registroHoje = data.find((r) => r.data === hoje);
+  const proximaAcao = !registroHoje ? "entrada" : !registroHoje.hora_saida_almoco ? "saida_almoco" : !registroHoje.hora_volta_almoco ? "volta_almoco" : !registroHoje.hora_saida ? "saida" : "completo";
+  const LABEL_ACAO = { entrada: "Bater Entrada", saida_almoco: "Bater Saída (Almoço)", volta_almoco: "Bater Volta do Almoço", saida: "Bater Saída", completo: "Ponto do dia completo ✓" };
+  const baterPonto = async () => {
+    setBusyPonto(true);
+    const agora = new Date().toTimeString().slice(0, 5);
+    if (proximaAcao === "entrada") await add({ data: hoje, hora_entrada: agora });
+    else if (proximaAcao === "saida_almoco") await update(registroHoje.id, { hora_saida_almoco: agora });
+    else if (proximaAcao === "volta_almoco") await update(registroHoje.id, { hora_volta_almoco: agora });
+    else if (proximaAcao === "saida") { const horas = calcHoras(registroHoje.hora_entrada, agora, registroHoje.hora_saida_almoco, registroHoje.hora_volta_almoco); await update(registroHoje.id, { hora_saida: agora, horas_total: horas }); }
+    setBusyPonto(false);
+  };
   const mesAtual = todayISO().slice(0, 7);
   const totalMes = data.filter((r) => r.data.slice(0, 7) === mesAtual).reduce((s, r) => s + (Number(r.horas_total) || 0), 0);
   const cadastro = colaboradoresCat.find((c) => c.nome === (perfil && perfil.nome));
@@ -1541,8 +1698,21 @@ function MeusHorarios() {
   const faltaCumprir = Math.max(cargaHoraria - totalMes, 0);
   const pctCumprido = cargaHoraria ? (totalMes / cargaHoraria) * 100 : null;
   return (
-    <Card className="mb-5">
-      <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Meus horários trabalhados</p>
+    <>
+      <Card className="mb-5" style={{ background: `linear-gradient(135deg, ${T.tealDeep}, ${T.teal})` }}>
+        <p className="text-[11px] font-semibold uppercase mb-2" style={{ color: "#D7F2F4", letterSpacing: "0.06em" }}>Ponto do dia — {fmtDate(hoje)}</p>
+        <div className="flex flex-wrap items-center gap-6 mb-4">
+          <div><div className="text-[10px] uppercase" style={{ color: "#D7F2F4" }}>Entrada</div><div className="text-lg font-bold" style={{ color: "#fff" }}>{(registroHoje && registroHoje.hora_entrada) || "—"}</div></div>
+          <div><div className="text-[10px] uppercase" style={{ color: "#D7F2F4" }}>Saída almoço</div><div className="text-lg font-bold" style={{ color: "#fff" }}>{(registroHoje && registroHoje.hora_saida_almoco) || "—"}</div></div>
+          <div><div className="text-[10px] uppercase" style={{ color: "#D7F2F4" }}>Volta almoço</div><div className="text-lg font-bold" style={{ color: "#fff" }}>{(registroHoje && registroHoje.hora_volta_almoco) || "—"}</div></div>
+          <div><div className="text-[10px] uppercase" style={{ color: "#D7F2F4" }}>Saída</div><div className="text-lg font-bold" style={{ color: "#fff" }}>{(registroHoje && registroHoje.hora_saida) || "—"}</div></div>
+        </div>
+        <button disabled={busyPonto || proximaAcao === "completo"} onClick={baterPonto} className="px-6 py-3 rounded-xl font-bold text-sm transition-transform hover:-translate-y-0.5" style={{ background: proximaAcao === "completo" ? "#FFFFFF30" : "#fff", color: proximaAcao === "completo" ? "#fff" : T.tealDeep, opacity: busyPonto ? 0.7 : 1 }}>
+          {busyPonto ? "Registrando…" : LABEL_ACAO[proximaAcao]}
+        </button>
+      </Card>
+      <Card className="mb-5">
+      <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Corrigir ou lançar um dia manualmente</p>
       <div className="flex flex-wrap gap-3 items-end mb-4">
         <Field label="Data"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} /></Field>
         <Field label="Entrada"><input type="time" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.hora_entrada} onChange={(e) => setForm((p) => ({ ...p, hora_entrada: e.target.value }))} /></Field>
@@ -1573,6 +1743,7 @@ function MeusHorarios() {
         </div>
       )}
     </Card>
+    </>
   );
 }
 
@@ -2206,9 +2377,9 @@ function RelatoriosModulo() {
 
 
 const ALL_MENU = [
-  { group: "Visão", items: [{ key: "visao", label: "Dashboard", icon: LayoutDashboard, tone: "coral" }] },
+  { group: "Visão", items: [{ key: "visao", label: "Dashboard", icon: LayoutDashboard, tone: "coral" }, { key: "painelCritico", label: "Painel Crítico", icon: AlertTriangle, tone: "coral" }] },
   { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }, { key: "sublocacao", label: "Receita de Sublocação", icon: Building2, tone: "coral" }] },
-  { group: "Atendimento", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producao", label: "Produção Médica", icon: Stethoscope, tone: "teal" }, { key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
+  { group: "Atendimento", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producaoParticulares", label: "Produção — Particulares", icon: Stethoscope, tone: "teal" }, { key: "producaoConveniosGeral", label: "Produção — Convênios", icon: Stethoscope, tone: "teal" }, { key: "producaoBradescoClinica", label: "Produção — Bradesco Clínica", icon: Stethoscope, tone: "teal" }, { key: "producaoAuroraSaude", label: "Produção — Aurora Saúde", icon: Stethoscope, tone: "teal" }, { key: "producaoIpsm", label: "Produção — IPSM", icon: Stethoscope, tone: "teal" }, { key: "producaoResumoGeral", label: "Produção — Valores Gerais", icon: Stethoscope, tone: "coral" }, { key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
   { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }] },
   { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" }] },
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }] },
@@ -2217,7 +2388,7 @@ const ALL_MENU = [
   { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas (E-mail/WhatsApp)", icon: Bell, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "contas", "faturamento", "repasse", "sublocacao", "equipe", "metas", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "plantaoValores", "plantaoResumo"];
+const FINANCE_TABS = ["financeiro", "contas", "faturamento", "repasse", "sublocacao", "equipe", "metas", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
 const RESTRICTED_MENUS = {
   recepcao: { group: "Minha área", items: [
@@ -2270,12 +2441,19 @@ function AppInner() {
     if (!canFinance && FINANCE_TABS.includes(tab)) return <VisaoGeral />;
     switch (tab) {
       case "visao": return <VisaoGeral />;
+      case "painelCritico": return <PainelCriticoModulo />;
       case "financeiro": return <FinanceiroModulo />;
       case "convenios": return <ConveniosModulo />;
       case "vacinas": return <VacinasModulo />;
       case "vendasVacinas": return <VendasVacinasModulo />;
       case "insumos": return <InsumosModulo />;
-      case "producao": return <ProducaoModulo />;
+      case "producao": return <ProducaoConveniosGeralModulo />;
+      case "producaoParticulares": return <ProducaoParticularesModulo />;
+      case "producaoConveniosGeral": return <ProducaoConveniosGeralModulo />;
+      case "producaoBradescoClinica": return <ProducaoBradescoClinicaModulo />;
+      case "producaoAuroraSaude": return <ProducaoAuroraSaudeModulo />;
+      case "producaoIpsm": return <ProducaoIpsmModulo />;
+      case "producaoResumoGeral": return <ProducaoResumoGeralModulo />;
       case "contas": return <ContasModulo />;
       case "pessoal": return <PessoalModulo />;
       case "meurh": return <MeuRHModulo />;
