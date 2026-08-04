@@ -50,8 +50,8 @@ async function sbAuth(path, body) {
   return data;
 }
 const RH_BUCKET = "documentos-rh";
-async function sbStorageUpload(path, file, token) {
-  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${RH_BUCKET}/${path}`, {
+async function sbStorageUpload(path, file, token, bucket = RH_BUCKET) {
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
     method: "POST",
     headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream", "x-upsert": "true" },
     body: file,
@@ -59,8 +59,8 @@ async function sbStorageUpload(path, file, token) {
   if (!res.ok) throw new Error((await res.text()) || "Falha ao enviar arquivo");
   return true;
 }
-async function sbStorageSignedUrl(path, token, expiresIn = 120) {
-  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${RH_BUCKET}/${path}`, {
+async function sbStorageSignedUrl(path, token, expiresIn = 120, bucket = RH_BUCKET) {
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${path}`, {
     method: "POST",
     headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ expiresIn }),
@@ -167,6 +167,9 @@ const MODULES = {
   cadTestesGeneticos: { table: "cadastro_testes_geneticos", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, valor_teste: r.valorTeste, valor_repasse_clinica: r.valorRepasseClinica }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, valorTeste: r.valor_teste, valorRepasseClinica: r.valor_repasse_clinica }) },
+  cadBancos: { table: "cadastro_bancos", order: "nome.asc",
+    toDb: (r) => ({ nome: r.nome, agencia: r.agencia, conta: r.conta, observacoes: r.observacoes }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, agencia: r.agencia, conta: r.conta, observacoes: r.observacoes }) },
   plantaoValoresConvenio: { table: "plantao_valores_convenio", order: "convenio.asc",
     toDb: (r) => ({ convenio: r.convenio, valor_atendimento: r.valorAtendimento }),
     fromDb: (r) => ({ id: r.id, convenio: r.convenio, valorAtendimento: r.valor_atendimento }) },
@@ -745,23 +748,47 @@ function exportToCSV(fields, rows, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a"); a.href = url; a.download = `${filename}.csv`; a.click(); URL.revokeObjectURL(url);
 }
+function exportToExcel(fields, rows, filename) {
+  const data = rows.map((r) => { const out = {}; fields.forEach((f) => { out[f.label] = r[f.key]; }); return out; });
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Dados");
+  XLSX.writeFile(wb, `${filename}.xlsx`);
+}
+function exportToPDF(fields, rows, filename) {
+  const win = window.open("", "_blank");
+  if (!win) { alert("Seu navegador bloqueou a janela — permita pop-ups para este site e tente de novo."); return; }
+  const cabecalho = fields.map((f) => `<th style="padding:6px 10px;text-align:left;border-bottom:2px solid #333;font-size:11px;text-transform:uppercase;">${f.label}</th>`).join("");
+  const linhas = rows.map((r) => `<tr>${fields.map((f) => `<td style="padding:6px 10px;border-bottom:1px solid #eee;">${r[f.key] ?? ""}</td>`).join("")}</tr>`).join("");
+  win.document.write(`<html><head><title>${filename}</title></head><body style="font-family:Arial,sans-serif;padding:20px;"><h2>${filename.replace(/-/g, " ")}</h2><p style="color:#666;font-size:12px;">${rows.length} registro(s) — gerado em ${new Date().toLocaleDateString("pt-BR")}</p><table style="border-collapse:collapse;width:100%;font-size:13px;"><thead><tr>${cabecalho}</tr></thead><tbody>${linhas}</tbody></table></body></html>`);
+  win.document.close(); win.focus();
+  setTimeout(() => win.print(), 300);
+}
 
 function ExportarPeriodoModal({ campoData, fields, rows, filename, onClose }) {
   const [de, setDe] = useState(""); const [ate, setAte] = useState("");
-  const linhasNoPeriodo = rows.filter((r) => { const v = r[campoData.key]; if (!v) return true; if (de && v < de) return false; if (ate && v > ate) return false; return true; });
+  const linhasNoPeriodo = campoData ? rows.filter((r) => { const v = r[campoData.key]; if (!v) return true; if (de && v < de) return false; if (ate && v > ate) return false; return true; }) : rows;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "#13203099" }} onClick={onClose}>
       <div className="rounded-2xl w-full max-w-sm" style={{ background: T.card }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${T.border}` }}>
-          <h3 className="font-bold flex items-center gap-2" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}><Download size={16} /> Exportar — escolha o período</h3>
+          <h3 className="font-bold flex items-center gap-2" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}><Download size={16} /> Exportar{campoData ? " — escolha o período" : ""}</h3>
           <button onClick={onClose}><X size={18} style={{ color: T.muted }} /></button>
         </div>
         <div className="p-5 flex flex-col gap-3.5">
-          <p className="text-sm" style={{ color: T.muted }}>Deixe em branco para exportar tudo.</p>
-          <Field label="De"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={de} onChange={(e) => setDe(e.target.value)} /></Field>
-          <Field label="Até"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={ate} onChange={(e) => setAte(e.target.value)} /></Field>
-          <p className="text-xs" style={{ color: T.muted }}>{linhasNoPeriodo.length} registro(s) no período selecionado.</p>
-          <Btn onClick={() => { exportToCSV(fields, linhasNoPeriodo, filename); onClose(); }}>{`Exportar ${linhasNoPeriodo.length} registro(s)`}</Btn>
+          {campoData ? (
+            <>
+              <p className="text-sm" style={{ color: T.muted }}>Deixe em branco para exportar tudo.</p>
+              <Field label="De"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={de} onChange={(e) => setDe(e.target.value)} /></Field>
+              <Field label="Até"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={ate} onChange={(e) => setAte(e.target.value)} /></Field>
+              <p className="text-xs" style={{ color: T.muted }}>{linhasNoPeriodo.length} registro(s) no período selecionado.</p>
+            </>
+          ) : <p className="text-sm" style={{ color: T.muted }}>{linhasNoPeriodo.length} registro(s) no total.</p>}
+          <div className="flex gap-2">
+            <Btn onClick={() => { exportToCSV(fields, linhasNoPeriodo, filename); onClose(); }}>CSV</Btn>
+            <Btn tone="teal" onClick={() => { exportToExcel(fields, linhasNoPeriodo, filename); onClose(); }}>Excel (.xlsx)</Btn>
+            <Btn variant="ghost" onClick={() => { exportToPDF(fields, linhasNoPeriodo, filename); onClose(); }}>PDF</Btn>
+          </div>
         </div>
       </div>
     </div>
@@ -779,7 +806,7 @@ function ModuleShell({ icon, title, subtitle, tone, dailyFields, dailyCta, field
       <div className="flex items-start justify-between gap-3 flex-wrap mb-6">
         <SectionHeader icon={icon} title={title} subtitle={subtitle} tone={tone} />
         <div className="flex gap-2">
-          <Btn small variant="ghost" icon={Download} onClick={() => campoData ? setExportando(true) : exportToCSV(fields, rows, nomeArquivo)}>Exportar CSV</Btn>
+          <Btn small variant="ghost" icon={Download} onClick={() => setExportando(true)}>Exportar</Btn>
           {onBulkImport && <Btn small variant="ghost" icon={Upload} onClick={() => setImporting(true)}>Importar planilha</Btn>}
         </div>
       </div>
@@ -794,7 +821,7 @@ function ModuleShell({ icon, title, subtitle, tone, dailyFields, dailyCta, field
       </Card>
       {editing && <EditModal title="Editar registro" fields={fields} initial={editing} onClose={() => setEditing(null)} onSave={async (form) => { await onUpdate(editing.id, normalizeForm(fields, form)); setEditing(null); }} />}
       {importing && onBulkImport && <ImportModal fields={fields} onImport={onBulkImport} onClose={() => setImporting(false)} />}
-      {exportando && campoData && <ExportarPeriodoModal campoData={campoData} fields={fields} rows={rows} filename={nomeArquivo} onClose={() => setExportando(false)} />}
+      {exportando && <ExportarPeriodoModal campoData={campoData} fields={fields} rows={rows} filename={nomeArquivo} onClose={() => setExportando(false)} />}
     </div>
   );
 }
@@ -1530,6 +1557,84 @@ function FaturamentoModulo() {
   );
 }
 
+/* ============================== RELATÓRIO DE COLABORADOR ============================== */
+function RelatorioColaboradorModulo() {
+  const { data: perfis, loading: loadingPerfis } = usePerfisDaUnidade();
+  const { data: producao, loading: loadingProd } = useProducaoDiariaEquipe();
+  const { session } = useAuth();
+  const { unidadeId } = useUnidade();
+  const [horas, setHoras] = useState([]);
+  const [metas, setMetas] = useState([]);
+  const [loadingExtra, setLoadingExtra] = useState(true);
+  const [colaboradorId, setColaboradorId] = useState("todos");
+  const [de, setDe] = useState(""); const [ate, setAte] = useState("");
+
+  useEffect(() => {
+    setLoadingExtra(true);
+    Promise.all([
+      sbRest(`rh_horas?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
+      sbRest(`metas_colaborador?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
+    ]).then(([h, m]) => { setHoras(h || []); setMetas(m || []); }).finally(() => setLoadingExtra(false));
+  }, [unidadeId]);
+
+  const noPeriodo = (data) => (!de || data >= de) && (!ate || data <= ate);
+  const loading = loadingPerfis || loadingProd || loadingExtra;
+
+  const alvo = colaboradorId === "todos" ? perfis : perfis.filter((p) => p.id === colaboradorId);
+  const linhas = alvo.map((p) => {
+    const prodP = producao.filter((r) => r.colaborador_id === p.id && noPeriodo(r.data));
+    const horasP = horas.filter((r) => r.colaborador_id === p.id && noPeriodo(r.data));
+    const metasP = metas.filter((m) => m.colaborador_id === p.id);
+    const ligacoes = prodP.reduce((s, r) => s + (Number(r.ligacoes) || 0), 0);
+    const mensagens = prodP.reduce((s, r) => s + (Number(r.mensagens) || 0), 0);
+    const agendados = prodP.reduce((s, r) => s + (Number(r.agendados) || 0), 0);
+    const horasTotal = horasP.reduce((s, r) => s + (Number(r.horas_total) || 0), 0);
+    const metasResumo = metasP.map((m) => `${m.tipo_meta}: meta ${m.quantidade_total}`).join(" | ") || "Sem meta cadastrada";
+    return { nome: p.nome, cargo: p.cargo || "—", ligacoes, mensagens, agendados, horasTrabalhadas: horasTotal.toFixed(1), metas: metasResumo };
+  });
+
+  const camposExport = [
+    { key: "nome", label: "Nome" }, { key: "cargo", label: "Cargo" }, { key: "ligacoes", label: "Ligações" }, { key: "mensagens", label: "Mensagens Respondidas" },
+    { key: "agendados", label: "Agendamentos" }, { key: "horasTrabalhadas", label: "Horas Trabalhadas" }, { key: "metas", label: "Acompanhamento de Meta" },
+  ];
+  const nomeArquivo = `relatorio-colaborador-${colaboradorId === "todos" ? "todos" : (perfis.find((p) => p.id === colaboradorId) || {}).nome || "colaborador"}`;
+
+  return (
+    <div>
+      <SectionHeader icon={Users} title="Relatório de Colaborador" subtitle="Ligação, mensagem respondida, jornada de trabalho e acompanhamento de meta" tone="purple" />
+      <Card className="mb-5">
+        <div className="flex flex-wrap gap-3 items-end">
+          <Field label="Colaborador(a)">
+            <select className="rounded-lg px-3 py-2 text-sm outline-none w-56" style={inputStyle} value={colaboradorId} onChange={(e) => setColaboradorId(e.target.value)}>
+              <option value="todos">Todos</option>
+              {perfis.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+            </select>
+          </Field>
+          <Field label="De"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={de} onChange={(e) => setDe(e.target.value)} /></Field>
+          <Field label="Até"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={ate} onChange={(e) => setAte(e.target.value)} /></Field>
+          <Btn tone="teal" onClick={() => exportToExcel(camposExport, linhas, nomeArquivo)}>Excel</Btn>
+          <Btn variant="ghost" onClick={() => exportToPDF(camposExport, linhas, nomeArquivo)}>PDF</Btn>
+          <Btn variant="ghost" onClick={() => exportToCSV(camposExport, linhas, nomeArquivo)}>CSV</Btn>
+        </div>
+      </Card>
+      <Card>
+        {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> : (
+          <div className="overflow-x-auto -mx-5 px-5">
+            <table className="w-full text-sm min-w-[760px]">
+              <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>{camposExport.map((c) => <th key={c.key} className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>{c.label}</th>)}</tr></thead>
+              <tbody>{linhas.map((l, i) => (
+                <tr key={i} style={{ borderBottom: `1px solid ${T.border}` }}>
+                  <td className="py-2 px-2 font-medium" style={{ color: T.text }}>{l.nome}</td><td className="py-2 px-2">{l.cargo}</td><td className="py-2 px-2">{l.ligacoes}</td><td className="py-2 px-2">{l.mensagens}</td><td className="py-2 px-2">{l.agendados}</td><td className="py-2 px-2">{l.horasTrabalhadas}</td><td className="py-2 px-2 text-xs" style={{ color: T.muted }}>{l.metas}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 function PessoalModulo() {
   const { perfil } = useAuth();
   const canManageRH = perfil && ["admin", "colaborador"].includes(perfil.papel);
@@ -1791,6 +1896,134 @@ function PainelCriticoModulo() {
   );
 }
 
+/* ============================== BANCO DE DOCUMENTOS (admin) ============================== */
+function BancoDocumentosModulo() {
+  const { session } = useAuth();
+  const { unidadeId } = useUnidade();
+  const [documentos, setDocumentos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [titulo, setTitulo] = useState(""); const [categoria, setCategoria] = useState(""); const [descricao, setDescricao] = useState("");
+  const [arquivo, setArquivo] = useState(null); const [busy, setBusy] = useState(false);
+
+  const carregar = useCallback(async () => {
+    setLoading(true);
+    try { const r = await sbRest(`documentos_gerais?unidade_id=eq.${unidadeId}&select=*&order=criado_em.desc`, { token: session.access_token }); setDocumentos(r || []); }
+    catch (e) { /* fica vazio */ }
+    setLoading(false);
+  }, [unidadeId]);
+  useEffect(() => { carregar(); }, [carregar]);
+
+  const enviar = async () => {
+    if (!titulo || !arquivo) return alert("Preencha o título e escolha um arquivo.");
+    setBusy(true);
+    try {
+      const path = `${Date.now()}-${arquivo.name}`;
+      await sbStorageUpload(path, arquivo, session.access_token, "documentos-gerais");
+      await sbRest("documentos_gerais", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, titulo, categoria, descricao, caminho_arquivo: path, enviado_por: session.user.id } });
+      setTitulo(""); setCategoria(""); setDescricao(""); setArquivo(null);
+      await carregar();
+    } catch (e) { alert("Não foi possível enviar: " + e.message); }
+    setBusy(false);
+  };
+  const baixar = async (doc) => {
+    try { const url = await sbStorageSignedUrl(doc.caminho_arquivo, session.access_token, 120, "documentos-gerais"); window.open(url, "_blank"); }
+    catch (e) { alert(e.message); }
+  };
+  const remover = async (doc) => {
+    if (!confirm(`Remover "${doc.titulo}"?`)) return;
+    try { await sbRest(`documentos_gerais?id=eq.${doc.id}`, { method: "DELETE", token: session.access_token }); await carregar(); }
+    catch (e) { alert("Não foi possível remover: " + e.message); }
+  };
+
+  return (
+    <div>
+      <SectionHeader icon={FileText} title="Banco de Documentos" subtitle="Notas fiscais e anexos, com acesso fácil para administradores e gestores" tone="coral" />
+      <Card className="mb-5">
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Enviar documento</p>
+        <div className="flex flex-wrap gap-3 items-end">
+          <Field label="Título"><input className="rounded-lg px-3 py-2 text-sm outline-none w-52" style={inputStyle} value={titulo} onChange={(e) => setTitulo(e.target.value)} /></Field>
+          <Field label="Categoria (opcional)"><input className="rounded-lg px-3 py-2 text-sm outline-none w-44" style={inputStyle} value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="ex: nota fiscal" /></Field>
+          <Field label="Descrição (opcional)"><input className="rounded-lg px-3 py-2 text-sm outline-none w-52" style={inputStyle} value={descricao} onChange={(e) => setDescricao(e.target.value)} /></Field>
+          <Field label="Arquivo"><input type="file" className="text-sm" onChange={(e) => setArquivo(e.target.files[0])} /></Field>
+          <Btn disabled={busy} onClick={enviar}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Enviar</Btn>
+        </div>
+      </Card>
+      <Card>
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Documentos ({documentos.length})</p>
+        {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> :
+          documentos.length === 0 ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhum documento enviado ainda.</div> : (
+          <div className="flex flex-col gap-2">
+            {documentos.map((d) => (
+              <div key={d.id} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}>
+                <div className="flex items-center gap-3"><IconChip icon={FileText} tone="coral" size={15} box={32} /><div><div className="font-semibold text-sm" style={{ color: T.text }}>{d.titulo}</div><div className="text-xs" style={{ color: T.muted }}>{d.categoria || "sem categoria"}{d.descricao ? ` — ${d.descricao}` : ""} — {fmtDate(d.criado_em.slice(0, 10))}</div></div></div>
+                <div className="flex items-center gap-2"><Btn small variant="ghost" icon={Download} onClick={() => baixar(d)}>Baixar</Btn><button onClick={() => remover(d)}><Trash2 size={14} style={{ color: T.red }} /></button></div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ============================== CHAT INTERNO ============================== */
+function ChatInternoModulo() {
+  const { session, perfil } = useAuth();
+  const { unidadeId } = useUnidade();
+  const [mensagens, setMensagens] = useState([]);
+  const [texto, setTexto] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [enviando, setEnviando] = useState(false);
+  const fimRef = React.useRef(null);
+
+  const carregar = useCallback(async () => {
+    try { const r = await sbRest(`mensagens_chat?unidade_id=eq.${unidadeId}&select=*&order=criado_em.asc&limit=200`, { token: session.access_token }); setMensagens(r || []); }
+    catch (e) { /* silencioso */ }
+    setLoading(false);
+  }, [unidadeId]);
+
+  useEffect(() => { carregar(); const intervalo = setInterval(carregar, 6000); return () => clearInterval(intervalo); }, [carregar]);
+  useEffect(() => { if (fimRef.current) fimRef.current.scrollIntoView({ behavior: "smooth" }); }, [mensagens.length]);
+
+  const enviar = async () => {
+    if (!texto.trim()) return;
+    setEnviando(true);
+    const textoEnviado = texto; setTexto("");
+    try {
+      await sbRest("mensagens_chat", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, autor_id: session.user.id, autor_nome: perfil.nome, texto: textoEnviado } });
+      await carregar();
+    } catch (e) { alert("Não foi possível enviar: " + e.message); setTexto(textoEnviado); }
+    setEnviando(false);
+  };
+
+  return (
+    <div>
+      <SectionHeader icon={Megaphone} title="Chat Interno" subtitle="Converse com toda a equipe da unidade — atualiza automaticamente a cada poucos segundos" tone="teal" />
+      <Card>
+        <div className="flex flex-col gap-3 mb-4" style={{ height: 420, overflowY: "auto" }}>
+          {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> :
+            mensagens.length === 0 ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhuma mensagem ainda — comece a conversa!</div> :
+            mensagens.map((m) => {
+              const minha = m.autor_id === session.user.id;
+              return (
+                <div key={m.id} className={`flex flex-col ${minha ? "items-end" : "items-start"}`}>
+                  <span className="text-xs mb-0.5" style={{ color: T.muted }}>{minha ? "Você" : m.autor_nome}</span>
+                  <div className="rounded-2xl px-4 py-2 max-w-[75%] text-sm" style={{ background: minha ? T.teal : "#F1EEE4", color: minha ? "#fff" : T.text }}>{m.texto}</div>
+                  <span className="text-[10px] mt-0.5" style={{ color: T.muted }}>{new Date(m.criado_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                </div>
+              );
+            })}
+          <div ref={fimRef} />
+        </div>
+        <div className="flex gap-2">
+          <input className="rounded-lg px-3 py-2 text-sm outline-none flex-1" style={inputStyle} placeholder="Digite sua mensagem…" value={texto} onChange={(e) => setTexto(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); } }} />
+          <Btn disabled={enviando || !texto.trim()} onClick={enviar}>{enviando ? <Loader2 size={14} className="animate-spin" /> : null} Enviar</Btn>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function AlertasModulo() {
   const { unidade, atualizarContatosAlerta } = useUnidade();
   const [email, setEmail] = useState((unidade && unidade.email_alertas) || "");
@@ -1885,7 +2118,7 @@ function UnidadesModulo() {
 /* ============================== RELATÓRIOS ============================== */
 /* ============================== MEU RH (autoatendimento do colaborador) ============================== */
 function ProdutividadeDiaria() {
-  const { data, add, loading } = useOwnRecords("producao_diaria_colaborador");
+  const { data, add, update, remove, loading } = useOwnRecords("producao_diaria_colaborador");
   const [form, setForm] = useState({ data: todayISO(), ligacoes: "", mensagens: "", agendados: "", pacientesAgendadosVacinas: "", avaliacoesGoogle: "", novosPacientesRecepcao: "", novosPacientesVacinas: "", agendamentosPlantao: "", pacientesNovosFototerapia: "" });
   const [busy, setBusy] = useState(false);
   const mesAtual = todayISO().slice(0, 7);
@@ -1900,6 +2133,7 @@ function ProdutividadeDiaria() {
   return (
     <Card className="mb-5">
       <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Produtividade — lançamento de hoje</p>
+      <p className="text-xs mb-3" style={{ color: T.muted }}>Se você já lançou algo hoje, o próximo lançamento soma automaticamente no mesmo dia — não duplica.</p>
       <div className="flex flex-wrap gap-3 items-end mb-4">
         <Field label="Data"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} /></Field>
         <Field label="Ligações atendidas"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.ligacoes} onChange={(e) => setForm((p) => ({ ...p, ligacoes: e.target.value }))} /></Field>
@@ -1913,12 +2147,23 @@ function ProdutividadeDiaria() {
         <Field label="Pacientes novos — Fototerapia"><input type="number" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.pacientesNovosFototerapia} onChange={(e) => setForm((p) => ({ ...p, pacientesNovosFototerapia: e.target.value }))} /></Field>
         <Btn icon={busy ? undefined : Plus} disabled={busy} onClick={async () => {
           setBusy(true);
-          await add({
-            data: form.data, ligacoes: Number(form.ligacoes || 0), mensagens: Number(form.mensagens || 0), agendados: Number(form.agendados || 0),
+          const novo = {
+            ligacoes: Number(form.ligacoes || 0), mensagens: Number(form.mensagens || 0), agendados: Number(form.agendados || 0),
             pacientes_agendados_vacinas: Number(form.pacientesAgendadosVacinas || 0), avaliacoes_google: Number(form.avaliacoesGoogle || 0),
             novos_pacientes_recepcao: Number(form.novosPacientesRecepcao || 0), novos_pacientes_vacinas: Number(form.novosPacientesVacinas || 0),
             agendamentos_plantao: Number(form.agendamentosPlantao || 0), pacientes_novos_fototerapia: Number(form.pacientesNovosFototerapia || 0),
-          });
+          };
+          const existente = data.find((r) => r.data === form.data);
+          if (existente) {
+            await update(existente.id, {
+              ligacoes: Number(existente.ligacoes || 0) + novo.ligacoes, mensagens: Number(existente.mensagens || 0) + novo.mensagens, agendados: Number(existente.agendados || 0) + novo.agendados,
+              pacientes_agendados_vacinas: Number(existente.pacientes_agendados_vacinas || 0) + novo.pacientes_agendados_vacinas, avaliacoes_google: Number(existente.avaliacoes_google || 0) + novo.avaliacoes_google,
+              novos_pacientes_recepcao: Number(existente.novos_pacientes_recepcao || 0) + novo.novos_pacientes_recepcao, novos_pacientes_vacinas: Number(existente.novos_pacientes_vacinas || 0) + novo.novos_pacientes_vacinas,
+              agendamentos_plantao: Number(existente.agendamentos_plantao || 0) + novo.agendamentos_plantao, pacientes_novos_fototerapia: Number(existente.pacientes_novos_fototerapia || 0) + novo.pacientes_novos_fototerapia,
+            });
+          } else {
+            await add({ data: form.data, ...novo });
+          }
           setForm({ data: todayISO(), ligacoes: "", mensagens: "", agendados: "", pacientesAgendadosVacinas: "", avaliacoesGoogle: "", novosPacientesRecepcao: "", novosPacientesVacinas: "", agendamentosPlantao: "", pacientesNovosFototerapia: "" });
           setBusy(false);
         }}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Registrar</Btn>
@@ -1948,11 +2193,13 @@ function ProdutividadeDiaria() {
               <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Novos (recepção)</th>
               <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Novos (vacinas)</th>
               <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Novos (fototerapia)</th>
+              <th></th>
             </tr></thead>
             <tbody>{[...doMes].sort((a, b) => b.data.localeCompare(a.data)).map((r) => (
               <tr key={r.id} style={{ borderBottom: `1px solid ${T.border}` }}>
                 <td className="py-2 px-2">{fmtDate(r.data)}</td><td className="py-2 px-2">{r.ligacoes}</td><td className="py-2 px-2">{r.mensagens}</td><td className="py-2 px-2">{r.agendados}</td>
                 <td className="py-2 px-2">{r.agendamentos_plantao}</td><td className="py-2 px-2">{r.pacientes_agendados_vacinas}</td><td className="py-2 px-2">{r.avaliacoes_google}</td><td className="py-2 px-2">{r.novos_pacientes_recepcao}</td><td className="py-2 px-2">{r.novos_pacientes_vacinas}</td><td className="py-2 px-2">{r.pacientes_novos_fototerapia}</td>
+                <td className="py-2 px-2 text-right"><button onClick={() => { if (confirm("Apagar o lançamento deste dia?")) remove(r.id); }}><Trash2 size={13} style={{ color: T.red }} /></button></td>
               </tr>
             ))}</tbody>
           </table>
@@ -2538,6 +2785,142 @@ function PlantaoResumoModulo() {
   );
 }
 
+/* ============================== IMPORTAÇÃO DE OFX ============================== */
+function parseOFX(texto) {
+  const blocos = texto.split(/<STMTTRN>/i).slice(1);
+  return blocos.map((bloco) => {
+    const pegar = (tag) => { const m = bloco.match(new RegExp(`<${tag}>([^<\r\n]+)`, "i")); return m ? m[1].trim() : ""; };
+    const dtRaw = pegar("DTPOSTED");
+    const data = dtRaw && dtRaw.length >= 8 ? `${dtRaw.slice(0, 4)}-${dtRaw.slice(4, 6)}-${dtRaw.slice(6, 8)}` : "";
+    const valorRaw = pegar("TRNAMT").replace(",", ".");
+    const valor = parseFloat(valorRaw) || 0;
+    const fitid = pegar("FITID");
+    const memo = pegar("MEMO") || pegar("NAME") || "Sem descrição";
+    return { data, valor, fitid, memo };
+  }).filter((t) => t.data && t.valor !== 0);
+}
+const chaveDescricaoOfx = (memo) => normalizarTexto(memo).slice(0, 60);
+
+function ImportarOFXModulo() {
+  const { session } = useAuth();
+  const { unidadeId } = useUnidade();
+  const { data: bancos, loading: loadingBancos } = useRecords("cadBancos");
+  const { data: financeiro, add: addFinanceiro } = useRecords("financeiro");
+  const [bancoId, setBancoId] = useState("");
+  const [transacoes, setTransacoes] = useState([]);
+  const [memorizadas, setMemorizadas] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [resultado, setResultado] = useState(null);
+
+  useEffect(() => {
+    sbRest(`ofx_categorias_memorizadas?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token })
+      .then((r) => { const map = {}; (r || []).forEach((m) => { map[m.descricao_chave] = { linha: m.linha_dre, tipo: m.tipo }; }); setMemorizadas(map); }).catch(() => {});
+  }, [unidadeId]);
+
+  const fitidsJaImportados = new Set(financeiro.data ? financeiro.data.map((f) => f.fitid).filter(Boolean) : []);
+
+  const handleArquivo = async (file) => {
+    const texto = await file.text();
+    const parsed = parseOFX(texto);
+    const enriquecidas = parsed.map((t, i) => {
+      const chave = chaveDescricaoOfx(t.memo);
+      const memo = memorizadas[chave];
+      return {
+        idTemp: i, data: t.data, memo: t.memo, valorAbs: Math.abs(t.valor), fitid: t.fitid,
+        tipo: memo ? memo.tipo : (t.valor >= 0 ? "entrada" : "saida"),
+        linha: memo ? memo.linha : (t.valor >= 0 ? "Receita de Convênios" : "Outras Despesas"),
+        jaImportado: t.fitid && fitidsJaImportados.has(t.fitid),
+        incluir: !(t.fitid && fitidsJaImportados.has(t.fitid)),
+      };
+    });
+    setTransacoes(enriquecidas);
+    setResultado(null);
+  };
+
+  const atualizarLinha = (idTemp, campo, valor) => setTransacoes((prev) => prev.map((t) => t.idTemp === idTemp ? { ...t, [campo]: valor } : t));
+
+  const confirmarImportacao = async () => {
+    setBusy(true);
+    const banco = bancos.find((b) => b.id === bancoId);
+    let ok = 0;
+    for (const t of transacoes.filter((x) => x.incluir)) {
+      try {
+        await sbRest("financeiro_transacoes", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, data: t.data, tipo: t.tipo, linha_dre: t.linha, descricao: t.memo, valor: t.valorAbs, fitid: t.fitid || null, banco: banco ? banco.nome : null } });
+        await sbRest("ofx_categorias_memorizadas", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, descricao_chave: chaveDescricaoOfx(t.memo), linha_dre: t.linha, tipo: t.tipo } }).catch(async () => {
+          // já existe — atualiza
+          await sbRest(`ofx_categorias_memorizadas?unidade_id=eq.${unidadeId}&descricao_chave=eq.${encodeURIComponent(chaveDescricaoOfx(t.memo))}`, { method: "PATCH", token: session.access_token, body: { linha_dre: t.linha, tipo: t.tipo } });
+        });
+        ok++;
+      } catch (e) { /* segue tentando os outros */ }
+    }
+    setResultado({ ok, total: transacoes.filter((x) => x.incluir).length });
+    setBusy(false);
+  };
+
+  return (
+    <div>
+      <SectionHeader icon={Wallet} title="Importar Extrato (OFX)" subtitle="Importe o arquivo do banco — o sistema lembra como você categorizou cada descrição da próxima vez" tone="coral" />
+      <Card className="mb-5">
+        <div className="flex flex-wrap gap-3 items-end mb-1">
+          <Field label="Banco">
+            <select className="rounded-lg px-3 py-2 text-sm outline-none w-56" style={inputStyle} value={bancoId} onChange={(e) => setBancoId(e.target.value)}>
+              <option value="" disabled>Selecione…</option>
+              {bancos.map((b) => <option key={b.id} value={b.id}>{b.nome}</option>)}
+            </select>
+          </Field>
+          <Field label="Arquivo .ofx"><input type="file" accept=".ofx,.qfx" className="text-sm" onChange={(e) => e.target.files[0] && handleArquivo(e.target.files[0])} /></Field>
+        </div>
+        {bancos.length === 0 && !loadingBancos && <p className="text-sm mt-2" style={{ color: T.amber }}>Cadastre um banco primeiro em Cadastros → Bancos.</p>}
+      </Card>
+
+      {transacoes.length > 0 && (
+        <Card className="mb-5">
+          <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>{transacoes.length} transação(ões) encontradas — confira e ajuste antes de importar</p>
+          <div className="overflow-x-auto -mx-5 px-5">
+            <table className="w-full text-sm min-w-[820px]">
+              <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Incluir</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Data</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Descrição</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Valor</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Tipo</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Linha do DRE</th>
+              </tr></thead>
+              <tbody>{transacoes.map((t) => (
+                <tr key={t.idTemp} style={{ borderBottom: `1px solid ${T.border}`, opacity: t.incluir ? 1 : 0.45 }}>
+                  <td className="py-2 px-2"><input type="checkbox" checked={t.incluir} onChange={(e) => atualizarLinha(t.idTemp, "incluir", e.target.checked)} /></td>
+                  <td className="py-2 px-2">{fmtDate(t.data)}</td>
+                  <td className="py-2 px-2" style={{ color: T.text }}>{t.memo}{t.jaImportado && <span className="block text-xs" style={{ color: T.amber }}>já importado antes</span>}</td>
+                  <td className="py-2 px-2">{fmtBRL(t.valorAbs)}</td>
+                  <td className="py-2 px-2"><select className="rounded-lg px-2 py-1 text-xs outline-none" style={inputStyle} value={t.tipo} onChange={(e) => atualizarLinha(t.idTemp, "tipo", e.target.value)}><option value="entrada">Entrada</option><option value="saida">Saída</option></select></td>
+                  <td className="py-2 px-2"><select className="rounded-lg px-2 py-1 text-xs outline-none" style={inputStyle} value={t.linha} onChange={(e) => atualizarLinha(t.idTemp, "linha", e.target.value)}>{TODAS_LINHAS_DRE.map((l) => <option key={l} value={l}>{l}</option>)}</select></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+          <div className="mt-4"><Btn disabled={busy || !bancoId} onClick={confirmarImportacao}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Importar {transacoes.filter((t) => t.incluir).length} transação(ões)</Btn></div>
+          {resultado && <p className="text-sm mt-3" style={{ color: T.green }}>{resultado.ok} de {resultado.total} importadas com sucesso.</p>}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function CadastroBancosModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("cadBancos");
+  const fields = [
+    { key: "nome", label: "Nome do banco", type: "text" },
+    { key: "agencia", label: "Agência", type: "text", required: false },
+    { key: "conta", label: "Conta", type: "text", required: false },
+    { key: "observacoes", label: "Observações", type: "text", required: false },
+  ];
+  const columns = [{ key: "nome", label: "Banco" }, { key: "agencia", label: "Agência" }, { key: "conta", label: "Conta" }];
+  return (
+    <ModuleShell icon={Wallet} title="Cadastro de Bancos" subtitle="Bancos usados para importar extratos (OFX)" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Cadastrar banco" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
+  );
+}
+
 function CadastroFornecedoresModulo() {
   const { data, add, update, remove, loading, erro } = useRecords("cadFornecedores");
   const fields = [
@@ -2904,6 +3287,35 @@ function EquipeModulo() {
           </div>
         )}
       </Card>
+      <Card className="mt-5">
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Corrigir lançamentos de produtividade (mês atual)</p>
+        <p className="text-xs mb-3" style={{ color: T.muted }}>Use se algum colaborador registrou algo errado — apagar aqui remove o dia inteiro daquele lançamento.</p>
+        {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> : (
+          <div className="overflow-x-auto -mx-5 px-5">
+            <table className="w-full text-sm min-w-[560px]">
+              <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Colaborador(a)</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Data</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Ligações</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Agendados</th>
+                <th></th>
+              </tr></thead>
+              <tbody>{prod.filter((p) => p.data.slice(0, 7) === mesAtual).sort((a, b) => b.data.localeCompare(a.data)).map((p) => {
+                const nomeC = (colaboradores.find((c) => c.id === p.colaborador_id) || {}).nome || "—";
+                return (
+                  <tr key={p.id} style={{ borderBottom: `1px solid ${T.border}` }}>
+                    <td className="py-2 px-2 font-medium" style={{ color: T.text }}>{nomeC}</td>
+                    <td className="py-2 px-2">{fmtDate(p.data)}</td>
+                    <td className="py-2 px-2">{p.ligacoes}</td>
+                    <td className="py-2 px-2">{p.agendados}</td>
+                    <td className="py-2 px-2 text-right"><button onClick={async () => { if (confirm(`Apagar o lançamento de ${nomeC} em ${fmtDate(p.data)}?`)) { await sbRest(`producao_diaria_colaborador?id=eq.${p.id}`, { method: "DELETE", token: session.access_token }); setProd((prev) => prev.filter((x) => x.id !== p.id)); } }}><Trash2 size={13} style={{ color: T.red }} /></button></td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
@@ -3002,18 +3414,19 @@ function RelatoriosModulo() {
 
 const ALL_MENU = [
   { group: "Visão", items: [{ key: "visao", label: "Dashboard", icon: LayoutDashboard, tone: "coral" }, { key: "painelCritico", label: "Painel Crítico", icon: AlertTriangle, tone: "coral" }] },
-  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }, { key: "sublocacao", label: "Receita de Sublocação", icon: Building2, tone: "coral" }] },
+  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }, { key: "sublocacao", label: "Receita de Sublocação", icon: Building2, tone: "coral" }, { key: "importarOfx", label: "Importar Extrato (OFX)", icon: Upload, tone: "coral" }] },
   { group: "Atendimento", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producaoParticulares", label: "Produção — Particulares", icon: Stethoscope, tone: "teal" }, { key: "producaoConveniosGeral", label: "Produção — Convênios", icon: Stethoscope, tone: "teal" }, { key: "producaoBradescoClinica", label: "Produção — Bradesco Clínica", icon: Stethoscope, tone: "teal" }, { key: "producaoAuroraSaude", label: "Produção — Aurora Saúde", icon: Stethoscope, tone: "teal" }, { key: "producaoIpsm", label: "Produção — IPSM", icon: Stethoscope, tone: "teal" }, { key: "producaoResumoGeral", label: "Produção — Valores Gerais", icon: Stethoscope, tone: "coral" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
   { group: "Setor de Vacinas", items: [{ key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "entradaEstoqueVacinas", label: "Entrada de Estoque", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "pacoteVacinas", label: "Pacote Personalizado", icon: Syringe, tone: "coral" }] },
   { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }] },
-  { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" }] },
+  { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "relatorioColaborador", label: "Relatório de Colaborador", icon: FileText, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" } ] },
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }] },
   { group: "Plantão", items: [{ key: "plantaoRegistro", label: "Registrar Plantão", icon: Stethoscope, tone: "teal" }, { key: "plantaoValores", label: "Valores por Convênio", icon: ClipboardList, tone: "coral" }, { key: "plantaoResumo", label: "Resumo Financeiro", icon: ClipboardList, tone: "coral" }] },
   { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "metasColaborador", label: "Meta por Colaborador", icon: Users, tone: "coral" }, { key: "metasEquipe", label: "Meta por Equipe", icon: Users, tone: "coral" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
-  { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }] },
+  { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }, { key: "cadBancos", label: "Bancos", icon: Wallet, tone: "ink" }] },
+  { group: "Documentos & Chat", items: [{ key: "bancoDocumentos", label: "Banco de Documentos", icon: FileText, tone: "coral" }, { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas (E-mail/WhatsApp)", icon: Bell, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "contas", "faturamento", "repasse", "sublocacao", "equipe", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico"];
+const FINANCE_TABS = ["financeiro", "contas", "faturamento", "repasse", "sublocacao", "equipe", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
 const RESTRICTED_MENUS = {
   recepcao: { group: "Minha área", items: [
@@ -3085,6 +3498,7 @@ function AppInner() {
       case "producaoResumoGeral": return <ProducaoResumoGeralModulo />;
       case "contas": return <ContasModulo />;
       case "pessoal": return <PessoalModulo />;
+      case "relatorioColaborador": return <RelatorioColaboradorModulo />;
       case "meurh": return <MeuRHModulo />;
       case "marketing": return <MarketingModulo />;
       case "posVenda": return <PosVendaModulo />;
@@ -3092,6 +3506,7 @@ function AppInner() {
       case "faturamento": return <FaturamentoModulo />;
       case "repasse": return <RepasseMedicoModulo />;
       case "sublocacao": return <SublocacaoModulo />;
+      case "importarOfx": return <ImportarOFXModulo />;
       case "equipe": return <EquipeModulo />;
       case "metas": return <MetasModulo />;
       case "metasColaborador": return <MetasColaboradorModulo />;
@@ -3105,6 +3520,9 @@ function AppInner() {
       case "cadProfissionais": return <CadastroProfissionaisModulo />;
       case "cadFornecedores": return <CadastroFornecedoresModulo />;
       case "cadTestesGeneticos": return <CadastroTestesGeneticosModulo />;
+      case "cadBancos": return <CadastroBancosModulo />;
+      case "bancoDocumentos": return <BancoDocumentosModulo />;
+      case "chatInterno": return <ChatInternoModulo />;
       case "unidades": return <UnidadesModulo />;
       case "aparencia": return <AparenciaModulo />;
       case "alertas": return <AlertasModulo />;
@@ -3317,6 +3735,10 @@ function AuthProvider({ children }) {
   const login = async (email, senha) => { const data = await sbAuth("token?grant_type=password", { email, password: senha }); setSession(data); await carregarPerfil(data); };
   const signUp = async (email, senha, nome) => { const data = await sbAuth("signup", { email, password: senha, data: { nome } }); if (data.access_token) { setSession(data); await carregarPerfil(data); } };
   const logout = () => { setSession(null); setPerfil(null); };
+  const marcarTourVisto = async () => {
+    setPerfil((p) => ({ ...p, tour_visto: true }));
+    try { await sbRest(`perfis?id=eq.${session.user.id}`, { method: "PATCH", token: session.access_token, body: { tour_visto: true } }); } catch (e) { /* não bloqueia a experiência */ }
+  };
 
   const value = { session, perfil, login, signUp, logout, unidadesIniciais };
 
@@ -3328,7 +3750,40 @@ function AuthProvider({ children }) {
     </AuthContext.Provider>
   );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+      {!perfil.tour_visto && <TourGuiado onFinalizar={marcarTourVisto} />}
+    </AuthContext.Provider>
+  );
+}
+
+function TourGuiado({ onFinalizar }) {
+  const passos = [
+    { titulo: "Bem-vindo(a) ao Olhar de Mãe! 👋", texto: "Esse é o sistema de gestão da clínica. Vamos te mostrar rapidinho como ele funciona — leva menos de 1 minuto." },
+    { titulo: "Menu lateral", texto: "Do lado esquerdo, tudo fica organizado por área — Financeiro, Atendimento, Estoque, Pessoas, e mais. Clique em qualquer item para abrir." },
+    { titulo: "Meu RH", texto: "Essa é a sua área pessoal — registre sua produtividade, bata ponto, envie atestados e veja seus documentos, sempre visível só para você." },
+    { titulo: "Notificações", texto: "O sininho no topo da tela avisa sobre estoque baixo, contas vencendo e outras pendências." },
+    { titulo: "Pronto! 🎉", texto: "Você já pode explorar o sistema à vontade. Qualquer dúvida, fale com o administrador." },
+  ];
+  const [i, setI] = useState(0);
+  const passo = passos[i];
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: "#132030cc" }}>
+      <div className="w-full max-w-sm rounded-2xl p-6" style={{ background: T.card }}>
+        <div className="flex items-center gap-2 mb-4">
+          <img src={LOGO_DATA_URI} alt="Olhar de Mãe" style={{ width: 32, height: 32, objectFit: "contain" }} />
+          <span className="text-xs" style={{ color: T.muted }}>{i + 1} de {passos.length}</span>
+        </div>
+        <p className="font-bold text-lg mb-2" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{passo.titulo}</p>
+        <p className="text-sm mb-6" style={{ color: T.muted }}>{passo.texto}</p>
+        <div className="flex justify-between items-center">
+          <button onClick={onFinalizar} className="text-xs" style={{ color: T.muted }}>Pular tour</button>
+          <Btn onClick={() => (i < passos.length - 1 ? setI(i + 1) : onFinalizar())}>{i < passos.length - 1 ? "Próximo" : "Concluir"}</Btn>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ResetPasswordScreen({ accessToken, onDone }) {
