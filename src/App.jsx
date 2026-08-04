@@ -746,15 +746,40 @@ function exportToCSV(fields, rows, filename) {
   const a = document.createElement("a"); a.href = url; a.download = `${filename}.csv`; a.click(); URL.revokeObjectURL(url);
 }
 
+function ExportarPeriodoModal({ campoData, fields, rows, filename, onClose }) {
+  const [de, setDe] = useState(""); const [ate, setAte] = useState("");
+  const linhasNoPeriodo = rows.filter((r) => { const v = r[campoData.key]; if (!v) return true; if (de && v < de) return false; if (ate && v > ate) return false; return true; });
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "#13203099" }} onClick={onClose}>
+      <div className="rounded-2xl w-full max-w-sm" style={{ background: T.card }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${T.border}` }}>
+          <h3 className="font-bold flex items-center gap-2" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}><Download size={16} /> Exportar — escolha o período</h3>
+          <button onClick={onClose}><X size={18} style={{ color: T.muted }} /></button>
+        </div>
+        <div className="p-5 flex flex-col gap-3.5">
+          <p className="text-sm" style={{ color: T.muted }}>Deixe em branco para exportar tudo.</p>
+          <Field label="De"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={de} onChange={(e) => setDe(e.target.value)} /></Field>
+          <Field label="Até"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={ate} onChange={(e) => setAte(e.target.value)} /></Field>
+          <p className="text-xs" style={{ color: T.muted }}>{linhasNoPeriodo.length} registro(s) no período selecionado.</p>
+          <Btn onClick={() => { exportToCSV(fields, linhasNoPeriodo, filename); onClose(); }}>{`Exportar ${linhasNoPeriodo.length} registro(s)`}</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ModuleShell({ icon, title, subtitle, tone, dailyFields, dailyCta, fields, columns, rows, onAdd, onUpdate, onDelete, onBulkImport, kpis, charts, extra, loading, erro }) {
   const [editing, setEditing] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [exportando, setExportando] = useState(false);
+  const campoData = fields.find((f) => f.type === "date");
+  const nomeArquivo = title.toLowerCase().replace(/\s+/g, "-");
   return (
     <div>
       <div className="flex items-start justify-between gap-3 flex-wrap mb-6">
         <SectionHeader icon={icon} title={title} subtitle={subtitle} tone={tone} />
         <div className="flex gap-2">
-          <Btn small variant="ghost" icon={Download} onClick={() => exportToCSV(fields, rows, title.toLowerCase().replace(/\s+/g, "-"))}>Exportar CSV</Btn>
+          <Btn small variant="ghost" icon={Download} onClick={() => campoData ? setExportando(true) : exportToCSV(fields, rows, nomeArquivo)}>Exportar CSV</Btn>
           {onBulkImport && <Btn small variant="ghost" icon={Upload} onClick={() => setImporting(true)}>Importar planilha</Btn>}
         </div>
       </div>
@@ -769,6 +794,7 @@ function ModuleShell({ icon, title, subtitle, tone, dailyFields, dailyCta, field
       </Card>
       {editing && <EditModal title="Editar registro" fields={fields} initial={editing} onClose={() => setEditing(null)} onSave={async (form) => { await onUpdate(editing.id, normalizeForm(fields, form)); setEditing(null); }} />}
       {importing && onBulkImport && <ImportModal fields={fields} onImport={onBulkImport} onClose={() => setImporting(false)} />}
+      {exportando && campoData && <ExportarPeriodoModal campoData={campoData} fields={fields} rows={rows} filename={nomeArquivo} onClose={() => setExportando(false)} />}
     </div>
   );
 }
@@ -2118,11 +2144,83 @@ function TermoUsoImagem() {
   );
 }
 
+function AgendamentosPacientes() {
+  const { data, add, remove, loading } = useOwnRecords("agendamentos_pacientes", "data_agendamento.desc");
+  const { data: vacinasCat } = useRecords("vacinas");
+  const nomesVacinas = vacinasCat.map((v) => v.nome);
+  const [form, setForm] = useState({ tipo: "Consulta", paciente: "", data: todayISO(), convenio: "", vacina: "" });
+  const [busy, setBusy] = useState(false);
+  const mesAtual = todayISO().slice(0, 7);
+  const doMes = data.filter((r) => r.data_agendamento.slice(0, 7) === mesAtual);
+  const registrar = async () => {
+    if (!form.paciente) return;
+    setBusy(true);
+    await add({ tipo: form.tipo, paciente: form.paciente, data_agendamento: form.data, convenio: form.tipo === "Consulta" ? (form.convenio || null) : null, vacina: form.tipo === "Vacina" ? (form.vacina || null) : null });
+    setForm({ tipo: form.tipo, paciente: "", data: todayISO(), convenio: "", vacina: "" });
+    setBusy(false);
+  };
+  return (
+    <Card className="mb-5">
+      <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Agendamentos — consulta ou vacina</p>
+      <div className="flex flex-wrap gap-3 items-end mb-4">
+        <Field label="Tipo">
+          <select className="rounded-lg px-3 py-2 text-sm outline-none w-36" style={inputStyle} value={form.tipo} onChange={(e) => setForm((p) => ({ ...p, tipo: e.target.value }))}>
+            <option value="Consulta">Consulta</option>
+            <option value="Vacina">Vacina</option>
+          </select>
+        </Field>
+        <Field label="Nome do paciente"><input className="rounded-lg px-3 py-2 text-sm outline-none w-52" style={inputStyle} value={form.paciente} onChange={(e) => setForm((p) => ({ ...p, paciente: e.target.value }))} /></Field>
+        <Field label="Data do agendamento"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} /></Field>
+        {form.tipo === "Consulta" && (
+          <Field label="Convênio (opcional)">
+            <select className="rounded-lg px-3 py-2 text-sm outline-none w-44" style={inputStyle} value={form.convenio} onChange={(e) => setForm((p) => ({ ...p, convenio: e.target.value }))}>
+              <option value="">— não informar —</option>
+              {CONVENIOS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Field>
+        )}
+        {form.tipo === "Vacina" && (
+          <Field label="Qual vacina (opcional)">
+            <select className="rounded-lg px-3 py-2 text-sm outline-none w-44" style={inputStyle} value={form.vacina} onChange={(e) => setForm((p) => ({ ...p, vacina: e.target.value }))}>
+              <option value="">— não informar —</option>
+              {nomesVacinas.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </Field>
+        )}
+        <Btn icon={busy ? undefined : Plus} disabled={busy || !form.paciente} onClick={registrar}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Registrar agendamento</Btn>
+      </div>
+      <div className="mb-3"><KpiCard label="Agendamentos no mês" value={doMes.length} tone="teal" /></div>
+      {!loading && doMes.length > 0 && (
+        <div className="overflow-x-auto -mx-5 px-5">
+          <table className="w-full text-sm">
+            <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Data</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Paciente</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Tipo</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Convênio/Vacina</th>
+              <th></th>
+            </tr></thead>
+            <tbody>{[...doMes].sort((a, b) => b.data_agendamento.localeCompare(a.data_agendamento)).map((r) => (
+              <tr key={r.id} style={{ borderBottom: `1px solid ${T.border}` }}>
+                <td className="py-2 px-2">{fmtDate(r.data_agendamento)}</td><td className="py-2 px-2" style={{ color: T.text }}>{r.paciente}</td>
+                <td className="py-2 px-2"><Badge tone={r.tipo === "Consulta" ? "teal" : "coral"}>{r.tipo}</Badge></td>
+                <td className="py-2 px-2" style={{ color: T.muted }}>{r.convenio || r.vacina || "—"}</td>
+                <td className="py-2 px-2 text-right"><button onClick={() => { if (confirm("Remover este agendamento?")) remove(r.id); }}><Trash2 size={13} style={{ color: T.red }} /></button></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function MeuRHModulo() {
   return (
     <div>
       <SectionHeader icon={Users} title="Meu RH" subtitle="Produtividade, documentos, atestados e horários — só você vê seus dados" tone="purple" />
       <ProdutividadeDiaria />
+      <AgendamentosPacientes />
       <MeusDocumentos />
       <EnviarAtestado />
       <MeusHorarios />
