@@ -295,6 +295,16 @@ function FieldInput({ f, value, onChange }) {
 }
 
 /* ============================== LOGIN ============================== */
+async function solicitarRecuperacaoSenha(email) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/recover?redirect_to=${encodeURIComponent(window.location.origin)}`, {
+    method: "POST",
+    headers: { apikey: ANON_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.msg || data.error_description || "Não foi possível enviar o e-mail de recuperação."); }
+  return true;
+}
+
 function LoginScreen() {
   const { login, signUp } = useAuth();
   const [mode, setMode] = useState("login");
@@ -305,7 +315,17 @@ function LoginScreen() {
     setBusy(true); setMsg(null);
     try {
       if (mode === "login") await login(email, senha);
-      else { await signUp(email, senha, nome); setMsg({ tone: "green", text: "Conta criada! Se seu projeto exigir confirmação por e-mail, verifique sua caixa de entrada antes de entrar." }); setMode("login"); }
+      else if (mode === "signup") { await signUp(email, senha, nome); setMsg({ tone: "green", text: "Conta criada! Se seu projeto exigir confirmação por e-mail, verifique sua caixa de entrada antes de entrar." }); setMode("login"); }
+    } catch (e) { setMsg({ tone: "red", text: e.message }); }
+    setBusy(false);
+  };
+
+  const enviarRecuperacao = async () => {
+    if (!email) { setMsg({ tone: "red", text: "Digite seu e-mail primeiro." }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      await solicitarRecuperacaoSenha(email);
+      setMsg({ tone: "green", text: "Enviamos um e-mail com o link para você criar uma senha nova. Confira também a caixa de spam." });
     } catch (e) { setMsg({ tone: "red", text: e.message }); }
     setBusy(false);
   };
@@ -317,17 +337,30 @@ function LoginScreen() {
           <img src={LOGO_DATA_URI} alt="Olhar de Mãe" style={{ width: 46, height: 46, objectFit: "contain" }} />
           <div><div className="font-bold" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>Olhar de Mãe</div><div className="text-xs" style={{ color: T.muted }}>Painel de Gestão da Rede</div></div>
         </div>
-        <div className="flex gap-2 mb-5">
-          <button onClick={() => setMode("login")} className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ background: mode === "login" ? T.ink : "#F1EEE4", color: mode === "login" ? "#fff" : T.muted }}>Entrar</button>
-          <button onClick={() => setMode("signup")} className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ background: mode === "signup" ? T.ink : "#F1EEE4", color: mode === "signup" ? "#fff" : T.muted }}>Criar conta</button>
-        </div>
-        <div className="flex flex-col gap-3">
-          {mode === "signup" && <Field label="Seu nome"><input className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={nome} onChange={(e) => setNome(e.target.value)} /></Field>}
-          <Field label="E-mail"><input type="email" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
-          <Field label="Senha"><input type="password" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={senha} onChange={(e) => setSenha(e.target.value)} /></Field>
-          {msg && <div className="text-sm" style={{ color: msg.tone === "red" ? T.red : T.green }}>{msg.text}</div>}
-          <Btn onClick={submit} disabled={busy || !email || !senha}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />} {mode === "login" ? "Entrar" : "Criar minha conta"}</Btn>
-        </div>
+        {mode !== "forgot" && (
+          <div className="flex gap-2 mb-5">
+            <button onClick={() => { setMode("login"); setMsg(null); }} className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ background: mode === "login" ? T.ink : "#F1EEE4", color: mode === "login" ? "#fff" : T.muted }}>Entrar</button>
+            <button onClick={() => { setMode("signup"); setMsg(null); }} className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ background: mode === "signup" ? T.ink : "#F1EEE4", color: mode === "signup" ? "#fff" : T.muted }}>Criar conta</button>
+          </div>
+        )}
+        {mode === "forgot" ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm" style={{ color: T.muted }}>Digite o e-mail da sua conta — vamos te mandar um link para criar uma senha nova.</p>
+            <Field label="E-mail"><input type="email" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+            {msg && <div className="text-sm" style={{ color: msg.tone === "red" ? T.red : T.green }}>{msg.text}</div>}
+            <Btn onClick={enviarRecuperacao} disabled={busy || !email}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Enviar link de recuperação</Btn>
+            <button onClick={() => { setMode("login"); setMsg(null); }} className="text-xs text-center" style={{ color: T.muted }}>Voltar para o login</button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {mode === "signup" && <Field label="Seu nome"><input className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={nome} onChange={(e) => setNome(e.target.value)} /></Field>}
+            <Field label="E-mail"><input type="email" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+            <Field label="Senha"><input type="password" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={senha} onChange={(e) => setSenha(e.target.value)} /></Field>
+            {mode === "login" && <button onClick={() => { setMode("forgot"); setMsg(null); }} className="text-xs text-right" style={{ color: T.teal }}>Esqueci minha senha</button>}
+            {msg && <div className="text-sm" style={{ color: msg.tone === "red" ? T.red : T.green }}>{msg.text}</div>}
+            <Btn onClick={submit} disabled={busy || !email || !senha}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />} {mode === "login" ? "Entrar" : "Criar minha conta"}</Btn>
+          </div>
+        )}
         <p className="text-xs mt-5" style={{ color: T.muted }}>Cada colaborador acessa com seu próprio e-mail. No primeiro acesso, você vai preencher seu nome e cargo.</p>
       </div>
     </div>
@@ -3200,8 +3233,57 @@ function AuthProvider({ children }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+function ResetPasswordScreen({ accessToken, onDone }) {
+  const [senha, setSenha] = useState(""); const [confirmar, setConfirmar] = useState("");
+  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(null);
+  const salvar = async () => {
+    if (senha.length < 6) { setMsg({ tone: "red", text: "A senha precisa ter pelo menos 6 caracteres." }); return; }
+    if (senha !== confirmar) { setMsg({ tone: "red", text: "As senhas digitadas não são iguais." }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        method: "PUT",
+        headers: { apikey: ANON_KEY, Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ password: senha }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.msg || data.error_description || "Não foi possível trocar a senha. Peça um novo link.");
+      setMsg({ tone: "green", text: "Senha alterada! Redirecionando para o login…" });
+      setTimeout(() => { window.location.hash = ""; onDone(); }, 1800);
+    } catch (e) { setMsg({ tone: "red", text: e.message }); }
+    setBusy(false);
+  };
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: T.sidebar }}>
+      <div className="w-full max-w-sm rounded-2xl p-7" style={{ background: T.card }}>
+        <div className="flex items-center gap-2.5 mb-6">
+          <img src={LOGO_DATA_URI} alt="Olhar de Mãe" style={{ width: 46, height: 46, objectFit: "contain" }} />
+          <div><div className="font-bold" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>Olhar de Mãe</div><div className="text-xs" style={{ color: T.muted }}>Painel de Gestão da Rede</div></div>
+        </div>
+        <p className="font-bold mb-1" style={{ color: T.text }}>Criar nova senha</p>
+        <p className="text-sm mb-4" style={{ color: T.muted }}>Digite sua nova senha duas vezes para confirmar.</p>
+        <div className="flex flex-col gap-3">
+          <Field label="Nova senha"><input type="password" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={senha} onChange={(e) => setSenha(e.target.value)} /></Field>
+          <Field label="Confirmar nova senha"><input type="password" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={confirmar} onChange={(e) => setConfirmar(e.target.value)} /></Field>
+          {msg && <div className="text-sm" style={{ color: msg.tone === "red" ? T.red : T.green }}>{msg.text}</div>}
+          <Btn onClick={salvar} disabled={busy || !senha || !confirmar}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />} Salvar nova senha</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ============================== APP ROOT ============================== */
+function lerParametrosDeRecuperacao() {
+  if (typeof window === "undefined") return null;
+  const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
+  const params = new URLSearchParams(hash);
+  if (params.get("type") === "recovery" && params.get("access_token")) return params.get("access_token");
+  return null;
+}
 export default function ClinicaOlharDeMaeApp() {
+  const [tokenRecuperacao, setTokenRecuperacao] = useState(() => lerParametrosDeRecuperacao());
+  if (tokenRecuperacao) return <ResetPasswordScreen accessToken={tokenRecuperacao} onDone={() => setTokenRecuperacao(null)} />;
   return (
     <AuthProvider>
       <UnidadeProvider>
