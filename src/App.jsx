@@ -3433,20 +3433,24 @@ const RESTRICTED_MENUS = {
     { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
     { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" },
     { key: "insumos", label: "Estoque de Insumos", icon: Package, tone: "teal" },
+    { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
   marketing: { group: "Minha área", items: [
     { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
     { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" },
     { key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" },
+    { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
   enfermagem: { group: "Minha área", items: [
     { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
     { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" },
     { key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" },
+    { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
   posvenda: { group: "Minha área", items: [
     { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
     { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" },
+    { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
   vacinacao: { group: "Minha área", items: [
     { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
@@ -3456,10 +3460,12 @@ const RESTRICTED_MENUS = {
     { key: "pacoteVacinas", label: "Pacote Personalizado", icon: Syringe, tone: "coral" },
     { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" },
     { key: "insumos", label: "Estoque de Insumos", icon: Package, tone: "teal" },
+    { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
   servicos_gerais: { group: "Minha área", items: [
     { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
     { key: "insumos", label: "Estoque de Insumos", icon: Package, tone: "teal" },
+    { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
 };
 
