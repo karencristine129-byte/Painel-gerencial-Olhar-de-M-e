@@ -206,6 +206,9 @@ const MODULES = {
   protocolosGuias: { table: "protocolos_guias", order: "data_protocolo.desc",
     toDb: (r) => ({ numero_protocolo: r.numeroProtocolo, data_protocolo: r.dataProtocolo, itens: r.itens, total_guias: r.totalGuias, criado_por: r.criadoPor, criado_por_nome: r.criadoPorNome }),
     fromDb: (r) => ({ id: r.id, numeroProtocolo: r.numero_protocolo, dataProtocolo: r.data_protocolo, itens: r.itens, totalGuias: r.total_guias, criadoPor: r.criado_por, criadoPorNome: r.criado_por_nome, criadoEm: r.criado_em }) },
+  protocoloBradesco: { table: "protocolo_bradesco", order: "data_envio.desc",
+    toDb: (r) => ({ numero_lote: r.numeroLote, data_emissao: r.dataEmissao || null, data_envio: r.dataEnvio, valor_nota: r.valorNota, regime_tributario: r.regimeTributario, ir_valor: r.irValor, cofins_valor: r.cofinsValor, pis_valor: r.pisValor, csll_valor: r.csllValor, faturamento_guia_id: r.faturamentoGuiaId || null }),
+    fromDb: (r) => ({ id: r.id, numeroLote: r.numero_lote, dataEmissao: r.data_emissao, dataEnvio: r.data_envio, valorNota: r.valor_nota, regimeTributario: r.regime_tributario, irValor: r.ir_valor, cofinsValor: r.cofins_valor, pisValor: r.pis_valor, csllValor: r.csll_valor, faturamentoGuiaId: r.faturamento_guia_id }) },
   posVenda: { table: "pos_venda_ligacoes", order: "data.desc",
     toDb: (r) => ({ data: r.data, paciente: r.paciente, telefone: r.telefone, convertida: !!r.convertida, agendamento_feito: !!r.agendamentoFeito, data_agendamento: r.dataAgendamento || null, observacoes: r.observacoes }),
     fromDb: (r) => ({ id: r.id, data: r.data, paciente: r.paciente, telefone: r.telefone, convertida: r.convertida, agendamentoFeito: r.agendamento_feito, dataAgendamento: r.data_agendamento, observacoes: r.observacoes }) },
@@ -1189,6 +1192,50 @@ function gerarNumeroProtocolo(nomeUsuario) {
   const horaParte = agora.toTimeString().slice(0, 8).replace(/:/g, "");
   return `${iniciais}-${dataParte}-${horaParte}`;
 }
+function ProtocoloBradescoModulo() {
+  const { session } = useAuth();
+  const { unidadeId } = useUnidade();
+  const { data: protocolos, remove, loading, erro, reload } = useRecords("protocoloBradesco");
+  const { data: guias } = useRecords("faturamento");
+  const fields = [
+    { key: "numeroLote", label: "Nº do lote", type: "text", placeholder: "ex: LOTE 3" },
+    { key: "convenio", label: "Convênio", type: "select", options: ["Bradesco Clínica", "Bradesco Saúde"], default: "Bradesco Clínica" },
+    { key: "dataEmissao", label: "Data de emissão", type: "date", required: false },
+    { key: "dataEnvio", label: "Data de envio do lote", type: "date", default: todayISO() },
+    { key: "valorNota", label: "Valor da nota (R$)", type: "currency" },
+    { key: "regimeTributario", label: "Regime tributário", type: "select", options: ["Simples Nacional", "Lucro Presumido", "Lucro Real"], default: "Simples Nacional" },
+  ];
+  const calcularImpostos = (valorNota) => ({
+    irValor: valorNota * 0.015, cofinsValor: valorNota * 0.03, pisValor: valorNota * 0.0065, csllValor: valorNota * 0.01,
+  });
+  const onAddProtocolo = async (record) => {
+    const valorNota = Number(record.valorNota) || 0;
+    const impostos = calcularImpostos(valorNota);
+    try {
+      const guiaCriada = await sbRest("faturamento_guias", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, convenio: record.convenio, numero_guia: record.numeroLote, tipo: "Outro", data_protocolo: record.dataEnvio, valor: valorNota, status: "Protocolada" } });
+      const guiaId = guiaCriada && guiaCriada[0] ? guiaCriada[0].id : null;
+      await sbRest("protocolo_bradesco", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, numero_lote: record.numeroLote, data_emissao: record.dataEmissao || null, data_envio: record.dataEnvio, valor_nota: valorNota, regime_tributario: record.regimeTributario, ir_valor: impostos.irValor, cofins_valor: impostos.cofinsValor, pis_valor: impostos.pisValor, csll_valor: impostos.csllValor, faturamento_guia_id: guiaId } });
+      await reload();
+    } catch (e) { alert("Não foi possível salvar: " + e.message); }
+  };
+  const statusDaGuia = (faturamentoGuiaId) => { const g = guias.find((x) => x.id === faturamentoGuiaId); return g ? g.status : "—"; };
+  const columns = [
+    { key: "numeroLote", label: "Lote" }, { key: "dataEnvio", label: "Envio", render: (r) => fmtDate(r.dataEnvio) },
+    { key: "valorNota", label: "Valor da nota", render: (r) => fmtBRL(r.valorNota) },
+    { key: "totalImpostos", label: "Impostos retidos", render: (r) => <span className="text-xs" style={{ color: T.muted }}>{fmtBRL(r.irValor + r.cofinsValor + r.pisValor + r.csllValor)}</span> },
+    { key: "statusGuia", label: "Status (Contas a Receber)", render: (r) => { const s = statusDaGuia(r.faturamentoGuiaId); const tone = { Protocolada: "muted", Faturada: "amber", Paga: "green", Vencida: "red" }[s] || "muted"; return <Badge tone={tone}>{s}</Badge>; } },
+  ];
+  const totalNotas = protocolos.reduce((s, r) => s + Number(r.valorNota), 0);
+  const totalImpostos = protocolos.reduce((s, r) => s + Number(r.irValor) + Number(r.cofinsValor) + Number(r.pisValor) + Number(r.csllValor), 0);
+  const pagos = protocolos.filter((r) => statusDaGuia(r.faturamentoGuiaId) === "Paga");
+  return (
+    <ModuleShell icon={ClipboardList} title="Protocolo Bradesco" subtitle="Lote enviado, valor e data — cria automaticamente o lançamento em Contas a Receber" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Registrar lote" fields={fields} columns={columns} rows={protocolos} onAdd={onAddProtocolo} onUpdate={() => {}} onDelete={remove}
+      kpis={[{ label: "Lotes registrados", value: protocolos.length }, { label: "Valor total das notas", value: fmtBRL(totalNotas), tone: "coral" }, { label: "Impostos retidos (total)", value: fmtBRL(totalImpostos), tone: "amber" }, { label: "Lotes pagos", value: pagos.length, tone: "green" }]}
+      extra={<Card className="mb-5"><p className="text-xs" style={{ color: T.muted }}>Cada lote registrado aqui já aparece automaticamente em <b>Contas a Receber</b> — marque como pago por lá (ou pela conciliação automática do OFX) que o status atualiza aqui também.</p></Card>} />
+  );
+}
+
 function ProtocoloGuiasModulo() {
   const { perfil } = useAuth();
   const { data: profissionais } = useRecords("cadProfissionais");
@@ -3710,7 +3757,7 @@ function RelatoriosModulo() {
 
 const ALL_MENU = [
   { group: "Visão", items: [{ key: "visao", label: "Dashboard", icon: LayoutDashboard, tone: "coral" }, { key: "painelCritico", label: "Painel Crítico", icon: AlertTriangle, tone: "coral" }] },
-  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "relatorioCaixa", label: "Relatório de Caixa", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "protocoloGuias", label: "Protocolo de Guias", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }, { key: "sublocacao", label: "Receita de Sublocação", icon: Building2, tone: "coral" }, { key: "importarOfx", label: "Importar Extrato (OFX)", icon: Upload, tone: "coral" }] },
+  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "relatorioCaixa", label: "Relatório de Caixa", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "protocoloGuias", label: "Protocolo de Guias", icon: ClipboardList, tone: "coral" }, { key: "protocoloBradesco", label: "Protocolo Bradesco", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }, { key: "sublocacao", label: "Receita de Sublocação", icon: Building2, tone: "coral" }, { key: "importarOfx", label: "Importar Extrato (OFX)", icon: Upload, tone: "coral" }] },
   { group: "Atendimento", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producaoParticulares", label: "Produção — Particulares", icon: Stethoscope, tone: "teal" }, { key: "producaoConveniosGeral", label: "Produção — Convênios", icon: Stethoscope, tone: "teal" }, { key: "producaoBradescoClinica", label: "Produção — Bradesco Clínica", icon: Stethoscope, tone: "teal" }, { key: "producaoAuroraSaude", label: "Produção — Aurora Saúde", icon: Stethoscope, tone: "teal" }, { key: "producaoIpsm", label: "Produção — IPSM", icon: Stethoscope, tone: "teal" }, { key: "producaoResumoGeral", label: "Produção — Valores Gerais", icon: Stethoscope, tone: "coral" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
   { group: "Setor de Vacinas", items: [{ key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "entradaEstoqueVacinas", label: "Entrada de Estoque", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "pacoteVacinas", label: "Pacote Personalizado", icon: Syringe, tone: "coral" }] },
   { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }, { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" }] },
@@ -3722,7 +3769,7 @@ const ALL_MENU = [
   { group: "Documentos & Chat", items: [{ key: "bancoDocumentos", label: "Banco de Documentos", icon: FileText, tone: "coral" }, { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas (E-mail/WhatsApp)", icon: Bell, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "repasse", "sublocacao", "equipe", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "cadCategorias", "cadTiposPagamento", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
+const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "cadCategorias", "cadTiposPagamento", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
 const RESTRICTED_MENUS = {
   recepcao: { group: "Minha área", items: [
@@ -3812,6 +3859,7 @@ function AppInner() {
       case "procedimentos": return <ProcedimentosModulo />;
       case "faturamento": return <FaturamentoModulo />;
       case "protocoloGuias": return <ProtocoloGuiasModulo />;
+      case "protocoloBradesco": return <ProtocoloBradescoModulo />;
       case "repasse": return <RepasseMedicoModulo />;
       case "sublocacao": return <SublocacaoModulo />;
       case "importarOfx": return <ImportarOFXModulo />;
