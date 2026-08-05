@@ -1835,13 +1835,6 @@ function FaturamentoModulo() {
     { key: "bancoNome", label: "Banco", render: (r) => (bancosCadastro.find((b) => b.id === r.bancoId) || {}).nome || "—" },
     { key: "status", label: "Status", render: (r) => { const tone = { Protocolada: "muted", Faturada: "amber", Paga: "green", Vencida: "red" }[r.status]; return <Badge tone={tone}>{r.status}</Badge>; } },
   ];
-  const porStatus = useMemo(() => { const map = {}; data.forEach((r) => { if (!map[r.status]) map[r.status] = { status: r.status, valor: 0, qtd: 0 }; map[r.status].valor += r.valor; map[r.status].qtd += 1; }); const ordem = ["Protocolada", "Faturada", "Paga", "Vencida"]; return ordem.filter((s) => map[s]).map((s) => map[s]); }, [data]);
-  const totalProtocolado = data.reduce((s, r) => s + r.valor, 0);
-  const totalPago = data.filter((r) => r.status === "Paga").reduce((s, r) => s + r.valor, 0);
-  const totalVencido = data.filter((r) => r.status === "Vencida").reduce((s, r) => s + r.valor, 0);
-  const totalFaturado = data.filter((r) => r.status === "Faturada").reduce((s, r) => s + r.valor, 0);
-  const porConvenio = useMemo(() => { const map = {}; data.forEach((r) => { map[r.convenio] = (map[r.convenio] || 0) + r.valor; }); return Object.entries(map).map(([convenio, valor]) => ({ convenio, valor })).sort((a, b) => b.valor - a.valor); }, [data]);
-
   const [filtroMes, setFiltroMes] = useState("");
   const [filtroDe, setFiltroDe] = useState("");
   const [filtroAte, setFiltroAte] = useState("");
@@ -1852,6 +1845,13 @@ function FaturamentoModulo() {
     return true;
   });
   const pendentes = dataFiltrada.filter((r) => r.status !== "Paga");
+
+  const porStatus = useMemo(() => { const map = {}; dataFiltrada.forEach((r) => { if (!map[r.status]) map[r.status] = { status: r.status, valor: 0, qtd: 0 }; map[r.status].valor += r.valor; map[r.status].qtd += 1; }); const ordem = ["Protocolada", "Faturada", "Paga", "Vencida"]; return ordem.filter((s) => map[s]).map((s) => map[s]); }, [dataFiltrada]);
+  const totalProtocolado = dataFiltrada.reduce((s, r) => s + r.valor, 0);
+  const totalPago = dataFiltrada.filter((r) => r.status === "Paga").reduce((s, r) => s + r.valor, 0);
+  const totalVencido = dataFiltrada.filter((r) => r.status === "Vencida").reduce((s, r) => s + r.valor, 0);
+  const totalFaturado = dataFiltrada.filter((r) => r.status === "Faturada").reduce((s, r) => s + r.valor, 0);
+  const porConvenio = useMemo(() => { const map = {}; dataFiltrada.forEach((r) => { map[r.convenio] = (map[r.convenio] || 0) + r.valor; }); return Object.entries(map).map(([convenio, valor]) => ({ convenio, valor })).sort((a, b) => b.valor - a.valor); }, [dataFiltrada]);
 
   return (
     <>
