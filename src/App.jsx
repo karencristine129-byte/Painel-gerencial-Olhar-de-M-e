@@ -191,6 +191,9 @@ const MODULES = {
   vendasVacinasPacotes: { table: "vendas_vacinas_pacotes", order: "data.desc",
     toDb: (r) => ({ data: r.data, paciente: r.paciente, itens: r.itens, desconto_tipo: r.descontoTipo, desconto_valor: r.descontoValor, valor_total: r.valorTotal }),
     fromDb: (r) => ({ id: r.id, data: r.data, paciente: r.paciente, itens: r.itens, descontoTipo: r.desconto_tipo, descontoValor: r.desconto_valor, valorTotal: r.valor_total }) },
+  protocolosGuias: { table: "protocolos_guias", order: "data_protocolo.desc",
+    toDb: (r) => ({ numero_protocolo: r.numeroProtocolo, data_protocolo: r.dataProtocolo, itens: r.itens, total_guias: r.totalGuias, criado_por: r.criadoPor, criado_por_nome: r.criadoPorNome }),
+    fromDb: (r) => ({ id: r.id, numeroProtocolo: r.numero_protocolo, dataProtocolo: r.data_protocolo, itens: r.itens, totalGuias: r.total_guias, criadoPor: r.criado_por, criadoPorNome: r.criado_por_nome, criadoEm: r.criado_em }) },
   posVenda: { table: "pos_venda_ligacoes", order: "data.desc",
     toDb: (r) => ({ data: r.data, paciente: r.paciente, telefone: r.telefone, convertida: !!r.convertida, agendamento_feito: !!r.agendamentoFeito, data_agendamento: r.dataAgendamento || null, observacoes: r.observacoes }),
     fromDb: (r) => ({ id: r.id, data: r.data, paciente: r.paciente, telefone: r.telefone, convertida: r.convertida, agendamentoFeito: r.agendamento_feito, dataAgendamento: r.data_agendamento, observacoes: r.observacoes }) },
@@ -1125,6 +1128,111 @@ function EntradaEstoqueVacinasModulo() {
 }
 
 /* ============================== PACOTE PERSONALIZADO DE VACINAS ============================== */
+/* ============================== PROTOCOLO DE GUIAS ============================== */
+function gerarNumeroProtocolo(nomeUsuario) {
+  const iniciais = (nomeUsuario || "USUARIO").trim().split(" ").map((p) => p[0]).join("").toUpperCase().slice(0, 4);
+  const agora = new Date();
+  const dataParte = agora.toISOString().slice(0, 10).replace(/-/g, "");
+  const horaParte = agora.toTimeString().slice(0, 8).replace(/:/g, "");
+  return `${iniciais}-${dataParte}-${horaParte}`;
+}
+function ProtocoloGuiasModulo() {
+  const { perfil } = useAuth();
+  const { data: profissionais } = useRecords("cadProfissionais");
+  const { data: conveniosCadastro } = useRecords("cadConvenios");
+  const { data: protocolos, add, remove, loading, erro } = useRecords("protocolosGuias");
+  const nomesProfissionais = profissionais.map((p) => p.nome);
+  const opcoesConvenio = conveniosCadastro.length ? conveniosCadastro.map((c) => c.nome) : CONVENIOS;
+  const [dataProtocolo, setDataProtocolo] = useState(todayISO());
+  const [itens, setItens] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [profissionalSel, setProfissionalSel] = useState("");
+  const [convenioSel, setConvenioSel] = useState("");
+  const [qtdSel, setQtdSel] = useState(1);
+
+  const adicionarItem = () => {
+    if (!profissionalSel || !convenioSel) return;
+    setItens((p) => [...p, { profissional: profissionalSel, convenio: convenioSel, quantidade: Number(qtdSel) || 1 }]);
+    setProfissionalSel(""); setConvenioSel(""); setQtdSel(1);
+  };
+  const removerItem = (idx) => setItens((p) => p.filter((_, i) => i !== idx));
+  const totalGuias = itens.reduce((s, i) => s + Number(i.quantidade), 0);
+
+  const fecharProtocolo = async () => {
+    if (itens.length === 0) return alert("Adicione ao menos um item ao protocolo.");
+    setBusy(true);
+    const numero = gerarNumeroProtocolo(perfil.nome);
+    await add({ numeroProtocolo: numero, dataProtocolo, itens, totalGuias, criadoPor: perfil.id, criadoPorNome: perfil.nome });
+    setItens([]); setDataProtocolo(todayISO());
+    setBusy(false);
+  };
+
+  return (
+    <div>
+      <SectionHeader icon={ClipboardList} title="Protocolo de Guias" subtitle="Monte o protocolo com vários profissionais e convênios, depois feche — o número é gerado automaticamente" tone="coral" />
+      <Card className="mb-5">
+        <div className="flex flex-wrap gap-3 items-end mb-4">
+          <Field label="Data do protocolo"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={dataProtocolo} onChange={(e) => setDataProtocolo(e.target.value)} /></Field>
+        </div>
+        <p className="text-[11px] font-semibold uppercase mb-2" style={{ color: T.muted, letterSpacing: "0.06em" }}>Adicionar guia ao protocolo</p>
+        <div className="flex flex-wrap gap-3 items-end mb-4">
+          <Field label="Profissional">
+            <select className="rounded-lg px-3 py-2 text-sm outline-none w-56" style={inputStyle} value={profissionalSel} onChange={(e) => setProfissionalSel(e.target.value)}>
+              <option value="" disabled>Selecione…</option>
+              {nomesProfissionais.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </Field>
+          <Field label="Convênio">
+            <select className="rounded-lg px-3 py-2 text-sm outline-none w-52" style={inputStyle} value={convenioSel} onChange={(e) => setConvenioSel(e.target.value)}>
+              <option value="" disabled>Selecione…</option>
+              {opcoesConvenio.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Field>
+          <Field label="Quantidade de guias"><input type="number" min="1" className="rounded-lg px-3 py-2 text-sm outline-none w-28" style={inputStyle} value={qtdSel} onChange={(e) => setQtdSel(e.target.value)} /></Field>
+          <Btn small tone="teal" icon={Plus} onClick={adicionarItem}>Adicionar</Btn>
+        </div>
+        {itens.length > 0 && (
+          <div className="mb-4">
+            <table className="w-full text-sm">
+              <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Profissional</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Convênio</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Guias</th><th></th></tr></thead>
+              <tbody>{itens.map((it, idx) => (
+                <tr key={idx} style={{ borderBottom: `1px solid ${T.border}` }}>
+                  <td className="py-2 px-2" style={{ color: T.text }}>{it.profissional}</td><td className="py-2 px-2">{it.convenio}</td><td className="py-2 px-2">{it.quantidade}</td>
+                  <td className="py-2 px-2 text-right"><button onClick={() => removerItem(idx)}><Trash2 size={13} style={{ color: T.red }} /></button></td>
+                </tr>
+              ))}</tbody>
+              <tfoot><tr><td className="py-2 px-2 font-bold" style={{ color: T.text }}>Total</td><td></td><td className="py-2 px-2 font-bold">{totalGuias}</td><td></td></tr></tfoot>
+            </table>
+          </div>
+        )}
+        <Btn disabled={busy || itens.length === 0} onClick={fecharProtocolo}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Fechar protocolo</Btn>
+      </Card>
+      <Card>
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Protocolos fechados ({protocolos.length})</p>
+        {erro && <p className="text-sm mb-3" style={{ color: T.red }}>{erro}</p>}
+        {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> :
+          protocolos.length === 0 ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhum protocolo fechado ainda.</div> : (
+          <div className="flex flex-col gap-2">
+            {protocolos.map((p) => (
+              <div key={p.id} className="rounded-xl px-4 py-3" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-sm" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>Protocolo {p.numeroProtocolo}</span>
+                  <div className="flex items-center gap-3">
+                    <span style={{ color: T.green, fontWeight: 700 }}>{p.totalGuias} guia(s)</span>
+                    <button onClick={() => { if (confirm("Remover este protocolo?")) remove(p.id); }}><Trash2 size={13} style={{ color: T.red }} /></button>
+                  </div>
+                </div>
+                <p className="text-xs" style={{ color: T.muted }}>{fmtDate(p.dataProtocolo)} — lançado por {p.criadoPorNome}</p>
+                <p className="text-xs mt-1" style={{ color: T.muted }}>{(p.itens || []).map((i) => `${i.profissional} (${i.convenio}: ${i.quantidade})`).join(", ")}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 function PacoteVacinasModulo() {
   const { data: vacinasCat, update: updateVacina, loading: loadingVacinas } = useRecords("vacinas");
   const { data: pacotes, add, remove, loading, erro } = useRecords("vendasVacinasPacotes");
@@ -3428,7 +3536,7 @@ function RelatoriosModulo() {
 
 const ALL_MENU = [
   { group: "Visão", items: [{ key: "visao", label: "Dashboard", icon: LayoutDashboard, tone: "coral" }, { key: "painelCritico", label: "Painel Crítico", icon: AlertTriangle, tone: "coral" }] },
-  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }, { key: "sublocacao", label: "Receita de Sublocação", icon: Building2, tone: "coral" }, { key: "importarOfx", label: "Importar Extrato (OFX)", icon: Upload, tone: "coral" }] },
+  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "protocoloGuias", label: "Protocolo de Guias", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }, { key: "sublocacao", label: "Receita de Sublocação", icon: Building2, tone: "coral" }, { key: "importarOfx", label: "Importar Extrato (OFX)", icon: Upload, tone: "coral" }] },
   { group: "Atendimento", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producaoParticulares", label: "Produção — Particulares", icon: Stethoscope, tone: "teal" }, { key: "producaoConveniosGeral", label: "Produção — Convênios", icon: Stethoscope, tone: "teal" }, { key: "producaoBradescoClinica", label: "Produção — Bradesco Clínica", icon: Stethoscope, tone: "teal" }, { key: "producaoAuroraSaude", label: "Produção — Aurora Saúde", icon: Stethoscope, tone: "teal" }, { key: "producaoIpsm", label: "Produção — IPSM", icon: Stethoscope, tone: "teal" }, { key: "producaoResumoGeral", label: "Produção — Valores Gerais", icon: Stethoscope, tone: "coral" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
   { group: "Setor de Vacinas", items: [{ key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "entradaEstoqueVacinas", label: "Entrada de Estoque", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "pacoteVacinas", label: "Pacote Personalizado", icon: Syringe, tone: "coral" }] },
   { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }] },
@@ -3440,7 +3548,7 @@ const ALL_MENU = [
   { group: "Documentos & Chat", items: [{ key: "bancoDocumentos", label: "Banco de Documentos", icon: FileText, tone: "coral" }, { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas (E-mail/WhatsApp)", icon: Bell, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "contas", "faturamento", "repasse", "sublocacao", "equipe", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
+const FINANCE_TABS = ["financeiro", "contas", "faturamento", "protocoloGuias", "repasse", "sublocacao", "equipe", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
 const RESTRICTED_MENUS = {
   recepcao: { group: "Minha área", items: [
@@ -3524,6 +3632,7 @@ function AppInner() {
       case "posVenda": return <PosVendaModulo />;
       case "procedimentos": return <ProcedimentosModulo />;
       case "faturamento": return <FaturamentoModulo />;
+      case "protocoloGuias": return <ProtocoloGuiasModulo />;
       case "repasse": return <RepasseMedicoModulo />;
       case "sublocacao": return <SublocacaoModulo />;
       case "importarOfx": return <ImportarOFXModulo />;
