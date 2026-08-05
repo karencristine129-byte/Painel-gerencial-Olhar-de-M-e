@@ -837,7 +837,7 @@ function ExportarPeriodoModal({ campoData, fields, rows, filename, onClose }) {
   );
 }
 
-function ModuleShell({ icon, title, subtitle, tone, dailyFields, dailyCta, fields, columns, rows, onAdd, onUpdate, onDelete, onBulkImport, kpis, charts, extra, loading, erro }) {
+function ModuleShell({ icon, title, subtitle, tone, dailyFields, dailyCta, fields, columns, rows, onAdd, onUpdate, onDelete, onBulkImport, kpis, charts, extra, loading, erro, ocultarLancamento }) {
   const [editing, setEditing] = useState(null);
   const [importing, setImporting] = useState(false);
   const [exportando, setExportando] = useState(false);
@@ -854,7 +854,7 @@ function ModuleShell({ icon, title, subtitle, tone, dailyFields, dailyCta, field
       </div>
       {erro && <Card className="mb-5" style={{ borderColor: `${T.red}55` }}><span className="text-sm" style={{ color: T.red }}>Erro ao carregar dados: {erro}</span></Card>}
       {kpis && kpis.length > 0 && <div className="grid gap-3 mb-6" style={{ gridTemplateColumns: `repeat(${Math.min(kpis.length, 4)}, minmax(0,1fr))` }}>{kpis.map((k, i) => <KpiCard key={i} {...k} />)}</div>}
-      <DailyEntryPanel tone={tone} fields={dailyFields} cta={dailyCta} onSubmit={(form) => onAdd(normalizeForm(fields, form))} />
+      {!ocultarLancamento && <DailyEntryPanel tone={tone} fields={dailyFields} cta={dailyCta} onSubmit={(form) => onAdd(normalizeForm(fields, form))} />}
       {charts}{extra}
       <Card>
         <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Histórico de registros</p>
@@ -911,7 +911,7 @@ function FinanceiroModulo() {
   return (
     <>
       <FiltroPeriodoBar filtroMes={filtroMes} setFiltroMes={setFiltroMes} filtroDe={filtroDe} setFiltroDe={setFiltroDe} filtroAte={filtroAte} setFiltroAte={setFiltroAte} />
-    <ModuleShell icon={Wallet} title="Financeiro" subtitle="Fluxo de caixa, entradas, saídas e DRE consolidado" tone="coral" loading={loading} erro={erro}
+    <ModuleShell icon={Wallet} title="Financeiro" subtitle="Fluxo de caixa, entradas, saídas e DRE consolidado — lançamentos entram pela Importação de OFX ou por Importar planilha" tone="coral" loading={loading} erro={erro} ocultarLancamento
       dailyFields={fields} dailyCta="Registrar movimento" fields={fields} columns={columns} rows={dataFiltrada} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Entradas", value: fmtBRL(entradas), tone: "green", icon: TrendingUp }, { label: "Saídas", value: fmtBRL(saidas), tone: "red", icon: TrendingDown },
         { label: "Resultado do período", value: fmtBRL(saldo), tone: saldo >= 0 ? "green" : "red", icon: Activity }, { label: "Margem líquida", value: fmtPct(margem), tone: margem >= 0 ? "green" : "red" },
@@ -3881,7 +3881,7 @@ function RelatoriosModulo() {
 const ALL_MENU = [
   { group: "Visão", items: [{ key: "visao", label: "Dashboard", icon: LayoutDashboard, tone: "coral" }, { key: "painelCritico", label: "Painel Crítico", icon: AlertTriangle, tone: "coral" }] },
   { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "relatorioCaixa", label: "Relatório de Caixa", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "protocoloGuias", label: "Protocolo de Guias", icon: ClipboardList, tone: "coral" }, { key: "protocoloBradesco", label: "Protocolo Bradesco", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }, { key: "sublocacao", label: "Receita de Sublocação", icon: Building2, tone: "coral" }, { key: "importarOfx", label: "Importar Extrato (OFX)", icon: Upload, tone: "coral" }] },
-  { group: "Atendimento", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producaoParticulares", label: "Produção — Particulares", icon: Stethoscope, tone: "teal" }, { key: "producaoConveniosGeral", label: "Produção — Convênios", icon: Stethoscope, tone: "teal" }, { key: "producaoBradescoClinica", label: "Produção — Bradesco Clínica", icon: Stethoscope, tone: "teal" }, { key: "producaoAuroraSaude", label: "Produção — Aurora Saúde", icon: Stethoscope, tone: "teal" }, { key: "producaoIpsm", label: "Produção — IPSM", icon: Stethoscope, tone: "teal" }, { key: "producaoResumoGeral", label: "Produção — Valores Gerais", icon: Stethoscope, tone: "coral" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
+  { group: "Atendimento", items: [{ key: "producaoParticulares", label: "Produção — Particulares", icon: Stethoscope, tone: "teal" }, { key: "producaoConveniosGeral", label: "Produção — Convênios", icon: Stethoscope, tone: "teal" }, { key: "producaoBradescoClinica", label: "Produção — Bradesco Clínica", icon: Stethoscope, tone: "teal" }, { key: "producaoAuroraSaude", label: "Produção — Aurora Saúde", icon: Stethoscope, tone: "teal" }, { key: "producaoIpsm", label: "Produção — IPSM", icon: Stethoscope, tone: "teal" }, { key: "producaoResumoGeral", label: "Produção — Valores Gerais", icon: Stethoscope, tone: "coral" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
   { group: "Setor de Vacinas", items: [{ key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "entradaEstoqueVacinas", label: "Entrada de Estoque", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "pacoteVacinas", label: "Pacote Personalizado", icon: Syringe, tone: "coral" }] },
   { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }, { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" }] },
   { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "relatorioColaborador", label: "Relatório de Colaborador", icon: FileText, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" } ] },
@@ -4048,7 +4048,7 @@ function AppInner() {
           <div className="hidden md:flex items-center justify-between px-8 py-4" style={{ background: T.card, borderBottom: `1px solid ${T.border}` }}>
             <h1 className="text-lg font-bold" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{activeMeta.label}</h1>
             <div className="flex items-center gap-4">
-              <Btn tone="coral" icon={Plus} onClick={() => setTab("convenios")}>Novo Atendimento</Btn>
+              <Btn tone="coral" icon={Plus} onClick={() => setTab("producaoConveniosGeral")}>Novo Atendimento</Btn>
               <div className="flex items-center gap-3 pl-2" style={{ borderLeft: `1px solid ${T.border}` }}>
                 <NotificationsMenu setTab={setTab} />
                 <button title="Configurações" onClick={() => setTab("unidades")}><Settings size={18} style={{ color: T.muted }} /></button>
