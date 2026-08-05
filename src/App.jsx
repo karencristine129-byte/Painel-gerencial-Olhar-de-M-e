@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Wallet, HeartHandshake, Syringe, Package, Stethoscope,
   Receipt, Users, Megaphone, FlaskConical, Plus, Pencil, Trash2, X,
   AlertTriangle, TrendingUp, TrendingDown, Activity, Building2,
-  CalendarDays, Sparkles, ChevronDown, LogOut, Loader2, Lock,
+  CalendarDays, Sparkles, ChevronDown, ChevronLeft, ChevronRight, RefreshCw, LogOut, Loader2, Lock,
   Upload, FileSpreadsheet, Printer, Download, FileText, CheckCircle2, ClipboardList,
   Bell, Settings, UserCircle,
 } from "lucide-react";
@@ -2021,14 +2021,35 @@ function ProcedimentosModulo() {
 }
 
 /* ============================== VISÃO GERAL ============================== */
+function SeletorPeriodo({ labelMes, mesSelecionado, onAnterior, onProximo, onSelecionarMes, onAtualizar, atualizando, tone = "coral" }) {
+  const cor = T[tone] || T.coral;
+  return (
+    <div className="flex items-center justify-end gap-2 mb-5 flex-wrap">
+      <div className="relative">
+        <button className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center gap-2" style={{ background: cor }}><CalendarDays size={14} /> Mês: {labelMes}</button>
+        <input type="month" value={mesSelecionado} onChange={(e) => onSelecionarMes(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" title="Escolher mês" />
+      </div>
+      <button onClick={onAnterior} title="Mês anterior" className="w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0" style={{ background: cor }}><ChevronLeft size={16} /></button>
+      <button onClick={onProximo} title="Próximo mês" className="w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0" style={{ background: cor }}><ChevronRight size={16} /></button>
+      <button onClick={onAtualizar} disabled={atualizando} title="Atualizar dados" className="w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0" style={{ background: cor, opacity: atualizando ? 0.6 : 1 }}>{atualizando ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={16} />}</button>
+    </div>
+  );
+}
+
 function VisaoGeral() {
   const { unidade } = useUnidade();
   const { perfil } = useAuth();
   const canFinance = perfil && perfil.papel !== "operacional";
   const financeiro = useRecords("financeiro", canFinance), atendimentos = useRecords("convenios"), vacinas = useRecords("vacinas"), insumos = useRecords("insumos"), contas = useRecords("contas", canFinance), pessoal = useRecords("pessoal"), leads = useRecords("marketing"), procedimentos = useRecords("procedimentos"), faturamento = useRecords("faturamento", canFinance), producao = useRecords("producao"), metas = useRecords("metas", canFinance);
   const anyLoading = [financeiro, atendimentos, vacinas, insumos, contas, pessoal, leads, procedimentos, faturamento, producao, metas].some((m) => m.loading);
-  const mesAtual = todayISO().slice(0, 7);
+  const [mesSelecionado, setMesSelecionado] = useState(todayISO().slice(0, 7));
+  const [atualizando, setAtualizando] = useState(false);
+  const mesAtual = mesSelecionado;
   const mesAnterior = (() => { const [y, m] = mesAtual.split("-").map(Number); const d = new Date(y, m - 2, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; })();
+  const mudarMes = (delta) => { const [y, m] = mesSelecionado.split("-").map(Number); const d = new Date(y, m - 1 + delta, 1); setMesSelecionado(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`); };
+  const recarregarTudo = async () => { setAtualizando(true); await Promise.all([financeiro, atendimentos, vacinas, insumos, contas, pessoal, leads, procedimentos, faturamento, producao, metas].map((m) => m.reload && m.reload())); setAtualizando(false); };
+  const NOMES_MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+  const labelMes = (() => { const [y, m] = mesAtual.split("-").map(Number); return `${NOMES_MESES[m - 1]}/${y}`; })();
 
   const entradas = financeiro.data.filter((r) => r.tipo === "entrada").reduce((s, r) => s + r.valor, 0);
   const saidas = financeiro.data.filter((r) => r.tipo === "saida").reduce((s, r) => s + r.valor, 0);
@@ -2070,6 +2091,7 @@ function VisaoGeral() {
 
   return (
     <div>
+      <SeletorPeriodo labelMes={labelMes} mesSelecionado={mesSelecionado} onAnterior={() => mudarMes(-1)} onProximo={() => mudarMes(1)} onSelecionarMes={setMesSelecionado} onAtualizar={recarregarTudo} atualizando={atualizando} tone="coral" />
       {/* Saudação */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold mb-1" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>Olá, {primeiroNome} 👋</h1>
