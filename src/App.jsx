@@ -1228,11 +1228,14 @@ function ProtocoloBradescoModulo() {
   const totalNotas = protocolos.reduce((s, r) => s + Number(r.valorNota), 0);
   const totalImpostos = protocolos.reduce((s, r) => s + Number(r.irValor) + Number(r.cofinsValor) + Number(r.pisValor) + Number(r.csllValor), 0);
   const pagos = protocolos.filter((r) => statusDaGuia(r.faturamentoGuiaId) === "Paga");
+  const faturados = protocolos.filter((r) => statusDaGuia(r.faturamentoGuiaId) === "Faturada");
+  const valorRecebido = pagos.reduce((s, r) => s + Number(r.valorNota), 0);
+  const valorAReceber = protocolos.filter((r) => statusDaGuia(r.faturamentoGuiaId) !== "Paga").reduce((s, r) => s + Number(r.valorNota), 0);
   return (
-    <ModuleShell icon={ClipboardList} title="Protocolo Bradesco" subtitle="Lote enviado, valor e data — cria automaticamente o lançamento em Contas a Receber" tone="coral" loading={loading} erro={erro}
+    <ModuleShell icon={ClipboardList} title="Protocolo Bradesco" subtitle="Histórico completo — lotes protocolados, faturados, pagos e vencidos, tudo num lugar só" tone="coral" loading={loading} erro={erro}
       dailyFields={fields} dailyCta="Registrar lote" fields={fields} columns={columns} rows={protocolos} onAdd={onAddProtocolo} onUpdate={() => {}} onDelete={remove}
-      kpis={[{ label: "Lotes registrados", value: protocolos.length }, { label: "Valor total das notas", value: fmtBRL(totalNotas), tone: "coral" }, { label: "Impostos retidos (total)", value: fmtBRL(totalImpostos), tone: "amber" }, { label: "Lotes pagos", value: pagos.length, tone: "green" }]}
-      extra={<Card className="mb-5"><p className="text-xs" style={{ color: T.muted }}>Cada lote registrado aqui já aparece automaticamente em <b>Contas a Receber</b> — marque como pago por lá (ou pela conciliação automática do OFX) que o status atualiza aqui também.</p></Card>} />
+      kpis={[{ label: "Lotes registrados", value: protocolos.length }, { label: "Valor total das notas", value: fmtBRL(totalNotas), tone: "coral" }, { label: "Valor recebido", value: fmtBRL(valorRecebido), tone: "green" }, { label: "Valor a receber", value: fmtBRL(valorAReceber), tone: "amber" }, { label: "Impostos retidos (total)", value: fmtBRL(totalImpostos), tone: "amber" }, { label: "Lotes pagos", value: pagos.length, tone: "green" }, { label: "Lotes faturados (aguardando)", value: faturados.length, tone: "amber" }]}
+      extra={<Card className="mb-5"><p className="text-xs" style={{ color: T.muted }}>Esta tela mostra <b>todos</b> os lotes, independente do status. Cada um já aparece automaticamente em Contas a Receber enquanto não for pago — marque como pago por lá (ou pela conciliação automática do OFX) que o status atualiza aqui também.</p></Card>} />
   );
 }
 
@@ -1838,14 +1841,37 @@ function FaturamentoModulo() {
   const totalVencido = data.filter((r) => r.status === "Vencida").reduce((s, r) => s + r.valor, 0);
   const totalFaturado = data.filter((r) => r.status === "Faturada").reduce((s, r) => s + r.valor, 0);
   const porConvenio = useMemo(() => { const map = {}; data.forEach((r) => { map[r.convenio] = (map[r.convenio] || 0) + r.valor; }); return Object.entries(map).map(([convenio, valor]) => ({ convenio, valor })).sort((a, b) => b.valor - a.valor); }, [data]);
+
+  const [filtroMes, setFiltroMes] = useState("");
+  const [filtroDe, setFiltroDe] = useState("");
+  const [filtroAte, setFiltroAte] = useState("");
+  const dataFiltrada = data.filter((r) => {
+    if (filtroMes && monthKey(r.dataProtocolo) !== filtroMes) return false;
+    if (filtroDe && r.dataProtocolo < filtroDe) return false;
+    if (filtroAte && r.dataProtocolo > filtroAte) return false;
+    return true;
+  });
+  const pendentes = dataFiltrada.filter((r) => r.status !== "Paga");
+
   return (
-    <ModuleShell icon={ClipboardList} title="Faturamento de Convênios" subtitle="Guias protocoladas, faturadas, pagas e vencidas" tone="coral" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Registrar guia" fields={fields} columns={columns} rows={data} onAdd={onAddComputado} onUpdate={onUpdateComputado} onDelete={remove} onBulkImport={bulkAdd}
+    <>
+      <Card className="mb-5">
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Filtrar por competência ou período</p>
+        <div className="flex flex-wrap gap-3 items-end">
+          <Field label="Competência (mês)"><input type="month" className="rounded-lg px-3 py-2 text-sm outline-none w-40" style={inputStyle} value={filtroMes} onChange={(e) => { setFiltroMes(e.target.value); setFiltroDe(""); setFiltroAte(""); }} /></Field>
+          <Field label="De"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={filtroDe} onChange={(e) => { setFiltroDe(e.target.value); setFiltroMes(""); }} /></Field>
+          <Field label="Até"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={filtroAte} onChange={(e) => { setFiltroAte(e.target.value); setFiltroMes(""); }} /></Field>
+          {(filtroMes || filtroDe || filtroAte) && <Btn small variant="ghost" onClick={() => { setFiltroMes(""); setFiltroDe(""); setFiltroAte(""); }}>Limpar filtro</Btn>}
+        </div>
+      </Card>
+    <ModuleShell icon={ClipboardList} title="Contas a Receber" subtitle="Mostrando só o que ainda falta receber — as pagas ficam completas em Protocolo Bradesco" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Registrar guia" fields={fields} columns={columns} rows={pendentes} onAdd={onAddComputado} onUpdate={onUpdateComputado} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Total protocolado", value: fmtBRL(totalProtocolado) }, { label: "Faturado", value: fmtBRL(totalFaturado), tone: "amber" }, { label: "Pago", value: fmtBRL(totalPago), tone: "green" }, { label: "Vencido", value: fmtBRL(totalVencido), tone: totalVencido ? "red" : "green" }]}
       charts={<div className="grid md:grid-cols-2 gap-5">
         <ChartCard title="Valor por status da guia"><BarChart data={porStatus}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="status" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="valor" radius={[4, 4, 0, 0]}>{porStatus.map((s, i) => <Cell key={i} fill={{ Protocolada: T.muted, Faturada: T.amber, Paga: T.green, Vencida: T.red }[s.status]} />)}</Bar></BarChart></ChartCard>
         <ChartCard title="Valor por convênio"><PieChart><Pie data={porConvenio} dataKey="valor" nameKey="convenio" innerRadius={55} outerRadius={85} paddingAngle={2}>{porConvenio.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Pie><Tooltip formatter={(v) => fmtBRL(v)} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart></ChartCard>
       </div>} />
+    </>
   );
 }
 
