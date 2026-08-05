@@ -106,6 +106,30 @@ const fmtNum = (v) => (Number(v) || 0).toLocaleString("pt-BR");
 const fmtPct = (v) => `${(Number(v) || 0).toFixed(0)}%`;
 const fmtDate = (d) => { if (!d) return "—"; const dt = new Date(d + "T00:00:00"); return isNaN(dt) ? d : dt.toLocaleDateString("pt-BR"); };
 const monthKey = (d) => (d || "").slice(0, 7);
+function filtrarPorPeriodo(dados, dateKey, filtroMes, filtroDe, filtroAte) {
+  if (!filtroMes && !filtroDe && !filtroAte) return dados;
+  return dados.filter((r) => {
+    const v = r[dateKey];
+    if (!v) return true;
+    if (filtroMes && monthKey(v) !== filtroMes) return false;
+    if (filtroDe && v < filtroDe) return false;
+    if (filtroAte && v > filtroAte) return false;
+    return true;
+  });
+}
+function FiltroPeriodoBar({ filtroMes, setFiltroMes, filtroDe, setFiltroDe, filtroAte, setFiltroAte }) {
+  return (
+    <Card className="mb-5">
+      <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Filtrar por competência ou período</p>
+      <div className="flex flex-wrap gap-3 items-end">
+        <Field label="Competência (mês)"><input type="month" className="rounded-lg px-3 py-2 text-sm outline-none w-40" style={inputStyle} value={filtroMes} onChange={(e) => { setFiltroMes(e.target.value); setFiltroDe(""); setFiltroAte(""); }} /></Field>
+        <Field label="De"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={filtroDe} onChange={(e) => { setFiltroDe(e.target.value); setFiltroMes(""); }} /></Field>
+        <Field label="Até"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={filtroAte} onChange={(e) => { setFiltroAte(e.target.value); setFiltroMes(""); }} /></Field>
+        {(filtroMes || filtroDe || filtroAte) && <Btn small variant="ghost" onClick={() => { setFiltroMes(""); setFiltroDe(""); setFiltroAte(""); }}>Limpar filtro</Btn>}
+      </div>
+    </Card>
+  );
+}
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const diasAFrente = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 const weekdayLong = () => new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
@@ -849,6 +873,10 @@ function FinanceiroModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("financeiro");
   const { data: vacinasEstoque } = useRecords("vacinas");
   const { data: insumosEstoque } = useRecords("insumos");
+  const [filtroMes, setFiltroMes] = useState("");
+  const [filtroDe, setFiltroDe] = useState("");
+  const [filtroAte, setFiltroAte] = useState("");
+  const dataFiltrada = filtrarPorPeriodo(data, "data", filtroMes, filtroDe, filtroAte);
   const fields = [
     { key: "data", label: "Data", type: "date", default: todayISO() },
     { key: "tipo", label: "Tipo", type: "select", options: ["entrada", "saida"] },
@@ -862,11 +890,11 @@ function FinanceiroModulo() {
     { key: "linha", label: "Linha DRE" }, { key: "descricao", label: "Descrição" },
     { key: "valor", label: "Valor", render: (r) => <span style={{ color: r.tipo === "entrada" ? T.green : T.red, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(r.valor)}</span> },
   ];
-  const entradas = data.filter((r) => r.tipo === "entrada").reduce((s, r) => s + r.valor, 0);
-  const saidas = data.filter((r) => r.tipo === "saida").reduce((s, r) => s + r.valor, 0);
+  const entradas = dataFiltrada.filter((r) => r.tipo === "entrada").reduce((s, r) => s + r.valor, 0);
+  const saidas = dataFiltrada.filter((r) => r.tipo === "saida").reduce((s, r) => s + r.valor, 0);
   const saldo = entradas - saidas;
   const porMes = useMemo(() => { const map = {}; data.forEach((r) => { const m = monthKey(r.data); if (!map[m]) map[m] = { mes: m, entradas: 0, saidas: 0 }; map[m][r.tipo === "entrada" ? "entradas" : "saidas"] += r.valor; }); return Object.values(map).sort((a, b) => a.mes.localeCompare(b.mes)); }, [data]);
-  const dreLinha = (linhas) => linhas.map((l) => ({ linha: l, valor: data.filter((r) => r.linha === l).reduce((s, r) => s + r.valor, 0) })).filter((x) => x.valor > 0);
+  const dreLinha = (linhas) => linhas.map((l) => ({ linha: l, valor: dataFiltrada.filter((r) => r.linha === l).reduce((s, r) => s + r.valor, 0) })).filter((x) => x.valor > 0);
   const receitas = dreLinha(DRE_LINHAS_RECEITA), custos = dreLinha(DRE_LINHAS_CUSTO), despesas = dreLinha(DRE_LINHAS_DESPESA), impostos = dreLinha(DRE_LINHAS_IMPOSTO);
   const totalReceita = receitas.reduce((s, x) => s + x.valor, 0), totalCustos = custos.reduce((s, x) => s + x.valor, 0);
   const lucroBruto = totalReceita - totalCustos, totalDespesas = despesas.reduce((s, x) => s + x.valor, 0), totalImpostos = impostos.reduce((s, x) => s + x.valor, 0);
@@ -881,20 +909,23 @@ function FinanceiroModulo() {
     </div>
   );
   return (
+    <>
+      <FiltroPeriodoBar filtroMes={filtroMes} setFiltroMes={setFiltroMes} filtroDe={filtroDe} setFiltroDe={setFiltroDe} filtroAte={filtroAte} setFiltroAte={setFiltroAte} />
     <ModuleShell icon={Wallet} title="Financeiro" subtitle="Fluxo de caixa, entradas, saídas e DRE consolidado" tone="coral" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Registrar movimento" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
+      dailyFields={fields} dailyCta="Registrar movimento" fields={fields} columns={columns} rows={dataFiltrada} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Entradas", value: fmtBRL(entradas), tone: "green", icon: TrendingUp }, { label: "Saídas", value: fmtBRL(saidas), tone: "red", icon: TrendingDown },
         { label: "Resultado do período", value: fmtBRL(saldo), tone: saldo >= 0 ? "green" : "red", icon: Activity }, { label: "Margem líquida", value: fmtPct(margem), tone: margem >= 0 ? "green" : "red" },
         { label: "Valor em estoque — Vacinas", value: fmtBRL(valorEstoqueVacinas), tone: "teal" }, { label: "Valor em estoque — Insumos", value: fmtBRL(valorEstoqueInsumos), tone: "teal" }]}
       charts={<div className="grid md:grid-cols-2 gap-5">
-        <ChartCard title="Entradas x saídas por mês"><BarChart data={porMes}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="mes" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="entradas" name="Entradas" fill={T.green} radius={[4, 4, 0, 0]} /><Bar dataKey="saidas" name="Saídas" fill={T.red} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>
-        <ChartCard title="Composição da receita"><PieChart><Pie data={receitas} dataKey="valor" nameKey="linha" innerRadius={55} outerRadius={85} paddingAngle={2}>{receitas.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Pie><Tooltip formatter={(v) => fmtBRL(v)} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart></ChartCard>
+        <ChartCard title="Entradas x saídas por mês (histórico completo)"><BarChart data={porMes}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="mes" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="entradas" name="Entradas" fill={T.green} radius={[4, 4, 0, 0]} /><Bar dataKey="saidas" name="Saídas" fill={T.red} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>
+        <ChartCard title="Composição da receita (no período filtrado)"><PieChart><Pie data={receitas} dataKey="valor" nameKey="linha" innerRadius={55} outerRadius={85} paddingAngle={2}>{receitas.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Pie><Tooltip formatter={(v) => fmtBRL(v)} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart></ChartCard>
       </div>}
-      extra={<Card className="mb-5"><p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>DRE — Demonstrativo de Resultado</p>
+      extra={<Card className="mb-5"><p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>DRE — Demonstrativo de Resultado (período filtrado)</p>
         <div className="max-w-lg">{receitas.map((r) => <DreLine key={r.linha} label={r.linha} value={r.valor} />)}<DreLine label="(=) Receita Total" value={totalReceita} bold />
         {custos.map((r) => <DreLine key={r.linha} label={`(-) ${r.linha}`} value={r.valor} />)}<DreLine label="(=) Lucro Bruto" value={lucroBruto} bold />
         {despesas.map((r) => <DreLine key={r.linha} label={`(-) ${r.linha}`} value={r.valor} />)}{impostos.map((r) => <DreLine key={r.linha} label={`(-) ${r.linha}`} value={r.valor} />)}
         <div className="flex justify-between py-2 mt-1"><span className="font-bold text-sm" style={{ color: T.text }}>(=) Resultado do Período</span><span className="font-bold" style={{ color: resultado >= 0 ? T.green : T.red, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(resultado)}</span></div></div></Card>} />
+    </>
   );
 }
 
@@ -1231,11 +1262,18 @@ function ProtocoloBradescoModulo() {
   const faturados = protocolos.filter((r) => statusDaGuia(r.faturamentoGuiaId) === "Faturada");
   const valorRecebido = pagos.reduce((s, r) => s + Number(r.valorNota), 0);
   const valorAReceber = protocolos.filter((r) => statusDaGuia(r.faturamentoGuiaId) !== "Paga").reduce((s, r) => s + Number(r.valorNota), 0);
+  const [filtroMes, setFiltroMes] = useState("");
+  const [filtroDe, setFiltroDe] = useState("");
+  const [filtroAte, setFiltroAte] = useState("");
+  const protocolosFiltrados = filtrarPorPeriodo(protocolos, "dataEnvio", filtroMes, filtroDe, filtroAte);
   return (
+    <>
+      <FiltroPeriodoBar filtroMes={filtroMes} setFiltroMes={setFiltroMes} filtroDe={filtroDe} setFiltroDe={setFiltroDe} filtroAte={filtroAte} setFiltroAte={setFiltroAte} />
     <ModuleShell icon={ClipboardList} title="Protocolo Bradesco" subtitle="Histórico completo — lotes protocolados, faturados, pagos e vencidos, tudo num lugar só" tone="coral" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Registrar lote" fields={fields} columns={columns} rows={protocolos} onAdd={onAddProtocolo} onUpdate={() => {}} onDelete={remove}
-      kpis={[{ label: "Lotes registrados", value: protocolos.length }, { label: "Valor total das notas", value: fmtBRL(totalNotas), tone: "coral" }, { label: "Valor recebido", value: fmtBRL(valorRecebido), tone: "green" }, { label: "Valor a receber", value: fmtBRL(valorAReceber), tone: "amber" }, { label: "Impostos retidos (total)", value: fmtBRL(totalImpostos), tone: "amber" }, { label: "Lotes pagos", value: pagos.length, tone: "green" }, { label: "Lotes faturados (aguardando)", value: faturados.length, tone: "amber" }]}
+      dailyFields={fields} dailyCta="Registrar lote" fields={fields} columns={columns} rows={protocolosFiltrados} onAdd={onAddProtocolo} onUpdate={() => {}} onDelete={remove}
+      kpis={[{ label: "Lotes registrados", value: protocolosFiltrados.length }, { label: "Valor total das notas", value: fmtBRL(protocolosFiltrados.reduce((s, r) => s + Number(r.valorNota), 0)), tone: "coral" }, { label: "Valor recebido", value: fmtBRL(protocolosFiltrados.filter((r) => statusDaGuia(r.faturamentoGuiaId) === "Paga").reduce((s, r) => s + Number(r.valorNota), 0)), tone: "green" }, { label: "Valor a receber", value: fmtBRL(protocolosFiltrados.filter((r) => statusDaGuia(r.faturamentoGuiaId) !== "Paga").reduce((s, r) => s + Number(r.valorNota), 0)), tone: "amber" }, { label: "Impostos retidos (total)", value: fmtBRL(protocolosFiltrados.reduce((s, r) => s + Number(r.irValor) + Number(r.cofinsValor) + Number(r.pisValor) + Number(r.csllValor), 0)), tone: "amber" }, { label: "Lotes pagos", value: protocolosFiltrados.filter((r) => statusDaGuia(r.faturamentoGuiaId) === "Paga").length, tone: "green" }, { label: "Lotes faturados (aguardando)", value: protocolosFiltrados.filter((r) => statusDaGuia(r.faturamentoGuiaId) === "Faturada").length, tone: "amber" }]}
       extra={<Card className="mb-5"><p className="text-xs" style={{ color: T.muted }}>Esta tela mostra <b>todos</b> os lotes, independente do status. Cada um já aparece automaticamente em Contas a Receber enquanto não for pago — marque como pago por lá (ou pela conciliação automática do OFX) que o status atualiza aqui também.</p></Card>} />
+    </>
   );
 }
 
@@ -1649,16 +1687,23 @@ function ContasModulo() {
     { key: "status", label: "Status", render: (r) => <Badge tone={r.status === "Pago" ? "green" : r.status === "Atrasado" ? "red" : "amber"}>{r.status}</Badge> },
     { key: "acaoPagar", label: "", render: (r) => r.status !== "Pago" ? <Btn small tone="green" onClick={() => update(r.id, { status: "Pago", dataPagamento: todayISO() })}>Marcar como pago</Btn> : <span className="text-xs" style={{ color: T.muted }}>Pago em {fmtDate(r.dataPagamento)}</span> },
   ];
-  const pendentes = data.filter((r) => r.status !== "Pago"), pagos = data.filter((r) => r.status === "Pago"); const atrasados = data.filter((r) => r.status === "Atrasado" || (r.status === "Pendente" && r.vencimento < todayISO()));
+  const [filtroMes, setFiltroMes] = useState("");
+  const [filtroDe, setFiltroDe] = useState("");
+  const [filtroAte, setFiltroAte] = useState("");
+  const dataFiltrada = filtrarPorPeriodo(data, "vencimento", filtroMes, filtroDe, filtroAte);
+  const pendentes = dataFiltrada.filter((r) => r.status !== "Pago"), pagos = dataFiltrada.filter((r) => r.status === "Pago"); const atrasados = dataFiltrada.filter((r) => r.status === "Atrasado" || (r.status === "Pendente" && r.vencimento < todayISO()));
   const totalPendente = pendentes.reduce((s, r) => s + r.valor, 0), totalPago = pagos.reduce((s, r) => s + r.valor, 0);
   const proximos = pendentes.filter((r) => { const diff = (new Date(r.vencimento) - new Date(todayISO())) / 86400000; return diff >= 0 && diff <= 7; }).sort((a, b) => a.vencimento.localeCompare(b.vencimento));
   const porCategoria = useMemo(() => { const map = {}; pendentes.forEach((r) => { map[r.categoria] = (map[r.categoria] || 0) + r.valor; }); return Object.entries(map).map(([categoria, valor]) => ({ categoria, valor })); }, [pendentes]);
   return (
+    <>
+      <FiltroPeriodoBar filtroMes={filtroMes} setFiltroMes={setFiltroMes} filtroDe={filtroDe} setFiltroDe={setFiltroDe} filtroAte={filtroAte} setFiltroAte={setFiltroAte} />
     <ModuleShell icon={Receipt} title="Contas a Pagar" subtitle="Contas pendentes e pagas, mês a mês" tone="coral" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Lançar conta" fields={fields} columns={columns} rows={data} onAdd={onAddComputado} onUpdate={onUpdateComputado} onDelete={remove} onBulkImport={bulkAdd}
+      dailyFields={fields} dailyCta="Lançar conta" fields={fields} columns={columns} rows={dataFiltrada} onAdd={onAddComputado} onUpdate={onUpdateComputado} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Total pendente", value: fmtBRL(totalPendente), tone: "amber" }, { label: "Total pago", value: fmtBRL(totalPago), tone: "green" }, { label: "Atrasadas", value: atrasados.length, tone: atrasados.length ? "red" : "green" }, { label: "Vencendo em 7 dias", value: proximos.length, tone: proximos.length ? "amber" : "green" }]}
       charts={<ChartCard title="Valor pendente por categoria"><BarChart data={porCategoria}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="categoria" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="valor" fill={T.coral} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>}
       extra={proximos.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><div className="flex items-center gap-2 mb-2"><AlertTriangle size={15} style={{ color: T.amber }} /><span className="font-semibold text-sm" style={{ color: T.text }}>Vencimentos nos próximos 7 dias</span></div><div className="flex flex-col gap-1.5">{proximos.map((r) => (<div key={r.id} className="flex justify-between text-sm"><span style={{ color: T.muted }}>{r.descricao} — {fmtDate(r.vencimento)}</span><span style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(r.valor)}</span></div>))}</div></Card>} />
+    </>
   );
 }
 
