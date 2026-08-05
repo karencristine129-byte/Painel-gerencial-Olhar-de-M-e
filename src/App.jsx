@@ -197,6 +197,9 @@ const MODULES = {
   caixaLancamentos: { table: "caixa_lancamentos", order: "data.desc",
     toDb: (r) => ({ tipo_caixa: r.tipoCaixa, data: r.data, tipo: r.tipo, categoria: r.categoria, descricao: r.descricao, valor: r.valor }),
     fromDb: (r) => ({ id: r.id, tipoCaixa: r.tipo_caixa, data: r.data, tipo: r.tipo, categoria: r.categoria, descricao: r.descricao, valor: r.valor }) },
+  caixaSaldoInicial: { table: "caixa_saldo_inicial", order: "mes.desc",
+    toDb: (r) => ({ tipo_caixa: r.tipoCaixa, mes: monthToDate(r.mes), valor_inicial: r.valorInicial }),
+    fromDb: (r) => ({ id: r.id, tipoCaixa: r.tipo_caixa, mes: monthKey(r.mes), valorInicial: r.valor_inicial }) },
   cadCategorias: { table: "cadastro_categorias", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, aplicacao: r.aplicacao || "Geral" }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, aplicacao: r.aplicacao }) },
@@ -1778,8 +1781,10 @@ function SublocacaoModulo() {
 function RelatorioCaixaModulo() {
   const { data, add, update, remove, loading, erro } = useRecords("caixaLancamentos");
   const { data: categoriasCadastro } = useRecords("cadCategorias");
+  const { data: saldosIniciais } = useRecords("caixaSaldoInicial");
   const opcoesCategoria = categoriasCadastro.filter((c) => c.aplicacao === "Caixa" || c.aplicacao === "Geral").map((c) => c.nome);
   const [caixaAtivo, setCaixaAtivo] = useState("Vacinas");
+  const [mesAtivo, setMesAtivo] = useState(todayISO().slice(0, 7));
   const fields = [
     { key: "tipoCaixa", label: "Caixa", type: "select", options: ["Vacinas", "Recepção"], default: caixaAtivo },
     { key: "data", label: "Data", type: "date", default: todayISO() },
@@ -1788,16 +1793,19 @@ function RelatorioCaixaModulo() {
     { key: "descricao", label: "Descrição", type: "text", required: false },
     { key: "valor", label: "Valor (R$)", type: "currency" },
   ];
-  const dados = data.filter((r) => r.tipoCaixa === caixaAtivo);
+  const dadosCaixa = data.filter((r) => r.tipoCaixa === caixaAtivo);
+  const dados = dadosCaixa.filter((r) => monthKey(r.data) === mesAtivo);
   const columns = [
     { key: "data", label: "Data", render: (r) => fmtDate(r.data) },
     { key: "tipo", label: "Tipo", render: (r) => <Badge tone={r.tipo === "entrada" ? "green" : "red"}>{r.tipo === "entrada" ? "Entrada" : "Saída"}</Badge> },
     { key: "categoria", label: "Categoria" }, { key: "descricao", label: "Descrição" },
     { key: "valor", label: "Valor", render: (r) => <span style={{ color: r.tipo === "entrada" ? T.green : T.red, fontWeight: 600 }}>{fmtBRL(r.valor)}</span> },
   ];
+  const saldoInicialCadastrado = saldosIniciais.find((s) => s.tipoCaixa === caixaAtivo && s.mes === mesAtivo);
+  const valorInicial = saldoInicialCadastrado ? Number(saldoInicialCadastrado.valorInicial) : 0;
   const totalEntradas = dados.filter((r) => r.tipo === "entrada").reduce((s, r) => s + Number(r.valor), 0);
   const totalSaidas = dados.filter((r) => r.tipo === "saida").reduce((s, r) => s + Number(r.valor), 0);
-  const saldo = totalEntradas - totalSaidas;
+  const saldo = valorInicial + totalEntradas - totalSaidas;
   const porDia = useMemo(() => { const map = {}; dados.forEach((r) => { if (!map[r.data]) map[r.data] = { data: r.data, entradas: 0, saidas: 0 }; map[r.data][r.tipo === "entrada" ? "entradas" : "saidas"] += Number(r.valor); }); return Object.values(map).sort((a, b) => a.data.localeCompare(b.data)); }, [dados]);
   return (
     <div>
@@ -1806,9 +1814,17 @@ function RelatorioCaixaModulo() {
         <button onClick={() => setCaixaAtivo("Vacinas")} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background: caixaAtivo === "Vacinas" ? T.teal : "#F1EEE4", color: caixaAtivo === "Vacinas" ? "#fff" : T.muted }}>Caixa — Vacinas</button>
         <button onClick={() => setCaixaAtivo("Recepção")} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background: caixaAtivo === "Recepção" ? T.coral : "#F1EEE4", color: caixaAtivo === "Recepção" ? "#fff" : T.muted }}>Caixa — Recepção</button>
       </div>
-      <ModuleShell icon={Wallet} title={`Caixa — ${caixaAtivo}`} subtitle="Lançamentos deste caixa" tone={caixaAtivo === "Vacinas" ? "teal" : "coral"} loading={loading} erro={erro}
+      <Card className="mb-5">
+        <div className="flex flex-wrap gap-3 items-end">
+          <Field label="Mês (competência)"><input type="month" className="rounded-lg px-3 py-2 text-sm outline-none w-40" style={inputStyle} value={mesAtivo} onChange={(e) => setMesAtivo(e.target.value)} /></Field>
+          <div className="text-sm" style={{ color: T.muted }}>
+            {saldoInicialCadastrado ? <>Saldo inicial cadastrado: <b style={{ color: T.text }}>{fmtBRL(valorInicial)}</b></> : <span style={{ color: T.amber }}>Nenhum saldo inicial cadastrado para este mês/caixa — cadastre em Cadastros → Saldo Inicial do Caixa.</span>}
+          </div>
+        </div>
+      </Card>
+      <ModuleShell icon={Wallet} title={`Caixa — ${caixaAtivo}`} subtitle={`Lançamentos deste caixa em ${mesAtivo}`} tone={caixaAtivo === "Vacinas" ? "teal" : "coral"} loading={loading} erro={erro}
         dailyFields={fields} dailyCta="Registrar lançamento" fields={fields} columns={columns} rows={dados} onAdd={(r) => add({ ...r, tipoCaixa: caixaAtivo })} onUpdate={update} onDelete={remove}
-        kpis={[{ label: "Entradas", value: fmtBRL(totalEntradas), tone: "green" }, { label: "Saídas", value: fmtBRL(totalSaidas), tone: "red" }, { label: "Saldo do caixa", value: fmtBRL(saldo), tone: saldo >= 0 ? "green" : "red" }]}
+        kpis={[{ label: "Saldo inicial", value: fmtBRL(valorInicial) }, { label: "Entradas", value: fmtBRL(totalEntradas), tone: "green" }, { label: "Saídas", value: fmtBRL(totalSaidas), tone: "red" }, { label: "Saldo do caixa", value: fmtBRL(saldo), tone: saldo >= 0 ? "green" : "red" }]}
         charts={<ChartCard title="Entradas x saídas por dia"><BarChart data={porDia}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="data" tickFormatter={fmtDate} tick={{ fontSize: 10, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip formatter={(v) => fmtBRL(v)} labelFormatter={fmtDate} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="entradas" name="Entradas" fill={T.green} radius={[4, 4, 0, 0]} /><Bar dataKey="saidas" name="Saídas" fill={T.red} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>} />
     </div>
   );
@@ -2086,6 +2102,7 @@ function VisaoGeral() {
   const { perfil } = useAuth();
   const canFinance = perfil && perfil.papel !== "operacional";
   const financeiro = useRecords("financeiro", canFinance), atendimentos = useRecords("convenios"), vacinas = useRecords("vacinas"), insumos = useRecords("insumos"), contas = useRecords("contas", canFinance), pessoal = useRecords("pessoal"), leads = useRecords("marketing"), procedimentos = useRecords("procedimentos"), faturamento = useRecords("faturamento", canFinance), producao = useRecords("producao"), metas = useRecords("metas", canFinance);
+  const caixaLanc = useRecords("caixaLancamentos", canFinance), caixaSaldoIni = useRecords("caixaSaldoInicial", canFinance), bancosCad = useRecords("cadBancos", canFinance);
   const anyLoading = [financeiro, atendimentos, vacinas, insumos, contas, pessoal, leads, procedimentos, faturamento, producao, metas].some((m) => m.loading);
   const [mesSelecionado, setMesSelecionado] = useState(todayISO().slice(0, 7));
   const [atualizando, setAtualizando] = useState(false);
@@ -2123,6 +2140,22 @@ function VisaoGeral() {
   const fluxoPorMes = useMemo(() => { const map = {}; financeiro.data.forEach((r) => { const m = monthKey(r.data); if (!map[m]) map[m] = { mes: m, entradas: 0, saidas: 0 }; map[m][r.tipo === "entrada" ? "entradas" : "saidas"] += r.valor; }); return Object.values(map).sort((a, b) => a.mes.localeCompare(b.mes)).map((r) => ({ ...r, saldo: r.entradas - r.saidas })); }, [financeiro.data]);
   const ultimosRecebimentos = [...financeiro.data].filter((r) => r.tipo === "entrada").sort((a, b) => b.data.localeCompare(a.data)).slice(0, 5);
   const ultimosPagamentos = [...financeiro.data].filter((r) => r.tipo === "saida").sort((a, b) => b.data.localeCompare(a.data)).slice(0, 5);
+
+  const saldoCaixa = (tipo) => {
+    const inicial = caixaSaldoIni.data.find((s) => s.tipoCaixa === tipo && s.mes === mesAtual);
+    const doMes = caixaLanc.data.filter((r) => r.tipoCaixa === tipo && monthKey(r.data) === mesAtual);
+    const ent = doMes.filter((r) => r.tipo === "entrada").reduce((s, r) => s + Number(r.valor), 0);
+    const sai = doMes.filter((r) => r.tipo === "saida").reduce((s, r) => s + Number(r.valor), 0);
+    return (inicial ? Number(inicial.valorInicial) : 0) + ent - sai;
+  };
+  const saldoBanco = (nomeBanco) => financeiro.data.filter((r) => r.banco === nomeBanco).reduce((s, r) => s + (r.tipo === "entrada" ? Number(r.valor) : -Number(r.valor)), 0);
+  const contasCorrentes = [
+    { grupo: "Caixa", nome: "Caixa Recepção", valor: saldoCaixa("Recepção") },
+    { grupo: "Caixa", nome: "Caixa Vacina", valor: saldoCaixa("Vacinas") },
+    ...bancosCad.data.map((b) => ({ grupo: "Conta Corrente", nome: b.nome, valor: saldoBanco(b.nome) })),
+  ];
+  const disponibilidadeTotal = contasCorrentes.reduce((s, c) => s + c.valor, 0);
+
   const alertas = [
     alertaVacinas > 0 && { texto: `${alertaVacinas} vacina(s) abaixo do estoque mínimo`, tone: "red" },
     alertaInsumos > 0 && { texto: `${alertaInsumos} insumo(s) em ponto crítico`, tone: "red" },
@@ -2200,6 +2233,33 @@ function VisaoGeral() {
               )}
             </Card>
           </div>
+
+          <Card className="mb-6">
+            <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Saldo das contas — {labelMes}</p>
+            {["Caixa", "Conta Corrente"].map((grupo) => {
+              const itens = contasCorrentes.filter((c) => c.grupo === grupo);
+              if (itens.length === 0) return null;
+              return (
+                <div key={grupo} className="mb-3">
+                  <div className="flex justify-between py-1.5" style={{ borderBottom: `1px solid ${T.border}` }}>
+                    <span className="font-bold text-sm" style={{ color: T.text }}>{grupo}</span>
+                    <span className="font-bold text-sm" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(itens.reduce((s, i) => s + i.valor, 0))}</span>
+                  </div>
+                  {itens.map((c) => (
+                    <div key={c.nome} className="flex justify-between py-1.5 pl-4" style={{ borderBottom: `1px solid ${T.border}` }}>
+                      <span className="text-sm" style={{ color: T.muted }}>{c.nome}</span>
+                      <span className="text-sm" style={{ color: c.valor < 0 ? T.red : T.text, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(c.valor)}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+            <div className="flex justify-between py-2 mt-1">
+              <span className="font-bold" style={{ color: T.text }}>Disponibilidade total</span>
+              <span className="font-bold" style={{ color: disponibilidadeTotal >= 0 ? T.green : T.red, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(disponibilidadeTotal)}</span>
+            </div>
+            {bancosCad.data.length === 0 && <p className="text-xs mt-2" style={{ color: T.muted }}>Cadastre seus bancos em Cadastros → Bancos para eles aparecerem aqui automaticamente.</p>}
+          </Card>
         </>
       ) : (
         <>
@@ -3345,6 +3405,20 @@ function CadastroCategoriasModulo() {
   );
 }
 
+function CadastroSaldoCaixaModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("caixaSaldoInicial");
+  const fields = [
+    { key: "tipoCaixa", label: "Caixa", type: "select", options: ["Vacinas", "Recepção"] },
+    { key: "mes", label: "Mês (AAAA-MM)", type: "text", default: todayISO().slice(0, 7) },
+    { key: "valorInicial", label: "Saldo inicial (valor que sobrou do mês anterior)", type: "currency" },
+  ];
+  const columns = [{ key: "tipoCaixa", label: "Caixa" }, { key: "mes", label: "Mês" }, { key: "valorInicial", label: "Saldo inicial", render: (r) => fmtBRL(r.valorInicial) }];
+  return (
+    <ModuleShell icon={Wallet} title="Saldo Inicial do Caixa" subtitle="Registre o valor que sobrou do mês anterior, para o saldo do caixa começar certo a cada mês" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Registrar saldo inicial" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
+  );
+}
+
 function CadastroBancosModulo() {
   const { data, add, update, remove, loading, erro } = useRecords("cadBancos");
   const fields = [
@@ -3888,11 +3962,11 @@ const ALL_MENU = [
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }] },
   { group: "Plantão", items: [{ key: "plantaoRegistro", label: "Registrar Plantão", icon: Stethoscope, tone: "teal" }, { key: "plantaoValores", label: "Valores por Convênio", icon: ClipboardList, tone: "coral" }, { key: "plantaoResumo", label: "Resumo Financeiro", icon: ClipboardList, tone: "coral" }] },
   { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "metasColaborador", label: "Meta por Colaborador", icon: Users, tone: "coral" }, { key: "metasEquipe", label: "Meta por Equipe", icon: Users, tone: "coral" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
-  { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }, { key: "cadBancos", label: "Bancos", icon: Wallet, tone: "ink" }, { key: "cadCategorias", label: "Categorias", icon: ClipboardList, tone: "ink" }, { key: "cadTiposPagamento", label: "Tipos de Pagamento", icon: Wallet, tone: "ink" }] },
+  { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }, { key: "cadBancos", label: "Bancos", icon: Wallet, tone: "ink" }, { key: "cadCategorias", label: "Categorias", icon: ClipboardList, tone: "ink" }, { key: "cadTiposPagamento", label: "Tipos de Pagamento", icon: Wallet, tone: "ink" }, { key: "cadSaldoCaixa", label: "Saldo Inicial do Caixa", icon: Wallet, tone: "ink" }] },
   { group: "Documentos & Chat", items: [{ key: "bancoDocumentos", label: "Banco de Documentos", icon: FileText, tone: "coral" }, { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas (E-mail/WhatsApp)", icon: Bell, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "cadCategorias", "cadTiposPagamento", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
+const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "cadCategorias", "cadTiposPagamento", "cadSaldoCaixa", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
 const RESTRICTED_MENUS = {
   recepcao: { group: "Minha área", items: [
@@ -4002,6 +4076,7 @@ function AppInner() {
       case "cadBancos": return <CadastroBancosModulo />;
       case "cadCategorias": return <CadastroCategoriasModulo />;
       case "cadTiposPagamento": return <CadastroTiposPagamentoModulo />;
+      case "cadSaldoCaixa": return <CadastroSaldoCaixaModulo />;
       case "bancoDocumentos": return <BancoDocumentosModulo />;
       case "chatInterno": return <ChatInternoModulo />;
       case "unidades": return <UnidadesModulo />;
