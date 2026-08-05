@@ -135,8 +135,8 @@ const MODULES = {
     toDb: (r) => ({ profissional: r.profissional, convenio: r.convenio, data_atendimento: r.data, mes: monthToDate(monthKey(r.data)), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipo_repasse: r.tipoRepasse || "Fixo", percentual_repasse: r.percentualRepasse || 0, desconto_tipo: r.descontoTipo || "Nenhum", desconto_valor: r.descontoValor || 0 }),
     fromDb: (r) => ({ id: r.id, profissional: r.profissional, convenio: r.convenio, data: r.data_atendimento, mes: monthKey(r.mes), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipoRepasse: r.tipo_repasse, percentualRepasse: r.percentual_repasse, descontoTipo: r.desconto_tipo, descontoValor: r.desconto_valor }) },
   contas: { table: "contas_pagar", order: "vencimento.asc",
-    toDb: (r) => ({ descricao: r.descricao, categoria: r.categoria, valor: r.valor, vencimento: r.vencimento, status: r.status, data_pagamento: r.dataPagamento || null }),
-    fromDb: (r) => ({ id: r.id, descricao: r.descricao, categoria: r.categoria, valor: r.valor, vencimento: r.vencimento, status: r.status, dataPagamento: r.data_pagamento }) },
+    toDb: (r) => ({ descricao: r.descricao, categoria: r.categoria, valor: r.valor, vencimento: r.vencimento, status: r.status, data_pagamento: r.dataPagamento || null, banco_id: r.bancoId || null, tipo_pagamento: r.tipoPagamento || null }),
+    fromDb: (r) => ({ id: r.id, descricao: r.descricao, categoria: r.categoria, valor: r.valor, vencimento: r.vencimento, status: r.status, dataPagamento: r.data_pagamento, bancoId: r.banco_id, tipoPagamento: r.tipo_pagamento }) },
   pessoal: { table: "departamento_pessoal", order: "mes.desc",
     toDb: (r) => ({ nome: r.nome, cargo: r.cargo, equipe: r.equipe, mes: monthToDate(r.mes || todayISO().slice(0, 7)), meta_mensal: r.metaMensal, ligacoes: r.ligacoes, mensagens: r.mensagens, agendados: r.agendados }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, cargo: r.cargo, equipe: r.equipe, mes: monthKey(r.mes), metaMensal: r.meta_mensal, ligacoes: r.ligacoes, mensagens: r.mensagens, agendados: r.agendados }) },
@@ -147,8 +147,8 @@ const MODULES = {
     toDb: (r) => ({ tipo: r.tipo, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor }),
     fromDb: (r) => ({ id: r.id, tipo: r.tipo, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor }) },
   faturamento: { table: "faturamento_guias", order: "data_protocolo.desc",
-    toDb: (r) => ({ convenio: r.convenio, numero_guia: r.numeroGuia, tipo: r.tipo, data_protocolo: r.dataProtocolo, valor: r.valor, status: r.status, data_pagamento: r.dataPagamento || null }),
-    fromDb: (r) => ({ id: r.id, convenio: r.convenio, numeroGuia: r.numero_guia, tipo: r.tipo, dataProtocolo: r.data_protocolo, valor: r.valor, status: r.status, dataPagamento: r.data_pagamento }) },
+    toDb: (r) => ({ convenio: r.convenio, numero_guia: r.numeroGuia, tipo: r.tipo, data_protocolo: r.dataProtocolo, valor: r.valor, status: r.status, data_pagamento: r.dataPagamento || null, banco_id: r.bancoId || null, tipo_pagamento: r.tipoPagamento || null }),
+    fromDb: (r) => ({ id: r.id, convenio: r.convenio, numeroGuia: r.numero_guia, tipo: r.tipo, dataProtocolo: r.data_protocolo, valor: r.valor, status: r.status, dataPagamento: r.data_pagamento, bancoId: r.banco_id, tipoPagamento: r.tipo_pagamento }) },
   repasse: { table: "repasse_medico", order: "mes.desc",
     toDb: (r) => ({ medico: r.medico, mes: monthToDate(r.mes), valor_convenio: r.valorConvenio, valor_plantao: r.valorPlantao, qtd_vacinas_prescritas: r.qtdVacinas, valor_por_vacina: r.valorPorVacina }),
     fromDb: (r) => ({ id: r.id, medico: r.medico, mes: monthKey(r.mes), valorConvenio: r.valor_convenio, valorPlantao: r.valor_plantao, qtdVacinas: r.qtd_vacinas_prescritas, valorPorVacina: r.valor_por_vacina }) },
@@ -170,6 +170,15 @@ const MODULES = {
   cadBancos: { table: "cadastro_bancos", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, agencia: r.agencia, conta: r.conta, observacoes: r.observacoes }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, agencia: r.agencia, conta: r.conta, observacoes: r.observacoes }) },
+  caixaLancamentos: { table: "caixa_lancamentos", order: "data.desc",
+    toDb: (r) => ({ tipo_caixa: r.tipoCaixa, data: r.data, tipo: r.tipo, categoria: r.categoria, descricao: r.descricao, valor: r.valor }),
+    fromDb: (r) => ({ id: r.id, tipoCaixa: r.tipo_caixa, data: r.data, tipo: r.tipo, categoria: r.categoria, descricao: r.descricao, valor: r.valor }) },
+  cadCategorias: { table: "cadastro_categorias", order: "nome.asc",
+    toDb: (r) => ({ nome: r.nome, aplicacao: r.aplicacao || "Geral" }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, aplicacao: r.aplicacao }) },
+  cadTiposPagamento: { table: "cadastro_tipos_pagamento", order: "nome.asc",
+    toDb: (r) => ({ nome: r.nome }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome }) },
   plantaoValoresConvenio: { table: "plantao_valores_convenio", order: "convenio.asc",
     toDb: (r) => ({ convenio: r.convenio, valor_atendimento: r.valorAtendimento }),
     fromDb: (r) => ({ id: r.id, convenio: r.convenio, valorAtendimento: r.valor_atendimento }) },
@@ -1566,8 +1575,27 @@ function ProducaoResumoGeralModulo() {
 
 function ContasModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("contas");
-  const fields = [{ key: "descricao", label: "Descrição", type: "text" }, { key: "categoria", label: "Categoria", type: "select", options: ["Fornecedores", "Aluguel", "Salários", "Impostos", "Serviços", "Outros"] }, { key: "valor", label: "Valor (R$)", type: "currency" }, { key: "vencimento", label: "Vencimento", type: "date", default: todayISO() }, { key: "status", label: "Status", type: "select", options: ["Pendente", "Pago", "Atrasado"] }, { key: "dataPagamento", label: "Data de pagamento", type: "date", required: false }];
+  const { data: categoriasCadastro } = useRecords("cadCategorias");
+  const { data: tiposPagamentoCadastro } = useRecords("cadTiposPagamento");
+  const { data: bancosCadastro } = useRecords("cadBancos");
+  const opcoesCategoria = categoriasCadastro.filter((c) => c.aplicacao === "Contas a Pagar" || c.aplicacao === "Geral").map((c) => c.nome);
+  const opcoesTipoPagamento = tiposPagamentoCadastro.length ? tiposPagamentoCadastro.map((t) => t.nome) : TIPOS_PAGAMENTO_PADRAO;
+  const nomesBancos = bancosCadastro.map((b) => b.nome);
+  const fields = [
+    { key: "descricao", label: "Descrição", type: "text" },
+    { key: "categoria", label: "Categoria", type: "select", options: opcoesCategoria.length ? opcoesCategoria : ["Fornecedores", "Aluguel", "Salários", "Impostos", "Serviços", "Outros"] },
+    { key: "valor", label: "Valor (R$)", type: "currency" },
+    { key: "vencimento", label: "Vencimento", type: "date", default: todayISO() },
+    { key: "status", label: "Status", type: "select", options: ["Pendente", "Pago", "Atrasado"] },
+    { key: "dataPagamento", label: "Data de pagamento", type: "date", required: false },
+    { key: "tipoPagamento", label: "Tipo de pagamento", type: "select", options: opcoesTipoPagamento, required: false },
+    { key: "bancoNome", label: "Banco de onde será pago", type: "select", options: nomesBancos.length ? nomesBancos : ["Cadastre em Cadastros → Bancos"], required: false },
+  ];
+  const onAddComputado = (record) => { const banco = bancosCadastro.find((b) => b.nome === record.bancoNome); return add({ ...record, bancoId: banco ? banco.id : null }); };
+  const onUpdateComputado = (id, record) => { const banco = bancosCadastro.find((b) => b.nome === record.bancoNome); return update(id, { ...record, bancoId: banco ? banco.id : null }); };
   const columns = [{ key: "descricao", label: "Descrição" }, { key: "categoria", label: "Categoria" }, { key: "valor", label: "Valor", render: (r) => fmtBRL(r.valor) }, { key: "vencimento", label: "Vencimento", render: (r) => fmtDate(r.vencimento) },
+    { key: "tipoPagamento", label: "Tipo pgto.", render: (r) => r.tipoPagamento || "—" },
+    { key: "bancoNome", label: "Banco", render: (r) => (bancosCadastro.find((b) => b.id === r.bancoId) || {}).nome || "—" },
     { key: "status", label: "Status", render: (r) => <Badge tone={r.status === "Pago" ? "green" : r.status === "Atrasado" ? "red" : "amber"}>{r.status}</Badge> },
     { key: "acaoPagar", label: "", render: (r) => r.status !== "Pago" ? <Btn small tone="green" onClick={() => update(r.id, { status: "Pago", dataPagamento: todayISO() })}>Marcar como pago</Btn> : <span className="text-xs" style={{ color: T.muted }}>Pago em {fmtDate(r.dataPagamento)}</span> },
   ];
@@ -1577,7 +1605,7 @@ function ContasModulo() {
   const porCategoria = useMemo(() => { const map = {}; pendentes.forEach((r) => { map[r.categoria] = (map[r.categoria] || 0) + r.valor; }); return Object.entries(map).map(([categoria, valor]) => ({ categoria, valor })); }, [pendentes]);
   return (
     <ModuleShell icon={Receipt} title="Contas a Pagar" subtitle="Contas pendentes e pagas, mês a mês" tone="coral" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Lançar conta" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
+      dailyFields={fields} dailyCta="Lançar conta" fields={fields} columns={columns} rows={data} onAdd={onAddComputado} onUpdate={onUpdateComputado} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Total pendente", value: fmtBRL(totalPendente), tone: "amber" }, { label: "Total pago", value: fmtBRL(totalPago), tone: "green" }, { label: "Atrasadas", value: atrasados.length, tone: atrasados.length ? "red" : "green" }, { label: "Vencendo em 7 dias", value: proximos.length, tone: proximos.length ? "amber" : "green" }]}
       charts={<ChartCard title="Valor pendente por categoria"><BarChart data={porCategoria}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="categoria" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="valor" fill={T.coral} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>}
       extra={proximos.length > 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><div className="flex items-center gap-2 mb-2"><AlertTriangle size={15} style={{ color: T.amber }} /><span className="font-semibold text-sm" style={{ color: T.text }}>Vencimentos nos próximos 7 dias</span></div><div className="flex flex-col gap-1.5">{proximos.map((r) => (<div key={r.id} className="flex justify-between text-sm"><span style={{ color: T.muted }}>{r.descricao} — {fmtDate(r.vencimento)}</span><span style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{fmtBRL(r.valor)}</span></div>))}</div></Card>} />
@@ -1652,6 +1680,45 @@ function SublocacaoModulo() {
   );
 }
 
+function RelatorioCaixaModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("caixaLancamentos");
+  const { data: categoriasCadastro } = useRecords("cadCategorias");
+  const opcoesCategoria = categoriasCadastro.filter((c) => c.aplicacao === "Caixa" || c.aplicacao === "Geral").map((c) => c.nome);
+  const [caixaAtivo, setCaixaAtivo] = useState("Vacinas");
+  const fields = [
+    { key: "tipoCaixa", label: "Caixa", type: "select", options: ["Vacinas", "Recepção"], default: caixaAtivo },
+    { key: "data", label: "Data", type: "date", default: todayISO() },
+    { key: "tipo", label: "Tipo", type: "select", options: ["entrada", "saida"] },
+    { key: "categoria", label: "Categoria", type: "select", options: opcoesCategoria.length ? opcoesCategoria : ["Cadastre em Cadastros → Categorias"], required: false },
+    { key: "descricao", label: "Descrição", type: "text", required: false },
+    { key: "valor", label: "Valor (R$)", type: "currency" },
+  ];
+  const dados = data.filter((r) => r.tipoCaixa === caixaAtivo);
+  const columns = [
+    { key: "data", label: "Data", render: (r) => fmtDate(r.data) },
+    { key: "tipo", label: "Tipo", render: (r) => <Badge tone={r.tipo === "entrada" ? "green" : "red"}>{r.tipo === "entrada" ? "Entrada" : "Saída"}</Badge> },
+    { key: "categoria", label: "Categoria" }, { key: "descricao", label: "Descrição" },
+    { key: "valor", label: "Valor", render: (r) => <span style={{ color: r.tipo === "entrada" ? T.green : T.red, fontWeight: 600 }}>{fmtBRL(r.valor)}</span> },
+  ];
+  const totalEntradas = dados.filter((r) => r.tipo === "entrada").reduce((s, r) => s + Number(r.valor), 0);
+  const totalSaidas = dados.filter((r) => r.tipo === "saida").reduce((s, r) => s + Number(r.valor), 0);
+  const saldo = totalEntradas - totalSaidas;
+  const porDia = useMemo(() => { const map = {}; dados.forEach((r) => { if (!map[r.data]) map[r.data] = { data: r.data, entradas: 0, saidas: 0 }; map[r.data][r.tipo === "entrada" ? "entradas" : "saidas"] += Number(r.valor); }); return Object.values(map).sort((a, b) => a.data.localeCompare(b.data)); }, [dados]);
+  return (
+    <div>
+      <SectionHeader icon={Wallet} title="Relatório de Caixa" subtitle="Entradas e saídas do caixa físico — Vacinas ou Recepção" tone="coral" />
+      <div className="flex gap-2 mb-5">
+        <button onClick={() => setCaixaAtivo("Vacinas")} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background: caixaAtivo === "Vacinas" ? T.teal : "#F1EEE4", color: caixaAtivo === "Vacinas" ? "#fff" : T.muted }}>Caixa — Vacinas</button>
+        <button onClick={() => setCaixaAtivo("Recepção")} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background: caixaAtivo === "Recepção" ? T.coral : "#F1EEE4", color: caixaAtivo === "Recepção" ? "#fff" : T.muted }}>Caixa — Recepção</button>
+      </div>
+      <ModuleShell icon={Wallet} title={`Caixa — ${caixaAtivo}`} subtitle="Lançamentos deste caixa" tone={caixaAtivo === "Vacinas" ? "teal" : "coral"} loading={loading} erro={erro}
+        dailyFields={fields} dailyCta="Registrar lançamento" fields={fields} columns={columns} rows={dados} onAdd={(r) => add({ ...r, tipoCaixa: caixaAtivo })} onUpdate={update} onDelete={remove}
+        kpis={[{ label: "Entradas", value: fmtBRL(totalEntradas), tone: "green" }, { label: "Saídas", value: fmtBRL(totalSaidas), tone: "red" }, { label: "Saldo do caixa", value: fmtBRL(saldo), tone: saldo >= 0 ? "green" : "red" }]}
+        charts={<ChartCard title="Entradas x saídas por dia"><BarChart data={porDia}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="data" tickFormatter={fmtDate} tick={{ fontSize: 10, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip formatter={(v) => fmtBRL(v)} labelFormatter={fmtDate} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="entradas" name="Entradas" fill={T.green} radius={[4, 4, 0, 0]} /><Bar dataKey="saidas" name="Saídas" fill={T.red} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>} />
+    </div>
+  );
+}
+
 function RepasseMedicoModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("repasse");
   const fields = [
@@ -1691,6 +1758,10 @@ function RepasseMedicoModulo() {
 
 function FaturamentoModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("faturamento");
+  const { data: tiposPagamentoCadastro } = useRecords("cadTiposPagamento");
+  const { data: bancosCadastro } = useRecords("cadBancos");
+  const opcoesTipoPagamento = tiposPagamentoCadastro.length ? tiposPagamentoCadastro.map((t) => t.nome) : TIPOS_PAGAMENTO_PADRAO;
+  const nomesBancos = bancosCadastro.map((b) => b.nome);
   const fields = [
     { key: "convenio", label: "Convênio", type: "select", options: CONVENIOS },
     { key: "numeroGuia", label: "Nº da guia", type: "text", required: false },
@@ -1699,11 +1770,16 @@ function FaturamentoModulo() {
     { key: "valor", label: "Valor (R$)", type: "currency" },
     { key: "status", label: "Status", type: "select", options: ["Protocolada", "Faturada", "Paga", "Vencida"] },
     { key: "dataPagamento", label: "Data de pagamento", type: "date", required: false },
+    { key: "tipoPagamento", label: "Tipo de pagamento", type: "select", options: opcoesTipoPagamento, required: false },
+    { key: "bancoNome", label: "Banco de recebimento", type: "select", options: nomesBancos.length ? nomesBancos : ["Cadastre em Cadastros → Bancos"], required: false },
   ];
+  const onAddComputado = (record) => { const banco = bancosCadastro.find((b) => b.nome === record.bancoNome); return add({ ...record, bancoId: banco ? banco.id : null }); };
+  const onUpdateComputado = (id, record) => { const banco = bancosCadastro.find((b) => b.nome === record.bancoNome); return update(id, { ...record, bancoId: banco ? banco.id : null }); };
   const columns = [
     { key: "convenio", label: "Convênio" }, { key: "numeroGuia", label: "Nº guia" }, { key: "tipo", label: "Tipo" },
     { key: "dataProtocolo", label: "Protocolo", render: (r) => fmtDate(r.dataProtocolo) },
     { key: "valor", label: "Valor", render: (r) => fmtBRL(r.valor) },
+    { key: "bancoNome", label: "Banco", render: (r) => (bancosCadastro.find((b) => b.id === r.bancoId) || {}).nome || "—" },
     { key: "status", label: "Status", render: (r) => { const tone = { Protocolada: "muted", Faturada: "amber", Paga: "green", Vencida: "red" }[r.status]; return <Badge tone={tone}>{r.status}</Badge>; } },
   ];
   const porStatus = useMemo(() => { const map = {}; data.forEach((r) => { if (!map[r.status]) map[r.status] = { status: r.status, valor: 0, qtd: 0 }; map[r.status].valor += r.valor; map[r.status].qtd += 1; }); const ordem = ["Protocolada", "Faturada", "Paga", "Vencida"]; return ordem.filter((s) => map[s]).map((s) => map[s]); }, [data]);
@@ -1714,7 +1790,7 @@ function FaturamentoModulo() {
   const porConvenio = useMemo(() => { const map = {}; data.forEach((r) => { map[r.convenio] = (map[r.convenio] || 0) + r.valor; }); return Object.entries(map).map(([convenio, valor]) => ({ convenio, valor })).sort((a, b) => b.valor - a.valor); }, [data]);
   return (
     <ModuleShell icon={ClipboardList} title="Faturamento de Convênios" subtitle="Guias protocoladas, faturadas, pagas e vencidas" tone="coral" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Registrar guia" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
+      dailyFields={fields} dailyCta="Registrar guia" fields={fields} columns={columns} rows={data} onAdd={onAddComputado} onUpdate={onUpdateComputado} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Total protocolado", value: fmtBRL(totalProtocolado) }, { label: "Faturado", value: fmtBRL(totalFaturado), tone: "amber" }, { label: "Pago", value: fmtBRL(totalPago), tone: "green" }, { label: "Vencido", value: fmtBRL(totalVencido), tone: totalVencido ? "red" : "green" }]}
       charts={<div className="grid md:grid-cols-2 gap-5">
         <ChartCard title="Valor por status da guia"><BarChart data={porStatus}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="status" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="valor" radius={[4, 4, 0, 0]}>{porStatus.map((s, i) => <Cell key={i} fill={{ Protocolada: T.muted, Faturada: T.amber, Paga: T.green, Vencida: T.red }[s.status]} />)}</Bar></BarChart></ChartCard>
@@ -2972,6 +3048,8 @@ function ImportarOFXModulo() {
   const { unidadeId } = useUnidade();
   const { data: bancos, loading: loadingBancos } = useRecords("cadBancos");
   const { data: financeiro, add: addFinanceiro } = useRecords("financeiro");
+  const { data: contasPagar, update: updateConta } = useRecords("contas");
+  const { data: contasReceber, update: updateGuia } = useRecords("faturamento");
   const [bancoId, setBancoId] = useState("");
   const [transacoes, setTransacoes] = useState([]);
   const [memorizadas, setMemorizadas] = useState({});
@@ -2985,18 +3063,31 @@ function ImportarOFXModulo() {
 
   const fitidsJaImportados = new Set(financeiro.data ? financeiro.data.map((f) => f.fitid).filter(Boolean) : []);
 
+  const encontrarContaCorrespondente = (tipo, valorAbs) => {
+    const tolerancia = 0.01;
+    if (tipo === "saida") {
+      const conta = contasPagar.find((c) => c.status !== "Pago" && (!c.bancoId || c.bancoId === bancoId) && Math.abs(Number(c.valor) - valorAbs) < tolerancia);
+      return conta ? { id: conta.id, tipoConta: "pagar", descricao: conta.descricao } : null;
+    }
+    const guia = contasReceber.find((g) => g.status !== "Paga" && (!g.bancoId || g.bancoId === bancoId) && Math.abs(Number(g.valor) - valorAbs) < tolerancia);
+    return guia ? { id: guia.id, tipoConta: "receber", descricao: `Guia ${guia.numeroGuia || ""} — ${guia.convenio}` } : null;
+  };
+
   const handleArquivo = async (file) => {
     const texto = await file.text();
     const parsed = parseOFX(texto);
     const enriquecidas = parsed.map((t, i) => {
       const chave = chaveDescricaoOfx(t.memo);
       const memo = memorizadas[chave];
+      const tipo = memo ? memo.tipo : (t.valor >= 0 ? "entrada" : "saida");
+      const valorAbs = Math.abs(t.valor);
+      const contaMatch = bancoId ? encontrarContaCorrespondente(tipo, valorAbs) : null;
       return {
-        idTemp: i, data: t.data, memo: t.memo, valorAbs: Math.abs(t.valor), fitid: t.fitid,
-        tipo: memo ? memo.tipo : (t.valor >= 0 ? "entrada" : "saida"),
-        linha: memo ? memo.linha : (t.valor >= 0 ? "Receita de Convênios" : "Outras Despesas"),
+        idTemp: i, data: t.data, memo: t.memo, valorAbs, fitid: t.fitid,
+        tipo, linha: memo ? memo.linha : (t.valor >= 0 ? "Receita de Convênios" : "Outras Despesas"),
         jaImportado: t.fitid && fitidsJaImportados.has(t.fitid),
         incluir: !(t.fitid && fitidsJaImportados.has(t.fitid)),
+        contaMatch, conciliar: !!contaMatch,
       };
     });
     setTransacoes(enriquecidas);
@@ -3008,7 +3099,7 @@ function ImportarOFXModulo() {
   const confirmarImportacao = async () => {
     setBusy(true);
     const banco = bancos.find((b) => b.id === bancoId);
-    let ok = 0;
+    let ok = 0, conciliados = 0;
     for (const t of transacoes.filter((x) => x.incluir)) {
       try {
         await sbRest("financeiro_transacoes", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, data: t.data, tipo: t.tipo, linha_dre: t.linha, descricao: t.memo, valor: t.valorAbs, fitid: t.fitid || null, banco: banco ? banco.nome : null } });
@@ -3016,10 +3107,15 @@ function ImportarOFXModulo() {
           // já existe — atualiza
           await sbRest(`ofx_categorias_memorizadas?unidade_id=eq.${unidadeId}&descricao_chave=eq.${encodeURIComponent(chaveDescricaoOfx(t.memo))}`, { method: "PATCH", token: session.access_token, body: { linha_dre: t.linha, tipo: t.tipo } });
         });
+        if (t.contaMatch && t.conciliar) {
+          if (t.contaMatch.tipoConta === "pagar") await updateConta(t.contaMatch.id, { status: "Pago", dataPagamento: t.data });
+          else await updateGuia(t.contaMatch.id, { status: "Paga", dataPagamento: t.data });
+          conciliados++;
+        }
         ok++;
       } catch (e) { /* segue tentando os outros */ }
     }
-    setResultado({ ok, total: transacoes.filter((x) => x.incluir).length });
+    setResultado({ ok, total: transacoes.filter((x) => x.incluir).length, conciliados });
     setBusy(false);
   };
 
@@ -3051,6 +3147,7 @@ function ImportarOFXModulo() {
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Valor</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Tipo</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Linha do DRE</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Conciliação</th>
               </tr></thead>
               <tbody>{transacoes.map((t) => (
                 <tr key={t.idTemp} style={{ borderBottom: `1px solid ${T.border}`, opacity: t.incluir ? 1 : 0.45 }}>
@@ -3060,15 +3157,48 @@ function ImportarOFXModulo() {
                   <td className="py-2 px-2">{fmtBRL(t.valorAbs)}</td>
                   <td className="py-2 px-2"><select className="rounded-lg px-2 py-1 text-xs outline-none" style={inputStyle} value={t.tipo} onChange={(e) => atualizarLinha(t.idTemp, "tipo", e.target.value)}><option value="entrada">Entrada</option><option value="saida">Saída</option></select></td>
                   <td className="py-2 px-2"><select className="rounded-lg px-2 py-1 text-xs outline-none" style={inputStyle} value={t.linha} onChange={(e) => atualizarLinha(t.idTemp, "linha", e.target.value)}>{TODAS_LINHAS_DRE.map((l) => <option key={l} value={l}>{l}</option>)}</select></td>
+                  <td className="py-2 px-2">
+                    {t.contaMatch ? (
+                      <label className="flex items-center gap-1.5 text-xs" style={{ color: T.text }}>
+                        <input type="checkbox" checked={t.conciliar} onChange={(e) => atualizarLinha(t.idTemp, "conciliar", e.target.checked)} />
+                        Marcar "{t.contaMatch.descricao}" como {t.contaMatch.tipoConta === "pagar" ? "pago" : "paga"}
+                      </label>
+                    ) : <span className="text-xs" style={{ color: T.muted }}>Sem correspondência</span>}
+                  </td>
                 </tr>
               ))}</tbody>
             </table>
           </div>
           <div className="mt-4"><Btn disabled={busy || !bancoId} onClick={confirmarImportacao}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Importar {transacoes.filter((t) => t.incluir).length} transação(ões)</Btn></div>
-          {resultado && <p className="text-sm mt-3" style={{ color: T.green }}>{resultado.ok} de {resultado.total} importadas com sucesso.</p>}
+          {resultado && <p className="text-sm mt-3" style={{ color: T.green }}>{resultado.ok} de {resultado.total} importadas com sucesso{resultado.conciliados > 0 && ` — ${resultado.conciliados} conta(s) marcada(s) como paga(s) automaticamente`}.</p>}
         </Card>
       )}
     </div>
+  );
+}
+
+const TIPOS_PAGAMENTO_PADRAO = ["Boleto", "Pix", "Transferência", "Dinheiro"];
+function CadastroTiposPagamentoModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("cadTiposPagamento");
+  const fields = [{ key: "nome", label: "Tipo de pagamento", type: "text", placeholder: "ex: Boleto, Pix, Cartão…" }];
+  const columns = [{ key: "nome", label: "Tipo de pagamento" }];
+  return (
+    <ModuleShell icon={Wallet} title="Cadastro de Tipos de Pagamento" subtitle="Boleto, Pix, transferência, dinheiro — aparecem no lançamento de Contas a Pagar e a Receber" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Cadastrar tipo" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove}
+      extra={data.length === 0 && !loading && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><span className="text-sm" style={{ color: T.text }}>Nenhum tipo cadastrado ainda — enquanto isso, o sistema usa como padrão: {TIPOS_PAGAMENTO_PADRAO.join(", ")}. Cadastre aqui se quiser adicionar ou trocar.</span></Card>} />
+  );
+}
+
+function CadastroCategoriasModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("cadCategorias");
+  const fields = [
+    { key: "nome", label: "Nome da categoria", type: "text" },
+    { key: "aplicacao", label: "Onde ela aparece", type: "select", options: ["Contas a Pagar", "Caixa", "Geral"], default: "Geral" },
+  ];
+  const columns = [{ key: "nome", label: "Categoria" }, { key: "aplicacao", label: "Onde aparece", render: (r) => <Badge tone="teal">{r.aplicacao}</Badge> }];
+  return (
+    <ModuleShell icon={ClipboardList} title="Cadastro de Categorias" subtitle="Categorias usadas em Contas a Pagar e no Relatório de Caixa" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Cadastrar categoria" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
   );
 }
 
@@ -3580,7 +3710,7 @@ function RelatoriosModulo() {
 
 const ALL_MENU = [
   { group: "Visão", items: [{ key: "visao", label: "Dashboard", icon: LayoutDashboard, tone: "coral" }, { key: "painelCritico", label: "Painel Crítico", icon: AlertTriangle, tone: "coral" }] },
-  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "protocoloGuias", label: "Protocolo de Guias", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }, { key: "sublocacao", label: "Receita de Sublocação", icon: Building2, tone: "coral" }, { key: "importarOfx", label: "Importar Extrato (OFX)", icon: Upload, tone: "coral" }] },
+  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "relatorioCaixa", label: "Relatório de Caixa", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "protocoloGuias", label: "Protocolo de Guias", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }, { key: "sublocacao", label: "Receita de Sublocação", icon: Building2, tone: "coral" }, { key: "importarOfx", label: "Importar Extrato (OFX)", icon: Upload, tone: "coral" }] },
   { group: "Atendimento", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producaoParticulares", label: "Produção — Particulares", icon: Stethoscope, tone: "teal" }, { key: "producaoConveniosGeral", label: "Produção — Convênios", icon: Stethoscope, tone: "teal" }, { key: "producaoBradescoClinica", label: "Produção — Bradesco Clínica", icon: Stethoscope, tone: "teal" }, { key: "producaoAuroraSaude", label: "Produção — Aurora Saúde", icon: Stethoscope, tone: "teal" }, { key: "producaoIpsm", label: "Produção — IPSM", icon: Stethoscope, tone: "teal" }, { key: "producaoResumoGeral", label: "Produção — Valores Gerais", icon: Stethoscope, tone: "coral" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
   { group: "Setor de Vacinas", items: [{ key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "entradaEstoqueVacinas", label: "Entrada de Estoque", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "pacoteVacinas", label: "Pacote Personalizado", icon: Syringe, tone: "coral" }] },
   { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }, { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" }] },
@@ -3588,11 +3718,11 @@ const ALL_MENU = [
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }] },
   { group: "Plantão", items: [{ key: "plantaoRegistro", label: "Registrar Plantão", icon: Stethoscope, tone: "teal" }, { key: "plantaoValores", label: "Valores por Convênio", icon: ClipboardList, tone: "coral" }, { key: "plantaoResumo", label: "Resumo Financeiro", icon: ClipboardList, tone: "coral" }] },
   { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "metasColaborador", label: "Meta por Colaborador", icon: Users, tone: "coral" }, { key: "metasEquipe", label: "Meta por Equipe", icon: Users, tone: "coral" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
-  { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }, { key: "cadBancos", label: "Bancos", icon: Wallet, tone: "ink" }] },
+  { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }, { key: "cadBancos", label: "Bancos", icon: Wallet, tone: "ink" }, { key: "cadCategorias", label: "Categorias", icon: ClipboardList, tone: "ink" }, { key: "cadTiposPagamento", label: "Tipos de Pagamento", icon: Wallet, tone: "ink" }] },
   { group: "Documentos & Chat", items: [{ key: "bancoDocumentos", label: "Banco de Documentos", icon: FileText, tone: "coral" }, { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas (E-mail/WhatsApp)", icon: Bell, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "contas", "faturamento", "protocoloGuias", "repasse", "sublocacao", "equipe", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
+const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "repasse", "sublocacao", "equipe", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "cadCategorias", "cadTiposPagamento", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
 const RESTRICTED_MENUS = {
   recepcao: { group: "Minha área", items: [
@@ -3658,6 +3788,7 @@ function AppInner() {
       case "visao": return <VisaoGeral />;
       case "painelCritico": return <PainelCriticoModulo />;
       case "financeiro": return <FinanceiroModulo />;
+      case "relatorioCaixa": return <RelatorioCaixaModulo />;
       case "convenios": return <ConveniosModulo />;
       case "vacinas": return <VacinasModulo />;
       case "vendasVacinas": return <VendasVacinasModulo />;
@@ -3698,6 +3829,8 @@ function AppInner() {
       case "cadFornecedores": return <CadastroFornecedoresModulo />;
       case "cadTestesGeneticos": return <CadastroTestesGeneticosModulo />;
       case "cadBancos": return <CadastroBancosModulo />;
+      case "cadCategorias": return <CadastroCategoriasModulo />;
+      case "cadTiposPagamento": return <CadastroTiposPagamentoModulo />;
       case "bancoDocumentos": return <BancoDocumentosModulo />;
       case "chatInterno": return <ChatInternoModulo />;
       case "unidades": return <UnidadesModulo />;
