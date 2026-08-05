@@ -129,8 +129,8 @@ const MODULES = {
     toDb: (r) => ({ nome: r.nome, qtd_estoque: r.qtdEstoque, qtd_vendida_mes: r.qtdVendidaMes, qtd_minima: r.qtdMinima, valor_compra: r.valorCompra, valor_venda: r.valorVenda, validade: r.validade || null }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, qtdEstoque: r.qtd_estoque, qtdVendidaMes: r.qtd_vendida_mes, qtdMinima: r.qtd_minima, valorCompra: r.valor_compra, valorVenda: r.valor_venda, validade: r.validade }) },
   insumos: { table: "estoque_insumos", order: "nome.asc",
-    toDb: (r) => ({ nome: r.nome, categoria: r.categoria, qtd: r.qtd, qtd_minima: r.qtdMinima, unidade_medida: r.unidade, valor_unitario: r.valorUnitario }),
-    fromDb: (r) => ({ id: r.id, nome: r.nome, categoria: r.categoria, qtd: r.qtd, qtdMinima: r.qtd_minima, unidade: r.unidade_medida, valorUnitario: r.valor_unitario }) },
+    toDb: (r) => ({ nome: r.nome, categoria: r.categoria, qtd: r.qtd, qtd_minima: r.qtdMinima, unidade_medida: r.unidade, valor_unitario: r.valorUnitario, tipo_embalagem: r.tipoEmbalagem || "Unidade", quantidade_por_embalagem: r.quantidadePorEmbalagem || 1 }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, categoria: r.categoria, qtd: r.qtd, qtdMinima: r.qtd_minima, unidade: r.unidade_medida, valorUnitario: r.valor_unitario, tipoEmbalagem: r.tipo_embalagem, quantidadePorEmbalagem: r.quantidade_por_embalagem }) },
   producao: { table: "producao_medica", order: "data_atendimento.desc",
     toDb: (r) => ({ profissional: r.profissional, convenio: r.convenio, data_atendimento: r.data, mes: monthToDate(monthKey(r.data)), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipo_repasse: r.tipoRepasse || "Fixo", percentual_repasse: r.percentualRepasse || 0, desconto_tipo: r.descontoTipo || "Nenhum", desconto_valor: r.descontoValor || 0 }),
     fromDb: (r) => ({ id: r.id, profissional: r.profissional, convenio: r.convenio, data: r.data_atendimento, mes: monthKey(r.mes), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipoRepasse: r.tipo_repasse, percentualRepasse: r.percentual_repasse, descontoTipo: r.desconto_tipo, descontoValor: r.desconto_valor }) },
@@ -1244,8 +1244,22 @@ function AjusteEstoqueCell({ onAjustar, placeholder, tone = "ink" }) {
 
 function InsumosModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("insumos");
-  const fields = [{ key: "nome", label: "Item", type: "text" }, { key: "categoria", label: "Categoria", type: "select", options: ["Material médico", "EPI", "Limpeza", "Escritório", "Outros"] }, { key: "qtd", label: "Qtd. atual", type: "number" }, { key: "qtdMinima", label: "Qtd. mínima", type: "number" }, { key: "unidade", label: "Unidade", type: "text", placeholder: "caixa, litro…" }, { key: "valorUnitario", label: "Valor unitário (R$)", type: "currency" }];
-  const columns = [{ key: "nome", label: "Item" }, { key: "categoria", label: "Categoria" }, { key: "qtd", label: "Qtd.", render: (r) => <span className="flex items-center gap-1.5">{r.qtd} {r.unidade}{r.qtd < r.qtdMinima && <AlertTriangle size={12} style={{ color: T.red }} />}</span> }, { key: "qtdMinima", label: "Mínimo" }, { key: "valorUnitario", label: "Valor unit.", render: (r) => fmtBRL(r.valorUnitario) }, { key: "total", label: "Valor total", render: (r) => fmtBRL(r.qtd * r.valorUnitario) },
+  const fields = [
+    { key: "nome", label: "Item", type: "text" },
+    { key: "categoria", label: "Categoria", type: "select", options: ["Material médico", "EPI", "Limpeza", "Escritório", "Outros"] },
+    { key: "qtd", label: "Qtd. atual (nº de embalagens)", type: "number" },
+    { key: "tipoEmbalagem", label: "Tipo de embalagem", type: "select", options: ["Unidade", "Bloco", "Caixa", "Pacote"], default: "Unidade" },
+    { key: "quantidadePorEmbalagem", label: "Quantos vêm em cada embalagem", type: "number", required: false, default: 1, showIf: (f) => f.tipoEmbalagem && f.tipoEmbalagem !== "Unidade" },
+    { key: "qtdMinima", label: "Qtd. mínima (em embalagens)", type: "number" },
+    { key: "unidade", label: "O que se conta dentro (opcional)", type: "text", placeholder: "folhas, litros, pares…", required: false },
+    { key: "valorUnitario", label: "Valor por embalagem (R$)", type: "currency" },
+  ];
+  const totalReal = (r) => Number(r.qtd || 0) * Number(r.quantidadePorEmbalagem || 1);
+  const columns = [
+    { key: "nome", label: "Item" }, { key: "categoria", label: "Categoria" },
+    { key: "qtd", label: "Qtd.", render: (r) => <span className="flex items-center gap-1.5">{r.qtd} {r.tipoEmbalagem}{r.qtd < r.qtdMinima && <AlertTriangle size={12} style={{ color: T.red }} />}</span> },
+    { key: "totalReal", label: "Total real", render: (r) => r.tipoEmbalagem !== "Unidade" && r.quantidadePorEmbalagem > 1 ? <span className="text-xs" style={{ color: T.muted }}>{fmtNum(totalReal(r))} {r.unidade || "un."}</span> : "—" },
+    { key: "qtdMinima", label: "Mínimo" }, { key: "valorUnitario", label: "Valor unit.", render: (r) => fmtBRL(r.valorUnitario) }, { key: "total", label: "Valor total", render: (r) => fmtBRL(r.qtd * r.valorUnitario) },
     { key: "retirar", label: "Registrar retirada", render: (r) => <AjusteEstoqueCell placeholder="qtd" tone="coral" onAjustar={async (qtd) => update(r.id, { qtd: Math.max(Number(r.qtd) - qtd, 0) })} /> },
   ];
   const valorTotal = data.reduce((s, r) => s + r.qtd * r.valorUnitario, 0); const critico = data.filter((r) => r.qtd < r.qtdMinima);
