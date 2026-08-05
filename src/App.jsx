@@ -1810,20 +1810,23 @@ function FaturamentoModulo() {
   const opcoesTipoPagamento = tiposPagamentoCadastro.length ? tiposPagamentoCadastro.map((t) => t.nome) : TIPOS_PAGAMENTO_PADRAO;
   const nomesBancos = bancosCadastro.map((b) => b.nome);
   const fields = [
-    { key: "convenio", label: "Convênio", type: "select", options: CONVENIOS },
-    { key: "numeroGuia", label: "Nº da guia", type: "text", required: false },
+    { key: "tipoRecebimento", label: "Tipo de recebimento", type: "select", options: ["Convênio", "Outro serviço"], default: "Convênio" },
+    { key: "convenio", label: "Convênio", type: "select", options: CONVENIOS, showIf: (f) => f.tipoRecebimento !== "Outro serviço" },
+    { key: "servicoOutro", label: "Qual serviço", type: "text", placeholder: "ex: Aluguel de sala, Curso, Consultoria…", showIf: (f) => f.tipoRecebimento === "Outro serviço" },
+    { key: "numeroGuia", label: "Nº da guia (se houver)", type: "text", required: false },
     { key: "tipo", label: "Tipo", type: "select", options: ["Consulta", "Plantão", "Exame", "SADT", "Outro"] },
-    { key: "dataProtocolo", label: "Data de protocolo", type: "date", default: todayISO() },
+    { key: "dataProtocolo", label: "Data de protocolo/emissão", type: "date", default: todayISO() },
     { key: "valor", label: "Valor (R$)", type: "currency" },
     { key: "status", label: "Status", type: "select", options: ["Protocolada", "Faturada", "Paga", "Vencida"] },
     { key: "dataPagamento", label: "Data de pagamento", type: "date", required: false },
     { key: "tipoPagamento", label: "Tipo de pagamento", type: "select", options: opcoesTipoPagamento, required: false },
     { key: "bancoNome", label: "Banco de recebimento", type: "select", options: nomesBancos.length ? nomesBancos : ["Cadastre em Cadastros → Bancos"], required: false },
   ];
-  const onAddComputado = (record) => { const banco = bancosCadastro.find((b) => b.nome === record.bancoNome); return add({ ...record, bancoId: banco ? banco.id : null }); };
-  const onUpdateComputado = (id, record) => { const banco = bancosCadastro.find((b) => b.nome === record.bancoNome); return update(id, { ...record, bancoId: banco ? banco.id : null }); };
+  const mesclarConvenio = (record) => ({ ...record, convenio: record.tipoRecebimento === "Outro serviço" ? (record.servicoOutro || "Outro serviço") : record.convenio });
+  const onAddComputado = (record) => { const r = mesclarConvenio(record); const banco = bancosCadastro.find((b) => b.nome === r.bancoNome); return add({ ...r, bancoId: banco ? banco.id : null }); };
+  const onUpdateComputado = (id, record) => { const r = mesclarConvenio(record); const banco = bancosCadastro.find((b) => b.nome === r.bancoNome); return update(id, { ...r, bancoId: banco ? banco.id : null }); };
   const columns = [
-    { key: "convenio", label: "Convênio" }, { key: "numeroGuia", label: "Nº guia" }, { key: "tipo", label: "Tipo" },
+    { key: "convenio", label: "Convênio / Serviço" }, { key: "numeroGuia", label: "Nº guia" }, { key: "tipo", label: "Tipo" },
     { key: "dataProtocolo", label: "Protocolo", render: (r) => fmtDate(r.dataProtocolo) },
     { key: "valor", label: "Valor", render: (r) => fmtBRL(r.valor) },
     { key: "bancoNome", label: "Banco", render: (r) => (bancosCadastro.find((b) => b.id === r.bancoId) || {}).nome || "—" },
