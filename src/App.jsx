@@ -3746,22 +3746,33 @@ function RelatoriosModulo() {
   const opcoes = REPORT_MODULES.filter((m) => canFinance || !m.financeOnly);
   const [moduleKey, setModuleKey] = useState(opcoes[0].key);
   const [inicio, setInicio] = useState(""); const [fim, setFim] = useState("");
+  const [busca, setBusca] = useState("");
   const meta = opcoes.find((m) => m.key === moduleKey) || opcoes[0];
   const { data, loading } = useRecords(meta.key, true);
 
-  const filtrados = useMemo(() => {
+  const filtradosPorData = useMemo(() => {
     if (!meta.dateKey) return data;
     return data.filter((r) => { const v = r[meta.dateKey]; if (!v) return true; if (inicio && v < inicio) return false; if (fim && v > fim) return false; return true; });
   }, [data, inicio, fim, meta]);
+
+  const filtrados = useMemo(() => {
+    if (!busca.trim()) return filtradosPorData;
+    const termo = normalizarTexto(busca);
+    return filtradosPorData.filter((r) => Object.values(r).some((v) => v != null && normalizarTexto(String(v)).includes(termo)));
+  }, [filtradosPorData, busca]);
 
   const totalValor = meta.valueKey ? filtrados.reduce((s, r) => s + (Number(r[meta.valueKey]) || 0), 0) : null;
   const colKeys = filtrados[0] ? Object.keys(filtrados[0]).filter((k) => k !== "id") : [];
   const fieldsForExport = colKeys.map((k) => ({ key: k, label: humanizeKey(k) }));
 
+  const temTipoEntradaSaida = filtrados.length > 0 && "tipo" in filtrados[0] && filtrados.some((r) => r.tipo === "entrada" || r.tipo === "saida");
+  const entradas = temTipoEntradaSaida ? filtrados.filter((r) => r.tipo === "entrada") : [];
+  const saidas = temTipoEntradaSaida ? filtrados.filter((r) => r.tipo === "saida") : [];
+
   return (
     <div>
       <style>{`@media print { body * { visibility: hidden; } #relatorio-print, #relatorio-print * { visibility: visible; } #relatorio-print { position: absolute; top: 0; left: 0; width: 100%; padding: 24px; } }`}</style>
-      <SectionHeader icon={FileText} title="Relatórios" subtitle="Gere relatórios de qualquer painel, com filtro de período" tone="ink" />
+      <SectionHeader icon={FileText} title="Relatórios" subtitle="Gere relatórios de qualquer painel, com filtro de período e busca" tone="ink" />
       <Card className="mb-5">
         <div className="flex flex-wrap gap-3 items-end">
           <Field label="Painel">
@@ -3770,11 +3781,13 @@ function RelatoriosModulo() {
             </select>
           </Field>
           {meta.dateKey && <>
-            <Field label="De"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={inicio} onChange={(e) => setInicio(e.target.value)} /></Field>
-            <Field label="Até"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={fim} onChange={(e) => setFim(e.target.value)} /></Field>
+            <Field label="Data inicial"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={inicio} onChange={(e) => setInicio(e.target.value)} /></Field>
+            <Field label="Data final"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={fim} onChange={(e) => setFim(e.target.value)} /></Field>
           </>}
-          <Btn small variant="ghost" icon={Download} onClick={() => exportToCSV(fieldsForExport, filtrados, `relatorio-${meta.key}`)}>Exportar CSV</Btn>
-          <Btn small variant="ghost" icon={Printer} onClick={() => window.print()}>Imprimir / Salvar PDF</Btn>
+          <Field label="Busca"><input className="rounded-lg px-3 py-2 text-sm outline-none w-44" style={inputStyle} placeholder="categoria, descrição…" value={busca} onChange={(e) => setBusca(e.target.value)} /></Field>
+          <Btn small variant="ghost" icon={Download} onClick={() => exportToCSV(fieldsForExport, filtrados, `relatorio-${meta.key}`)}>CSV</Btn>
+          <Btn small tone="teal" icon={Download} onClick={() => exportToExcel(fieldsForExport, filtrados, `relatorio-${meta.key}`)}>Excel</Btn>
+          <Btn small variant="ghost" icon={Printer} onClick={() => window.print()}>PDF</Btn>
         </div>
       </Card>
 
@@ -3788,9 +3801,23 @@ function RelatoriosModulo() {
           {totalValor !== null && <KpiCard label="Valor total" value={fmtBRL(totalValor)} tone="green" />}
           {totalValor !== null && filtrados.length > 0 && <KpiCard label="Valor médio" value={fmtBRL(totalValor / filtrados.length)} />}
         </div>
+        {temTipoEntradaSaida && (
+          <div className="grid md:grid-cols-2 gap-5 mb-5">
+            <Card>
+              <p className="font-bold mb-3" style={{ color: T.text }}>Resumo entradas</p>
+              <div className="flex justify-between py-1.5" style={{ borderBottom: `1px solid ${T.border}` }}><span style={{ color: T.muted }}>Quantidade</span><span style={{ color: T.text }}>{entradas.length}</span></div>
+              <div className="flex justify-between py-1.5"><span style={{ color: T.muted }}>Total entradas</span><span style={{ color: T.green, fontWeight: 700 }}>{fmtBRL(entradas.reduce((s, r) => s + Number(r[meta.valueKey] || 0), 0))}</span></div>
+            </Card>
+            <Card>
+              <p className="font-bold mb-3" style={{ color: T.text }}>Resumo saídas</p>
+              <div className="flex justify-between py-1.5" style={{ borderBottom: `1px solid ${T.border}` }}><span style={{ color: T.muted }}>Quantidade</span><span style={{ color: T.text }}>{saidas.length}</span></div>
+              <div className="flex justify-between py-1.5"><span style={{ color: T.muted }}>Total saídas</span><span style={{ color: T.red, fontWeight: 700 }}>{fmtBRL(saidas.reduce((s, r) => s + Number(r[meta.valueKey] || 0), 0))}</span></div>
+            </Card>
+          </div>
+        )}
         <Card>
           {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> : (
-            filtrados.length === 0 ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhum registro no período selecionado.</div> : (
+            filtrados.length === 0 ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhum registro no período/busca selecionado.</div> : (
               <div className="overflow-x-auto -mx-5 px-5">
                 <table className="w-full text-sm min-w-[560px]">
                   <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>{colKeys.map((k) => <th key={k} className="text-left py-2 px-2 font-semibold text-[11px] uppercase" style={{ color: T.muted }}>{humanizeKey(k)}</th>)}</tr></thead>
