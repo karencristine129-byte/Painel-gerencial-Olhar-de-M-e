@@ -188,6 +188,9 @@ const MODULES = {
   entradasEstoqueVacinas: { table: "entradas_estoque_vacinas", order: "data.desc",
     toDb: (r) => ({ vacina_id: r.vacinaId, data: r.data, quantidade: r.quantidade, lote: r.lote, validade: r.validade || null }),
     fromDb: (r) => ({ id: r.id, vacinaId: r.vacina_id, data: r.data, quantidade: r.quantidade, lote: r.lote, validade: r.validade }) },
+  entradasEstoqueInsumos: { table: "entradas_estoque_insumos", order: "data.desc",
+    toDb: (r) => ({ insumo_id: r.insumoId, data: r.data, quantidade: r.quantidade }),
+    fromDb: (r) => ({ id: r.id, insumoId: r.insumo_id, data: r.data, quantidade: r.quantidade }) },
   vendasVacinasPacotes: { table: "vendas_vacinas_pacotes", order: "data.desc",
     toDb: (r) => ({ data: r.data, paciente: r.paciente, itens: r.itens, desconto_tipo: r.descontoTipo, desconto_valor: r.descontoValor, valor_total: r.valorTotal }),
     fromDb: (r) => ({ id: r.id, data: r.data, paciente: r.paciente, itens: r.itens, descontoTipo: r.desconto_tipo, descontoValor: r.desconto_valor, valorTotal: r.valor_total }) },
@@ -832,6 +835,8 @@ function ModuleShell({ icon, title, subtitle, tone, dailyFields, dailyCta, field
 /* ============================== MÓDULOS ============================== */
 function FinanceiroModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("financeiro");
+  const { data: vacinasEstoque } = useRecords("vacinas");
+  const { data: insumosEstoque } = useRecords("insumos");
   const fields = [
     { key: "data", label: "Data", type: "date", default: todayISO() },
     { key: "tipo", label: "Tipo", type: "select", options: ["entrada", "saida"] },
@@ -855,6 +860,8 @@ function FinanceiroModulo() {
   const lucroBruto = totalReceita - totalCustos, totalDespesas = despesas.reduce((s, x) => s + x.valor, 0), totalImpostos = impostos.reduce((s, x) => s + x.valor, 0);
   const resultado = lucroBruto - totalDespesas - totalImpostos;
   const margem = totalReceita ? (resultado / totalReceita) * 100 : 0;
+  const valorEstoqueVacinas = vacinasEstoque.reduce((s, r) => s + Number(r.qtdEstoque) * Number(r.valorVenda), 0);
+  const valorEstoqueInsumos = insumosEstoque.reduce((s, r) => s + Number(r.qtd) * Number(r.valorUnitario), 0);
   const DreLine = ({ label, value, bold }) => (
     <div className="flex justify-between py-1.5" style={{ borderBottom: `1px solid ${T.border}`, paddingLeft: bold ? 0 : 16 }}>
       <span className={bold ? "font-bold" : ""} style={{ color: bold ? T.text : T.muted, fontSize: bold ? 14 : 13 }}>{label}</span>
@@ -865,7 +872,8 @@ function FinanceiroModulo() {
     <ModuleShell icon={Wallet} title="Financeiro" subtitle="Fluxo de caixa, entradas, saídas e DRE consolidado" tone="coral" loading={loading} erro={erro}
       dailyFields={fields} dailyCta="Registrar movimento" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
       kpis={[{ label: "Entradas", value: fmtBRL(entradas), tone: "green", icon: TrendingUp }, { label: "Saídas", value: fmtBRL(saidas), tone: "red", icon: TrendingDown },
-        { label: "Resultado do período", value: fmtBRL(saldo), tone: saldo >= 0 ? "green" : "red", icon: Activity }, { label: "Margem líquida", value: fmtPct(margem), tone: margem >= 0 ? "green" : "red" }]}
+        { label: "Resultado do período", value: fmtBRL(saldo), tone: saldo >= 0 ? "green" : "red", icon: Activity }, { label: "Margem líquida", value: fmtPct(margem), tone: margem >= 0 ? "green" : "red" },
+        { label: "Valor em estoque — Vacinas", value: fmtBRL(valorEstoqueVacinas), tone: "teal" }, { label: "Valor em estoque — Insumos", value: fmtBRL(valorEstoqueInsumos), tone: "teal" }]}
       charts={<div className="grid md:grid-cols-2 gap-5">
         <ChartCard title="Entradas x saídas por mês"><BarChart data={porMes}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="mes" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} tickFormatter={(v) => `${v / 1000}k`} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="entradas" name="Entradas" fill={T.green} radius={[4, 4, 0, 0]} /><Bar dataKey="saidas" name="Saídas" fill={T.red} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>
         <ChartCard title="Composição da receita"><PieChart><Pie data={receitas} dataKey="valor" nameKey="linha" innerRadius={55} outerRadius={85} paddingAngle={2}>{receitas.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Pie><Tooltip formatter={(v) => fmtBRL(v)} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart></ChartCard>
@@ -1066,6 +1074,42 @@ function VendasVacinasModulo() {
         </Card>
       )}
       charts={<ChartCard title="Valor vendido por vacina"><BarChart data={porVacina}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="vacina" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-15} textAnchor="end" height={60} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="valor" fill={T.teal} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>} />
+  );
+}
+
+function EntradaEstoqueInsumosModulo() {
+  const { data: entradas, add, remove, loading, erro } = useRecords("entradasEstoqueInsumos");
+  const { data: insumosCat, update: updateInsumo, loading: loadingInsumos } = useRecords("insumos");
+  const nomesInsumos = insumosCat.map((i) => i.nome);
+  const fields = [
+    { key: "insumo", label: "Item", type: "select", options: nomesInsumos.length ? nomesInsumos : ["Cadastre em Estoque de Insumos primeiro"] },
+    { key: "data", label: "Data (competência)", type: "date", default: todayISO() },
+    { key: "quantidade", label: "Quantidade que chegou", type: "number" },
+  ];
+  const onAddEntrada = async (record) => {
+    const item = insumosCat.find((i) => i.nome === record.insumo);
+    if (!item) return alert("Selecione um item cadastrado.");
+    const qtd = Number(record.quantidade) || 0;
+    await add({ insumoId: item.id, data: record.data, quantidade: qtd });
+    await updateInsumo(item.id, { qtd: Number(item.qtd || 0) + qtd });
+  };
+  const onRemoveEntrada = async (id) => {
+    const entrada = entradas.find((e) => e.id === id);
+    if (entrada) {
+      const item = insumosCat.find((i) => i.id === entrada.insumoId);
+      if (item) await updateInsumo(item.id, { qtd: Math.max(Number(item.qtd) - Number(entrada.quantidade), 0) });
+    }
+    await remove(id);
+  };
+  const rowsEnriquecidas = entradas.map((e) => ({ ...e, insumo: (insumosCat.find((x) => x.id === e.insumoId) || {}).nome || "—" }));
+  const columns = [{ key: "data", label: "Data (competência)", render: (r) => fmtDate(r.data) }, { key: "insumo", label: "Item" }, { key: "quantidade", label: "Quantidade" }];
+  const totalQtd = entradas.reduce((s, r) => s + Number(r.quantidade), 0);
+  const porItem = useMemo(() => { const map = {}; rowsEnriquecidas.forEach((r) => { map[r.insumo] = (map[r.insumo] || 0) + Number(r.quantidade); }); return Object.entries(map).map(([insumo, quantidade]) => ({ insumo, quantidade })).sort((a, b) => b.quantidade - a.quantidade); }, [rowsEnriquecidas]);
+  return (
+    <ModuleShell icon={Package} title="Entrada de Estoque — Insumos" subtitle="Registre com data tudo que chegou — exporte por período quando quiser" tone="teal" loading={loading || loadingInsumos} erro={erro}
+      dailyFields={fields} dailyCta="Registrar entrada" fields={fields} columns={columns} rows={rowsEnriquecidas} onAdd={onAddEntrada} onUpdate={() => {}} onDelete={onRemoveEntrada}
+      kpis={[{ label: "Entradas registradas", value: entradas.length }, { label: "Itens recebidos", value: fmtNum(totalQtd), tone: "teal" }]}
+      charts={<ChartCard title="Quantidade recebida por item"><BarChart data={porItem}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="insumo" tick={{ fontSize: 10, fill: T.muted }} interval={0} angle={-15} textAnchor="end" height={60} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="quantidade" fill={T.teal} radius={[4, 4, 0, 0]} /></BarChart></ChartCard>} />
   );
 }
 
@@ -3539,7 +3583,7 @@ const ALL_MENU = [
   { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "protocoloGuias", label: "Protocolo de Guias", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }, { key: "sublocacao", label: "Receita de Sublocação", icon: Building2, tone: "coral" }, { key: "importarOfx", label: "Importar Extrato (OFX)", icon: Upload, tone: "coral" }] },
   { group: "Atendimento", items: [{ key: "convenios", label: "Convênios", icon: HeartHandshake, tone: "teal" }, { key: "producaoParticulares", label: "Produção — Particulares", icon: Stethoscope, tone: "teal" }, { key: "producaoConveniosGeral", label: "Produção — Convênios", icon: Stethoscope, tone: "teal" }, { key: "producaoBradescoClinica", label: "Produção — Bradesco Clínica", icon: Stethoscope, tone: "teal" }, { key: "producaoAuroraSaude", label: "Produção — Aurora Saúde", icon: Stethoscope, tone: "teal" }, { key: "producaoIpsm", label: "Produção — IPSM", icon: Stethoscope, tone: "teal" }, { key: "producaoResumoGeral", label: "Produção — Valores Gerais", icon: Stethoscope, tone: "coral" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
   { group: "Setor de Vacinas", items: [{ key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "entradaEstoqueVacinas", label: "Entrada de Estoque", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "pacoteVacinas", label: "Pacote Personalizado", icon: Syringe, tone: "coral" }] },
-  { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }] },
+  { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }, { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" }] },
   { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "relatorioColaborador", label: "Relatório de Colaborador", icon: FileText, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" } ] },
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }] },
   { group: "Plantão", items: [{ key: "plantaoRegistro", label: "Registrar Plantão", icon: Stethoscope, tone: "teal" }, { key: "plantaoValores", label: "Valores por Convênio", icon: ClipboardList, tone: "coral" }, { key: "plantaoResumo", label: "Resumo Financeiro", icon: ClipboardList, tone: "coral" }] },
@@ -3555,6 +3599,7 @@ const RESTRICTED_MENUS = {
     { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
     { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" },
     { key: "insumos", label: "Estoque de Insumos", icon: Package, tone: "teal" },
+    { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" },
     { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
   marketing: { group: "Minha área", items: [
@@ -3582,11 +3627,13 @@ const RESTRICTED_MENUS = {
     { key: "pacoteVacinas", label: "Pacote Personalizado", icon: Syringe, tone: "coral" },
     { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" },
     { key: "insumos", label: "Estoque de Insumos", icon: Package, tone: "teal" },
+    { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" },
     { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
   servicos_gerais: { group: "Minha área", items: [
     { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
     { key: "insumos", label: "Estoque de Insumos", icon: Package, tone: "teal" },
+    { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" },
     { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
 };
@@ -3617,6 +3664,7 @@ function AppInner() {
       case "entradaEstoqueVacinas": return <EntradaEstoqueVacinasModulo />;
       case "pacoteVacinas": return <PacoteVacinasModulo />;
       case "insumos": return <InsumosModulo />;
+      case "entradaEstoqueInsumos": return <EntradaEstoqueInsumosModulo />;
       case "producao": return <ProducaoConveniosGeralModulo />;
       case "producaoParticulares": return <ProducaoParticularesModulo />;
       case "producaoConveniosGeral": return <ProducaoConveniosGeralModulo />;
