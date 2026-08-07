@@ -170,6 +170,9 @@ const MODULES = {
   marketingCalendario: { table: "marketing_calendario", order: "data.asc",
     toDb: (r) => ({ tipo: r.tipo, titulo: r.titulo, data: r.data, recorrente_anual: !!r.recorrenteAnual, descricao: r.descricao, criado_por: r.criadoPor || null }),
     fromDb: (r) => ({ id: r.id, tipo: r.tipo, titulo: r.titulo, data: r.data, recorrenteAnual: r.recorrente_anual, descricao: r.descricao, criadoPor: r.criado_por }) },
+  agendamentosAdmin: { table: "agendamentos_pacientes", order: "data_agendamento.desc",
+    toDb: (r) => ({ tipo: r.tipo, paciente: r.paciente, data_agendamento: r.dataAgendamento, convenio: r.convenio || null, vacina: r.vacina || null, paciente_novo: r.pacienteNovo || null, medico: r.medico || null, plantao: !!r.plantao, contato: r.contato || null, compareceu: r.compareceu || "Aguardando" }),
+    fromDb: (r) => ({ id: r.id, tipo: r.tipo, paciente: r.paciente, dataAgendamento: r.data_agendamento, convenio: r.convenio, vacina: r.vacina, pacienteNovo: r.paciente_novo, medico: r.medico, plantao: r.plantao, contato: r.contato, compareceu: r.compareceu, colaboradorNome: r.colaborador_nome, colaboradorId: r.colaborador_id }) },
   procedimentos: { table: "procedimentos_especiais", order: "data.desc",
     toDb: (r) => ({ tipo: r.tipo, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor }),
     fromDb: (r) => ({ id: r.id, tipo: r.tipo, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor }) },
@@ -2002,6 +2005,7 @@ function RelatorioColaboradorModulo() {
   const { unidadeId } = useUnidade();
   const [horas, setHoras] = useState([]);
   const [metas, setMetas] = useState([]);
+  const [agendamentos, setAgendamentos] = useState([]);
   const [loadingExtra, setLoadingExtra] = useState(true);
   const [colaboradorId, setColaboradorId] = useState("todos");
   const [de, setDe] = useState(""); const [ate, setAte] = useState("");
@@ -2011,7 +2015,8 @@ function RelatorioColaboradorModulo() {
     Promise.all([
       sbRest(`rh_horas?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
       sbRest(`metas_colaborador?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
-    ]).then(([h, m]) => { setHoras(h || []); setMetas(m || []); }).finally(() => setLoadingExtra(false));
+      sbRest(`agendamentos_pacientes?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
+    ]).then(([h, m, ag]) => { setHoras(h || []); setMetas(m || []); setAgendamentos(ag || []); }).finally(() => setLoadingExtra(false));
   }, [unidadeId]);
 
   const noPeriodo = (data) => (!de || data >= de) && (!ate || data <= ate);
@@ -2022,17 +2027,22 @@ function RelatorioColaboradorModulo() {
     const prodP = producao.filter((r) => r.colaborador_id === p.id && noPeriodo(r.data));
     const horasP = horas.filter((r) => r.colaborador_id === p.id && noPeriodo(r.data));
     const metasP = metas.filter((m) => m.colaborador_id === p.id);
+    const agP = agendamentos.filter((a) => a.colaborador_id === p.id && noPeriodo(a.data_agendamento));
     const ligacoes = prodP.reduce((s, r) => s + (Number(r.ligacoes) || 0), 0);
     const mensagens = prodP.reduce((s, r) => s + (Number(r.mensagens) || 0), 0);
     const agendados = prodP.reduce((s, r) => s + (Number(r.agendados) || 0), 0);
     const horasTotal = horasP.reduce((s, r) => s + (Number(r.horas_total) || 0), 0);
     const metasResumo = metasP.map((m) => `${m.tipo_meta}: meta ${m.quantidade_total}`).join(" | ") || "Sem meta cadastrada";
-    return { nome: p.nome, cargo: p.cargo || "—", ligacoes, mensagens, agendados, horasTrabalhadas: horasTotal.toFixed(1), metas: metasResumo };
+    const agendamentosRegistrados = agP.length;
+    const compareceram = agP.filter((a) => a.compareceu === "Sim").length;
+    const naoCompareceram = agP.filter((a) => a.compareceu === "Não").length;
+    return { nome: p.nome, cargo: p.cargo || "—", ligacoes, mensagens, agendados, horasTrabalhadas: horasTotal.toFixed(1), metas: metasResumo, agendamentosRegistrados, compareceram, naoCompareceram };
   });
 
   const camposExport = [
     { key: "nome", label: "Nome" }, { key: "cargo", label: "Cargo" }, { key: "ligacoes", label: "Ligações" }, { key: "mensagens", label: "Mensagens Respondidas" },
-    { key: "agendados", label: "Agendamentos" }, { key: "horasTrabalhadas", label: "Horas Trabalhadas" }, { key: "metas", label: "Acompanhamento de Meta" },
+    { key: "agendados", label: "Agendamentos" }, { key: "agendamentosRegistrados", label: "Agendamentos Detalhados" }, { key: "compareceram", label: "Compareceram" }, { key: "naoCompareceram", label: "Não Compareceram" },
+    { key: "horasTrabalhadas", label: "Horas Trabalhadas" }, { key: "metas", label: "Acompanhamento de Meta" },
   ];
   const nomeArquivo = `relatorio-colaborador-${colaboradorId === "todos" ? "todos" : (perfis.find((p) => p.id === colaboradorId) || {}).nome || "colaborador"}`;
 
@@ -2061,7 +2071,7 @@ function RelatorioColaboradorModulo() {
               <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>{camposExport.map((c) => <th key={c.key} className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>{c.label}</th>)}</tr></thead>
               <tbody>{linhas.map((l, i) => (
                 <tr key={i} style={{ borderBottom: `1px solid ${T.border}` }}>
-                  <td className="py-2 px-2 font-medium" style={{ color: T.text }}>{l.nome}</td><td className="py-2 px-2">{l.cargo}</td><td className="py-2 px-2">{l.ligacoes}</td><td className="py-2 px-2">{l.mensagens}</td><td className="py-2 px-2">{l.agendados}</td><td className="py-2 px-2">{l.horasTrabalhadas}</td><td className="py-2 px-2 text-xs" style={{ color: T.muted }}>{l.metas}</td>
+                  <td className="py-2 px-2 font-medium" style={{ color: T.text }}>{l.nome}</td><td className="py-2 px-2">{l.cargo}</td><td className="py-2 px-2">{l.ligacoes}</td><td className="py-2 px-2">{l.mensagens}</td><td className="py-2 px-2">{l.agendados}</td><td className="py-2 px-2">{l.agendamentosRegistrados}</td><td className="py-2 px-2" style={{ color: T.green }}>{l.compareceram}</td><td className="py-2 px-2" style={{ color: T.red }}>{l.naoCompareceram}</td><td className="py-2 px-2">{l.horasTrabalhadas}</td><td className="py-2 px-2 text-xs" style={{ color: T.muted }}>{l.metas}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -2990,18 +3000,26 @@ function TermoUsoImagem() {
 }
 
 function AgendamentosPacientes() {
-  const { data, add, remove, loading } = useOwnRecords("agendamentos_pacientes", "data_agendamento.desc");
+  const { perfil } = useAuth();
+  const { data, add, update, remove, loading } = useOwnRecords("agendamentos_pacientes", "data_agendamento.desc");
   const { data: vacinasCat } = useRecords("vacinas");
+  const { data: profissionaisCat } = useRecords("cadProfissionais");
   const nomesVacinas = vacinasCat.map((v) => v.nome);
-  const [form, setForm] = useState({ tipo: "Consulta", paciente: "", data: todayISO(), convenio: "", vacina: "" });
+  const nomesProfissionais = profissionaisCat.map((p) => p.nome);
+  const [form, setForm] = useState({ tipo: "Consulta", paciente: "", pacienteNovo: "Já é paciente", contato: "", data: todayISO(), convenio: "", vacina: "", medico: "", plantao: false });
   const [busy, setBusy] = useState(false);
   const mesAtual = todayISO().slice(0, 7);
   const doMes = data.filter((r) => r.data_agendamento.slice(0, 7) === mesAtual);
   const registrar = async () => {
     if (!form.paciente) return;
     setBusy(true);
-    await add({ tipo: form.tipo, paciente: form.paciente, data_agendamento: form.data, convenio: form.tipo === "Consulta" ? (form.convenio || null) : null, vacina: form.tipo === "Vacina" ? (form.vacina || null) : null });
-    setForm({ tipo: form.tipo, paciente: "", data: todayISO(), convenio: "", vacina: "" });
+    await add({
+      tipo: form.tipo, paciente: form.paciente, paciente_novo: form.pacienteNovo, contato: form.contato || null, data_agendamento: form.data,
+      convenio: form.tipo === "Consulta" ? (form.convenio || null) : null, vacina: form.tipo === "Vacina" ? (form.vacina || null) : null,
+      medico: form.tipo === "Consulta" ? (form.medico || null) : null, plantao: form.tipo === "Consulta" ? !!form.plantao : false,
+      colaborador_nome: perfil.nome, compareceu: "Aguardando",
+    });
+    setForm({ tipo: form.tipo, paciente: "", pacienteNovo: "Já é paciente", contato: "", data: todayISO(), convenio: "", vacina: "", medico: "", plantao: false });
     setBusy(false);
   };
   return (
@@ -3014,15 +3032,33 @@ function AgendamentosPacientes() {
             <option value="Vacina">Vacina</option>
           </select>
         </Field>
-        <Field label="Nome do paciente"><input className="rounded-lg px-3 py-2 text-sm outline-none w-52" style={inputStyle} value={form.paciente} onChange={(e) => setForm((p) => ({ ...p, paciente: e.target.value }))} /></Field>
+        <Field label="Paciente novo ou já é paciente?">
+          <select className="rounded-lg px-3 py-2 text-sm outline-none w-40" style={inputStyle} value={form.pacienteNovo} onChange={(e) => setForm((p) => ({ ...p, pacienteNovo: e.target.value }))}>
+            <option value="Já é paciente">Já é paciente</option>
+            <option value="Novo">Novo</option>
+          </select>
+        </Field>
+        <Field label="Nome do paciente"><input className="rounded-lg px-3 py-2 text-sm outline-none w-48" style={inputStyle} value={form.paciente} onChange={(e) => setForm((p) => ({ ...p, paciente: e.target.value }))} /></Field>
+        <Field label="Contato (telefone)"><input className="rounded-lg px-3 py-2 text-sm outline-none w-40" style={inputStyle} value={form.contato} onChange={(e) => setForm((p) => ({ ...p, contato: e.target.value }))} /></Field>
         <Field label="Data do agendamento"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} /></Field>
         {form.tipo === "Consulta" && (
-          <Field label="Convênio (opcional)">
-            <select className="rounded-lg px-3 py-2 text-sm outline-none w-44" style={inputStyle} value={form.convenio} onChange={(e) => setForm((p) => ({ ...p, convenio: e.target.value }))}>
-              <option value="">— não informar —</option>
-              {CONVENIOS.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </Field>
+          <>
+            <Field label="Médico(a)">
+              <select className="rounded-lg px-3 py-2 text-sm outline-none w-44" style={inputStyle} value={form.medico} onChange={(e) => setForm((p) => ({ ...p, medico: e.target.value }))}>
+                <option value="">— não informar —</option>
+                {nomesProfissionais.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </Field>
+            <Field label="Convênio (opcional)">
+              <select className="rounded-lg px-3 py-2 text-sm outline-none w-44" style={inputStyle} value={form.convenio} onChange={(e) => setForm((p) => ({ ...p, convenio: e.target.value }))}>
+                <option value="">— não informar —</option>
+                {CONVENIOS.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </Field>
+            <Field label="É plantão?">
+              <div className="flex items-center h-[38px] gap-2"><input type="checkbox" className="w-4 h-4" checked={form.plantao} onChange={(e) => setForm((p) => ({ ...p, plantao: e.target.checked }))} /><span className="text-sm" style={{ color: T.text }}>Sim</span></div>
+            </Field>
+          </>
         )}
         {form.tipo === "Vacina" && (
           <Field label="Qual vacina (opcional)">
@@ -3042,14 +3078,18 @@ function AgendamentosPacientes() {
               <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Data</th>
               <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Paciente</th>
               <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Tipo</th>
-              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Convênio/Vacina</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Médico/Vacina</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Plantão</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Compareceu</th>
               <th></th>
             </tr></thead>
             <tbody>{[...doMes].sort((a, b) => b.data_agendamento.localeCompare(a.data_agendamento)).map((r) => (
               <tr key={r.id} style={{ borderBottom: `1px solid ${T.border}` }}>
                 <td className="py-2 px-2">{fmtDate(r.data_agendamento)}</td><td className="py-2 px-2" style={{ color: T.text }}>{r.paciente}</td>
                 <td className="py-2 px-2"><Badge tone={r.tipo === "Consulta" ? "teal" : "coral"}>{r.tipo}</Badge></td>
-                <td className="py-2 px-2" style={{ color: T.muted }}>{r.convenio || r.vacina || "—"}</td>
+                <td className="py-2 px-2" style={{ color: T.muted }}>{r.medico || r.vacina || "—"}</td>
+                <td className="py-2 px-2">{r.plantao ? <Badge tone="amber">Plantão</Badge> : "—"}</td>
+                <td className="py-2 px-2"><Badge tone={r.compareceu === "Sim" ? "green" : r.compareceu === "Não" ? "red" : "muted"}>{r.compareceu}</Badge></td>
                 <td className="py-2 px-2 text-right"><button onClick={() => { if (confirm("Remover este agendamento?")) remove(r.id); }}><Trash2 size={13} style={{ color: T.red }} /></button></td>
               </tr>
             ))}</tbody>
@@ -3829,6 +3869,64 @@ function MetasModulo() {
   );
 }
 
+function AgendamentosAdminModulo() {
+  const { data, update, loading, erro } = useRecords("agendamentosAdmin");
+  const [filtroMes, setFiltroMes] = useState("");
+  const [filtroDe, setFiltroDe] = useState("");
+  const [filtroAte, setFiltroAte] = useState("");
+  const [filtroCategoria, setFiltroCategoria] = useState("");
+
+  const categoriaDe = (r) => r.tipo === "Vacina" ? "Vacinas" : r.plantao ? "Agendamento Plantão" : "Convênios";
+  const dataFiltrada = filtrarPorPeriodo(data, "dataAgendamento", filtroMes, filtroDe, filtroAte).filter((r) => !filtroCategoria || categoriaDe(r) === filtroCategoria);
+
+  const fields = [
+    { key: "tipo", label: "Tipo", type: "select", options: ["Consulta", "Vacina"] },
+    { key: "paciente", label: "Paciente", type: "text" },
+    { key: "dataAgendamento", label: "Data do agendamento", type: "date" },
+    { key: "compareceu", label: "Compareceu?", type: "select", options: ["Aguardando", "Sim", "Não"] },
+  ];
+  const columns = [
+    { key: "dataAgendamento", label: "Data", render: (r) => fmtDate(r.dataAgendamento) },
+    { key: "paciente", label: "Paciente" }, { key: "pacienteNovo", label: "Novo/Já é", render: (r) => r.pacienteNovo || "—" },
+    { key: "contato", label: "Contato", render: (r) => r.contato || "—" },
+    { key: "categoria", label: "Categoria", render: (r) => <Badge tone={categoriaDe(r) === "Vacinas" ? "teal" : categoriaDe(r) === "Agendamento Plantão" ? "amber" : "coral"}>{categoriaDe(r)}</Badge> },
+    { key: "medicoOuVacina", label: "Médico/Vacina", render: (r) => r.medico || r.vacina || "—" },
+    { key: "convenio", label: "Convênio", render: (r) => r.convenio || "—" },
+    { key: "colaboradorNome", label: "Registrado por", render: (r) => r.colaboradorNome || "—" },
+    { key: "compareceu", label: "Compareceu?", render: (r) => (
+      <select className="rounded-lg px-2 py-1 text-xs outline-none" style={{ ...inputStyle, color: r.compareceu === "Sim" ? T.green : r.compareceu === "Não" ? T.red : T.muted }} value={r.compareceu} onChange={(e) => update(r.id, { compareceu: e.target.value })}>
+        <option value="Aguardando">Aguardando</option><option value="Sim">Sim</option><option value="Não">Não</option>
+      </select>
+    ) },
+  ];
+
+  const totalVacinas = dataFiltrada.filter((r) => categoriaDe(r) === "Vacinas").length;
+  const totalPlantao = dataFiltrada.filter((r) => categoriaDe(r) === "Agendamento Plantão").length;
+  const totalConvenios = dataFiltrada.filter((r) => categoriaDe(r) === "Convênios").length;
+  const totalNovos = dataFiltrada.filter((r) => r.pacienteNovo === "Novo").length;
+  const compareceram = dataFiltrada.filter((r) => r.compareceu === "Sim").length;
+  const naoCompareceram = dataFiltrada.filter((r) => r.compareceu === "Não").length;
+
+  return (
+    <div>
+      <SectionHeader icon={CalendarDays} title="Agendamentos" subtitle="Todos os agendamentos registrados pela equipe — confirme aqui se o paciente compareceu" tone="coral" />
+      <Card className="mb-5">
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Filtrar por competência, período ou categoria</p>
+        <div className="flex flex-wrap gap-3 items-end">
+          <Field label="Competência (mês)"><input type="month" className="rounded-lg px-3 py-2 text-sm outline-none w-40" style={inputStyle} value={filtroMes} onChange={(e) => { setFiltroMes(e.target.value); setFiltroDe(""); setFiltroAte(""); }} /></Field>
+          <Field label="De"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={filtroDe} onChange={(e) => { setFiltroDe(e.target.value); setFiltroMes(""); }} /></Field>
+          <Field label="Até"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={filtroAte} onChange={(e) => { setFiltroAte(e.target.value); setFiltroMes(""); }} /></Field>
+          <Field label="Categoria"><select className="rounded-lg px-3 py-2 text-sm outline-none w-48" style={inputStyle} value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}><option value="">Todas</option><option value="Vacinas">Vacinas</option><option value="Agendamento Plantão">Agendamento Plantão</option><option value="Convênios">Convênios</option></select></Field>
+          {(filtroMes || filtroDe || filtroAte || filtroCategoria) && <Btn small variant="ghost" onClick={() => { setFiltroMes(""); setFiltroDe(""); setFiltroAte(""); setFiltroCategoria(""); }}>Limpar filtro</Btn>}
+        </div>
+      </Card>
+      <ModuleShell icon={CalendarDays} title="Lista de agendamentos" subtitle="" tone="coral" loading={loading} erro={erro} ocultarLancamento
+        dailyFields={fields} dailyCta="" fields={fields} columns={columns} rows={dataFiltrada} onAdd={() => {}} onUpdate={update} onDelete={() => {}}
+        kpis={[{ label: "Total no período", value: dataFiltrada.length }, { label: "Vacinas", value: totalVacinas, tone: "teal" }, { label: "Plantão", value: totalPlantao, tone: "amber" }, { label: "Convênios", value: totalConvenios, tone: "coral" }, { label: "Pacientes novos", value: totalNovos, tone: "green" }, { label: "Compareceram", value: compareceram, tone: "green" }, { label: "Não compareceram", value: naoCompareceram, tone: naoCompareceram ? "red" : "green" }]} />
+    </div>
+  );
+}
+
 function EquipeModulo() {
   const { session } = useAuth();
   const { unidadeId } = useUnidade();
@@ -4158,7 +4256,7 @@ const ALL_MENU = [
   { group: "Atendimento", items: [{ key: "producaoParticulares", label: "Produção — Particulares", icon: Stethoscope, tone: "teal" }, { key: "producaoConveniosGeral", label: "Produção — Convênios", icon: Stethoscope, tone: "teal" }, { key: "producaoBradescoClinica", label: "Produção — Bradesco Clínica", icon: Stethoscope, tone: "teal" }, { key: "producaoAuroraSaude", label: "Produção — Aurora Saúde", icon: Stethoscope, tone: "teal" }, { key: "producaoIpsm", label: "Produção — IPSM", icon: Stethoscope, tone: "teal" }, { key: "producaoResumoGeral", label: "Produção — Valores Gerais", icon: Stethoscope, tone: "coral" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
   { group: "Setor de Vacinas", items: [{ key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "entradaEstoqueVacinas", label: "Entrada de Estoque", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "pacoteVacinas", label: "Pacote Personalizado", icon: Syringe, tone: "coral" }] },
   { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }, { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" }] },
-  { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "relatorioColaborador", label: "Relatório de Colaborador", icon: FileText, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" } ] },
+  { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "agendamentosAdmin", label: "Agendamentos", icon: CalendarDays, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "relatorioColaborador", label: "Relatório de Colaborador", icon: FileText, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" } ] },
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }, { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" }] },
   { group: "Plantão", items: [{ key: "plantaoRegistro", label: "Registrar Plantão", icon: Stethoscope, tone: "teal" }, { key: "plantaoValores", label: "Valores por Convênio", icon: ClipboardList, tone: "coral" }, { key: "plantaoResumo", label: "Resumo Financeiro", icon: ClipboardList, tone: "coral" }] },
   { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "metasColaborador", label: "Meta por Colaborador", icon: Users, tone: "coral" }, { key: "metasEquipe", label: "Meta por Equipe", icon: Users, tone: "coral" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
@@ -4166,7 +4264,7 @@ const ALL_MENU = [
   { group: "Documentos & Chat", items: [{ key: "bancoDocumentos", label: "Banco de Documentos", icon: FileText, tone: "coral" }, { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas (E-mail/WhatsApp)", icon: Bell, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "cadCategorias", "cadTiposPagamento", "cadSaldoCaixa", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
+const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "agendamentosAdmin", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "cadCategorias", "cadTiposPagamento", "cadSaldoCaixa", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
 const RESTRICTED_MENUS = {
   recepcao: { group: "Minha área", items: [
@@ -4273,6 +4371,7 @@ function AppInner() {
       case "sublocacao": return <SublocacaoModulo />;
       case "importarOfx": return <ImportarOFXModulo />;
       case "equipe": return <EquipeModulo />;
+      case "agendamentosAdmin": return <AgendamentosAdminModulo />;
       case "metas": return <MetasModulo />;
       case "metasColaborador": return <MetasColaboradorModulo />;
       case "metasEquipe": return <MetasEquipeModulo />;
