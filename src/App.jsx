@@ -159,8 +159,8 @@ const MODULES = {
     toDb: (r) => ({ profissional: r.profissional, convenio: r.convenio, data_atendimento: r.data, mes: monthToDate(monthKey(r.data)), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipo_repasse: r.tipoRepasse || "Fixo", percentual_repasse: r.percentualRepasse || 0, desconto_tipo: r.descontoTipo || "Nenhum", desconto_valor: r.descontoValor || 0 }),
     fromDb: (r) => ({ id: r.id, profissional: r.profissional, convenio: r.convenio, data: r.data_atendimento, mes: monthKey(r.mes), atendimentos: r.atendimentos, receita: r.receita, custo: r.custo, tipoRepasse: r.tipo_repasse, percentualRepasse: r.percentual_repasse, descontoTipo: r.desconto_tipo, descontoValor: r.desconto_valor }) },
   contas: { table: "contas_pagar", order: "vencimento.asc",
-    toDb: (r) => ({ descricao: r.descricao, categoria: r.categoria, valor: r.valor, vencimento: r.vencimento, status: r.status, data_pagamento: r.dataPagamento || null, banco_id: r.bancoId || null, tipo_pagamento: r.tipoPagamento || null }),
-    fromDb: (r) => ({ id: r.id, descricao: r.descricao, categoria: r.categoria, valor: r.valor, vencimento: r.vencimento, status: r.status, dataPagamento: r.data_pagamento, bancoId: r.banco_id, tipoPagamento: r.tipo_pagamento }) },
+    toDb: (r) => ({ descricao: r.descricao, categoria: r.categoria, valor: r.valor, vencimento: r.vencimento, status: r.status, data_pagamento: r.dataPagamento || null, banco_id: r.bancoId || null, tipo_pagamento: r.tipoPagamento || null, recorrente: !!r.recorrente, grupo_recorrencia: r.grupoRecorrencia || null }),
+    fromDb: (r) => ({ id: r.id, descricao: r.descricao, categoria: r.categoria, valor: r.valor, vencimento: r.vencimento, status: r.status, dataPagamento: r.data_pagamento, bancoId: r.banco_id, tipoPagamento: r.tipo_pagamento, recorrente: r.recorrente, grupoRecorrencia: r.grupo_recorrencia }) },
   pessoal: { table: "departamento_pessoal", order: "mes.desc",
     toDb: (r) => ({ nome: r.nome, cargo: r.cargo, equipe: r.equipe, mes: monthToDate(r.mes || todayISO().slice(0, 7)), meta_mensal: r.metaMensal, ligacoes: r.ligacoes, mensagens: r.mensagens, agendados: r.agendados }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, cargo: r.cargo, equipe: r.equipe, mes: monthKey(r.mes), metaMensal: r.meta_mensal, ligacoes: r.ligacoes, mensagens: r.mensagens, agendados: r.agendados }) },
@@ -1722,10 +1722,27 @@ function ContasModulo() {
     { key: "dataPagamento", label: "Data de pagamento", type: "date", required: false },
     { key: "tipoPagamento", label: "Tipo de pagamento", type: "select", options: opcoesTipoPagamento, required: false },
     { key: "bancoNome", label: "Banco de onde será pago", type: "select", options: nomesBancos.length ? nomesBancos : ["Cadastre em Cadastros → Bancos"], required: false },
+    { key: "recorrente", label: "Conta recorrente (repete todo mês)?", type: "checkbox", required: false, default: false },
+    { key: "repetirMeses", label: "Repetir por quantos meses", type: "number", required: false, default: 12, showIf: (f) => !!f.recorrente },
   ];
-  const onAddComputado = (record) => { const banco = bancosCadastro.find((b) => b.nome === record.bancoNome); return add({ ...record, bancoId: banco ? banco.id : null }); };
+  const onAddComputado = (record) => {
+    const banco = bancosCadastro.find((b) => b.nome === record.bancoNome);
+    const bancoId = banco ? banco.id : null;
+    if (record.recorrente) {
+      const meses = Number(record.repetirMeses) || 12;
+      const grupoId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `grp-${Date.now()}`;
+      const linhas = [];
+      for (let i = 0; i < meses; i++) {
+        const dt = new Date(record.vencimento + "T00:00:00");
+        dt.setMonth(dt.getMonth() + i);
+        linhas.push({ ...record, vencimento: dt.toISOString().slice(0, 10), bancoId, recorrente: true, grupoRecorrencia: grupoId, status: i === 0 ? record.status : "Pendente", dataPagamento: i === 0 ? record.dataPagamento : null });
+      }
+      return bulkAdd(linhas);
+    }
+    return add({ ...record, bancoId });
+  };
   const onUpdateComputado = (id, record) => { const banco = bancosCadastro.find((b) => b.nome === record.bancoNome); return update(id, { ...record, bancoId: banco ? banco.id : null }); };
-  const columns = [{ key: "descricao", label: "Descrição" }, { key: "categoria", label: "Categoria" }, { key: "valor", label: "Valor", render: (r) => fmtBRL(r.valor) }, { key: "vencimento", label: "Vencimento", render: (r) => fmtDate(r.vencimento) },
+  const columns = [{ key: "descricao", label: "Descrição", render: (r) => <span>{r.descricao}{r.recorrente && <span className="ml-1.5" title="Conta recorrente">🔁</span>}</span> }, { key: "categoria", label: "Categoria" }, { key: "valor", label: "Valor", render: (r) => fmtBRL(r.valor) }, { key: "vencimento", label: "Vencimento", render: (r) => fmtDate(r.vencimento) },
     { key: "tipoPagamento", label: "Tipo pgto.", render: (r) => r.tipoPagamento || "—" },
     { key: "bancoNome", label: "Banco", render: (r) => (bancosCadastro.find((b) => b.id === r.bancoId) || {}).nome || "—" },
     { key: "status", label: "Status", render: (r) => <Badge tone={r.status === "Pago" ? "green" : r.status === "Atrasado" ? "red" : "amber"}>{r.status}</Badge> },
