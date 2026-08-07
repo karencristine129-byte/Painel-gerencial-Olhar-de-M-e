@@ -3004,8 +3004,10 @@ function AgendamentosPacientes() {
   const { data, add, update, remove, loading } = useOwnRecords("agendamentos_pacientes", "data_agendamento.desc");
   const { data: vacinasCat } = useRecords("vacinas");
   const { data: profissionaisCat } = useRecords("cadProfissionais");
+  const { data: conveniosCat } = useRecords("cadConvenios");
   const nomesVacinas = vacinasCat.map((v) => v.nome);
   const nomesProfissionais = profissionaisCat.map((p) => p.nome);
+  const nomesConvenios = conveniosCat.length ? conveniosCat.map((c) => c.nome) : CONVENIOS;
   const [form, setForm] = useState({ tipo: "Consulta", paciente: "", pacienteNovo: "Já é paciente", contato: "", data: todayISO(), convenio: "", vacina: "", medico: "", plantao: false });
   const [busy, setBusy] = useState(false);
   const mesAtual = todayISO().slice(0, 7);
@@ -3052,7 +3054,7 @@ function AgendamentosPacientes() {
             <Field label="Convênio (opcional)">
               <select className="rounded-lg px-3 py-2 text-sm outline-none w-44" style={inputStyle} value={form.convenio} onChange={(e) => setForm((p) => ({ ...p, convenio: e.target.value }))}>
                 <option value="">— não informar —</option>
-                {CONVENIOS.map((c) => <option key={c} value={c}>{c}</option>)}
+                {nomesConvenios.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </Field>
             <Field label="É plantão?">
@@ -3871,6 +3873,8 @@ function MetasModulo() {
 
 function AgendamentosAdminModulo() {
   const { data, update, loading, erro } = useRecords("agendamentosAdmin");
+  const { data: colaboradoresUnidade } = usePerfisDaUnidade();
+  const nomesColaboradores = colaboradoresUnidade.map((c) => c.nome);
   const [filtroMes, setFiltroMes] = useState("");
   const [filtroDe, setFiltroDe] = useState("");
   const [filtroAte, setFiltroAte] = useState("");
@@ -3883,8 +3887,13 @@ function AgendamentosAdminModulo() {
     { key: "tipo", label: "Tipo", type: "select", options: ["Consulta", "Vacina"] },
     { key: "paciente", label: "Paciente", type: "text" },
     { key: "dataAgendamento", label: "Data do agendamento", type: "date" },
+    { key: "colaboradorNome", label: "Colaborador(a) que fez o agendamento", type: "select", options: nomesColaboradores.length ? nomesColaboradores : ["Nenhum colaborador encontrado"], required: false },
     { key: "compareceu", label: "Compareceu?", type: "select", options: ["Aguardando", "Sim", "Não"] },
   ];
+  const onUpdateComputado = (id, record) => {
+    const colab = colaboradoresUnidade.find((c) => c.nome === record.colaboradorNome);
+    return update(id, { ...record, colaboradorId: colab ? colab.id : undefined });
+  };
   const columns = [
     { key: "dataAgendamento", label: "Data", render: (r) => fmtDate(r.dataAgendamento) },
     { key: "paciente", label: "Paciente" }, { key: "pacienteNovo", label: "Novo/Já é", render: (r) => r.pacienteNovo || "—" },
@@ -3921,7 +3930,7 @@ function AgendamentosAdminModulo() {
         </div>
       </Card>
       <ModuleShell icon={CalendarDays} title="Lista de agendamentos" subtitle="" tone="coral" loading={loading} erro={erro} ocultarLancamento
-        dailyFields={fields} dailyCta="" fields={fields} columns={columns} rows={dataFiltrada} onAdd={() => {}} onUpdate={update} onDelete={() => {}}
+        dailyFields={fields} dailyCta="" fields={fields} columns={columns} rows={dataFiltrada} onAdd={() => {}} onUpdate={onUpdateComputado} onDelete={() => {}}
         kpis={[{ label: "Total no período", value: dataFiltrada.length }, { label: "Vacinas", value: totalVacinas, tone: "teal" }, { label: "Plantão", value: totalPlantao, tone: "amber" }, { label: "Convênios", value: totalConvenios, tone: "coral" }, { label: "Pacientes novos", value: totalNovos, tone: "green" }, { label: "Compareceram", value: compareceram, tone: "green" }, { label: "Não compareceram", value: naoCompareceram, tone: naoCompareceram ? "red" : "green" }]} />
     </div>
   );
