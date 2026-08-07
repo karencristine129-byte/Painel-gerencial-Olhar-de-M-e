@@ -165,8 +165,11 @@ const MODULES = {
     toDb: (r) => ({ nome: r.nome, cargo: r.cargo, equipe: r.equipe, mes: monthToDate(r.mes || todayISO().slice(0, 7)), meta_mensal: r.metaMensal, ligacoes: r.ligacoes, mensagens: r.mensagens, agendados: r.agendados }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, cargo: r.cargo, equipe: r.equipe, mes: monthKey(r.mes), metaMensal: r.meta_mensal, ligacoes: r.ligacoes, mensagens: r.mensagens, agendados: r.agendados }) },
   marketing: { table: "marketing_leads", order: "data.desc",
-    toDb: (r) => ({ data: r.data, nome: r.nome, canal: r.canal, status: r.status }),
-    fromDb: (r) => ({ id: r.id, data: r.data, nome: r.nome, canal: r.canal, status: r.status }) },
+    toDb: (r) => ({ data: r.data, nome: r.nome, canal: r.canal, status: r.status, cliente: r.cliente, responsavel: r.responsavel, telefone: r.telefone, data_agendamento: r.dataAgendamento || null, data_nascimento_crianca: r.dataNascimentoCrianca || null, especialidade_medica: r.especialidadeMedica, profissional_atendeu: r.profissionalAtendeu, indicado_por: r.indicadoPor, telefone_indicacao: r.telefoneIndicacao }),
+    fromDb: (r) => ({ id: r.id, data: r.data, nome: r.nome, canal: r.canal, status: r.status, cliente: r.cliente, responsavel: r.responsavel, telefone: r.telefone, dataAgendamento: r.data_agendamento, dataNascimentoCrianca: r.data_nascimento_crianca, especialidadeMedica: r.especialidade_medica, profissionalAtendeu: r.profissional_atendeu, indicadoPor: r.indicado_por, telefoneIndicacao: r.telefone_indicacao }) },
+  marketingCalendario: { table: "marketing_calendario", order: "data.asc",
+    toDb: (r) => ({ tipo: r.tipo, titulo: r.titulo, data: r.data, recorrente_anual: !!r.recorrenteAnual, descricao: r.descricao, criado_por: r.criadoPor || null }),
+    fromDb: (r) => ({ id: r.id, tipo: r.tipo, titulo: r.titulo, data: r.data, recorrenteAnual: r.recorrente_anual, descricao: r.descricao, criadoPor: r.criado_por }) },
   procedimentos: { table: "procedimentos_especiais", order: "data.desc",
     toDb: (r) => ({ tipo: r.tipo, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor }),
     fromDb: (r) => ({ id: r.id, tipo: r.tipo, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor }) },
@@ -1014,19 +1017,23 @@ function PosVendaModulo() {
   const { session, perfil } = useAuth();
   const { data, add, update, remove, loading, erro } = useRecords("posVenda");
   const { data: pontos, add: addPonto, update: updatePonto, loading: loadingPonto } = useOwnRecords("pos_venda_ponto");
+  const { data: colaboradoresUnidade } = usePerfisDaUnidade();
+  const nomesColaboradores = colaboradoresUnidade.map((c) => c.nome);
   const fields = [
     { key: "paciente", label: "Paciente / contato", type: "text" },
     { key: "telefone", label: "Telefone", type: "text", required: false },
     { key: "data", label: "Data da ligação", type: "date", default: todayISO() },
+    { key: "realizadoPor", label: "Realizado por", type: "select", options: nomesColaboradores.length ? nomesColaboradores : [perfil.nome], default: perfil.nome },
     { key: "convertida", label: "Ligação convertida?", type: "select", options: ["Sim", "Não"], default: "Não" },
     { key: "agendamentoFeito", label: "Agendamento feito?", type: "select", options: ["Sim", "Não"], default: "Não" },
     { key: "dataAgendamento", label: "Data do agendamento", type: "date", required: false, showIf: (f) => f.agendamentoFeito === "Sim" },
     { key: "observacoes", label: "Observações — anote tudo que o paciente falou", type: "textarea", required: false },
   ];
-  const onAddConvertido = (record) => add({ ...record, convertida: record.convertida === "Sim", agendamentoFeito: record.agendamentoFeito === "Sim", colaboradorId: perfil.id, colaboradorNome: perfil.nome });
-  const onUpdateConvertido = (id, record) => update(id, { ...record, convertida: record.convertida === "Sim", agendamentoFeito: record.agendamentoFeito === "Sim" });
+  const onAddConvertido = (record) => { const colab = colaboradoresUnidade.find((c) => c.nome === record.realizadoPor); return add({ ...record, convertida: record.convertida === "Sim", agendamentoFeito: record.agendamentoFeito === "Sim", colaboradorId: colab ? colab.id : perfil.id, colaboradorNome: record.realizadoPor || perfil.nome }); };
+  const onUpdateConvertido = (id, record) => { const colab = colaboradoresUnidade.find((c) => c.nome === record.realizadoPor); return update(id, { ...record, convertida: record.convertida === "Sim", agendamentoFeito: record.agendamentoFeito === "Sim", colaboradorId: colab ? colab.id : undefined, colaboradorNome: record.realizadoPor }); };
   const columns = [
     { key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "paciente", label: "Paciente" }, { key: "telefone", label: "Telefone" },
+    { key: "colaboradorNome", label: "Realizado por", render: (r) => r.colaboradorNome || "—" },
     { key: "convertida", label: "Convertida", render: (r) => <Badge tone={r.convertida ? "green" : "muted"}>{r.convertida ? "Sim" : "Não"}</Badge> },
     { key: "agendamentoFeito", label: "Agendamento", render: (r) => r.agendamentoFeito ? <Badge tone="teal">{fmtDate(r.dataAgendamento)}</Badge> : <span style={{ color: T.muted }}>—</span> },
     { key: "observacoes", label: "Observações" },
@@ -1036,7 +1043,7 @@ function PosVendaModulo() {
   const agendamentos = data.filter((r) => r.agendamentoFeito).length;
   const taxaConversao = total ? (convertidas / total) * 100 : 0;
   const taxaProdutividade = total ? (((convertidas / total) + (agendamentos / total)) / 2) * 100 : 0;
-  const rowsParaForm = data.map((r) => ({ ...r, convertida: r.convertida ? "Sim" : "Não", agendamentoFeito: r.agendamentoFeito ? "Sim" : "Não" }));
+  const rowsParaForm = data.map((r) => ({ ...r, convertida: r.convertida ? "Sim" : "Não", agendamentoFeito: r.agendamentoFeito ? "Sim" : "Não", realizadoPor: r.colaboradorNome }));
 
   const hoje = todayISO();
   const pontoHoje = pontos.find((p) => p.data === hoje);
@@ -2068,21 +2075,116 @@ function PessoalModulo() {
   );
 }
 
+/* ============================== CALENDÁRIO DE MARKETING ============================== */
+function ehHojeOuAniversarioHoje(item) {
+  const hoje = todayISO();
+  if (item.recorrenteAnual) return item.data.slice(5) === hoje.slice(5);
+  return item.data === hoje;
+}
+function proximaOcorrencia(item) {
+  if (!item.recorrenteAnual) return item.data;
+  const hoje = todayISO();
+  const anoAtual = hoje.slice(0, 4);
+  let proxima = `${anoAtual}-${item.data.slice(5)}`;
+  if (proxima < hoje) proxima = `${Number(anoAtual) + 1}-${item.data.slice(5)}`;
+  return proxima;
+}
+function CalendarioMarketingModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("marketingCalendario");
+  const fields = [
+    { key: "tipo", label: "Tipo", type: "select", options: ["Ação", "Evento", "Aniversário"] },
+    { key: "titulo", label: "Título", type: "text", placeholder: "ex: Campanha Dia das Crianças, Aniversário Dra. Ana" },
+    { key: "data", label: "Data", type: "date" },
+    { key: "recorrenteAnual", label: "Repete todo ano (use para aniversários)", type: "checkbox", required: false, default: false },
+    { key: "descricao", label: "Descrição / observações", type: "textarea", required: false },
+  ];
+  const columns = [
+    { key: "tipo", label: "Tipo", render: (r) => <Badge tone={r.tipo === "Aniversário" ? "coral" : r.tipo === "Evento" ? "teal" : "amber"}>{r.tipo}</Badge> },
+    { key: "titulo", label: "Título" }, { key: "data", label: "Data", render: (r) => `${fmtDate(r.data)}${r.recorrenteAnual ? " (todo ano)" : ""}` },
+    { key: "descricao", label: "Descrição" },
+  ];
+  const hojeItens = data.filter(ehHojeOuAniversarioHoje);
+  const proximos = [...data].map((r) => ({ ...r, proxima: proximaOcorrencia(r) })).sort((a, b) => a.proxima.localeCompare(b.proxima)).filter((r) => r.proxima >= todayISO()).slice(0, 8);
+  return (
+    <ModuleShell icon={CalendarDays} title="Calendário de Marketing" subtitle="Ações, eventos e aniversários — o sistema avisa no dia" tone="rose" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Adicionar ao calendário" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove}
+      kpis={[{ label: "Itens no calendário", value: data.length }, { label: "Hoje", value: hojeItens.length, tone: hojeItens.length ? "coral" : "green" }, { label: "Próximos 8", value: proximos.length }]}
+      extra={<>
+        {hojeItens.length > 0 && (
+          <Card className="mb-5" style={{ borderColor: `${T.coral}55`, background: `${T.coral}10` }}>
+            <div className="flex items-center gap-2 mb-2"><Bell size={15} style={{ color: T.coral }} /><span className="font-semibold text-sm" style={{ color: T.text }}>É hoje! 🎉</span></div>
+            <div className="flex flex-col gap-1.5">{hojeItens.map((r) => (<div key={r.id} className="text-sm" style={{ color: T.text }}><b>{r.titulo}</b> <span style={{ color: T.muted }}>— {r.tipo}{r.descricao ? `: ${r.descricao}` : ""}</span></div>))}</div>
+          </Card>
+        )}
+        {proximos.length > 0 && (
+          <Card className="mb-5">
+            <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Próximos no calendário</p>
+            <div className="flex flex-col gap-1.5">{proximos.map((r) => (<div key={r.id} className="flex justify-between text-sm py-1" style={{ borderBottom: `1px solid ${T.border}` }}><span style={{ color: T.text }}>{r.titulo} <Badge tone={r.tipo === "Aniversário" ? "coral" : r.tipo === "Evento" ? "teal" : "amber"}>{r.tipo}</Badge></span><span style={{ color: T.muted }}>{fmtDate(r.proxima)}</span></div>))}</div>
+          </Card>
+        )}
+      </>} />
+  );
+}
+
 function MarketingModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("marketing");
-  const fields = [{ key: "data", label: "Data", type: "date", default: todayISO() }, { key: "nome", label: "Nome do lead", type: "text" }, { key: "canal", label: "Canal", type: "select", options: ["Instagram", "Facebook", "WhatsApp", "Google", "Indicação", "Outro"] }, { key: "status", label: "Status", type: "select", options: ["Novo", "Contatado", "Agendado", "Convertido", "Perdido"] }];
-  const columns = [{ key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "nome", label: "Lead" }, { key: "canal", label: "Canal" }, { key: "status", label: "Status", render: (r) => { const tone = { Novo: "ink", Contatado: "amber", Agendado: "amber", Convertido: "green", Perdido: "red" }[r.status]; return <Badge tone={tone}>{r.status}</Badge>; } }];
-  const porCanal = useMemo(() => { const map = {}; data.forEach((r) => { map[r.canal] = (map[r.canal] || 0) + 1; }); return Object.entries(map).map(([canal, total]) => ({ canal, total })).sort((a, b) => b.total - a.total); }, [data]);
-  const porStatus = useMemo(() => { const ordem = ["Novo", "Contatado", "Agendado", "Convertido", "Perdido"]; const map = {}; data.forEach((r) => { map[r.status] = (map[r.status] || 0) + 1; }); return ordem.filter((s) => map[s]).map((status) => ({ status, total: map[status] })); }, [data]);
-  const convertidos = data.filter((r) => r.status === "Convertido").length; const taxaConversao = data.length ? (convertidos / data.length) * 100 : 0; const agendadosPendentes = data.filter((r) => r.status === "Agendado").length;
+  const { data: profissionais } = useRecords("cadProfissionais");
+  const nomesProfissionais = profissionais.map((p) => p.nome);
+  const fields = [
+    { key: "data", label: "Data do lead", type: "date", default: todayISO() },
+    { key: "cliente", label: "Cliente (criança/paciente)", type: "text" },
+    { key: "responsavel", label: "Pai/Mãe", type: "text", required: false },
+    { key: "telefone", label: "Telefone", type: "text", required: false },
+    { key: "dataNascimentoCrianca", label: "Data de nascimento da criança", type: "date", required: false },
+    { key: "especialidadeMedica", label: "Especialidade médica", type: "text", required: false },
+    { key: "profissionalAtendeu", label: "Profissional que atendeu", type: "select", options: nomesProfissionais.length ? nomesProfissionais : ["Cadastre em Cadastros → Profissionais"], required: false },
+    { key: "dataAgendamento", label: "Data do agendamento", type: "date", required: false },
+    { key: "canal", label: "Como nos conheceu", type: "select", options: ["WhatsApp", "Google", "TikTok", "Instagram", "Facebook", "Indicação", "Outro"] },
+    { key: "indicadoPor", label: "Indicado por (nome)", type: "text", required: false, showIf: (f) => f.canal === "Indicação" },
+    { key: "telefoneIndicacao", label: "Telefone de quem indicou", type: "text", required: false, showIf: (f) => f.canal === "Indicação" },
+    { key: "status", label: "Status", type: "select", options: ["Novo", "Contatado", "Agendado", "Convertido", "Perdido"] },
+  ];
+  const columns = [
+    { key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "cliente", label: "Cliente" }, { key: "responsavel", label: "Pai/Mãe" }, { key: "telefone", label: "Telefone" },
+    { key: "canal", label: "Canal", render: (r) => r.canal === "Indicação" && r.indicadoPor ? <span>{r.canal} <span className="text-xs" style={{ color: T.muted }}>({r.indicadoPor})</span></span> : r.canal },
+    { key: "profissionalAtendeu", label: "Profissional" }, { key: "dataAgendamento", label: "Agendamento", render: (r) => r.dataAgendamento ? fmtDate(r.dataAgendamento) : "—" },
+    { key: "status", label: "Status", render: (r) => { const tone = { Novo: "ink", Contatado: "amber", Agendado: "amber", Convertido: "green", Perdido: "red" }[r.status]; return <Badge tone={tone}>{r.status}</Badge>; } },
+  ];
+
+  const [filtroMes, setFiltroMes] = useState("");
+  const [filtroDe, setFiltroDe] = useState("");
+  const [filtroAte, setFiltroAte] = useState("");
+  const [filtroCanal, setFiltroCanal] = useState("");
+  const [filtroProfissional, setFiltroProfissional] = useState("");
+  const dataFiltrada = filtrarPorPeriodo(data, "data", filtroMes, filtroDe, filtroAte)
+    .filter((r) => !filtroCanal || r.canal === filtroCanal)
+    .filter((r) => !filtroProfissional || r.profissionalAtendeu === filtroProfissional);
+
+  const porCanal = useMemo(() => { const map = {}; dataFiltrada.forEach((r) => { map[r.canal] = (map[r.canal] || 0) + 1; }); return Object.entries(map).map(([canal, total]) => ({ canal, total })).sort((a, b) => b.total - a.total); }, [dataFiltrada]);
+  const porStatus = useMemo(() => { const ordem = ["Novo", "Contatado", "Agendado", "Convertido", "Perdido"]; const map = {}; dataFiltrada.forEach((r) => { map[r.status] = (map[r.status] || 0) + 1; }); return ordem.filter((s) => map[s]).map((status) => ({ status, total: map[status] })); }, [dataFiltrada]);
+  const convertidos = dataFiltrada.filter((r) => r.status === "Convertido").length; const taxaConversao = dataFiltrada.length ? (convertidos / dataFiltrada.length) * 100 : 0; const agendadosPendentes = dataFiltrada.filter((r) => r.status === "Agendado").length;
+
   return (
+    <>
+      <Card className="mb-5">
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Filtrar por competência, período, canal ou profissional</p>
+        <div className="flex flex-wrap gap-3 items-end">
+          <Field label="Competência (mês)"><input type="month" className="rounded-lg px-3 py-2 text-sm outline-none w-40" style={inputStyle} value={filtroMes} onChange={(e) => { setFiltroMes(e.target.value); setFiltroDe(""); setFiltroAte(""); }} /></Field>
+          <Field label="De"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={filtroDe} onChange={(e) => { setFiltroDe(e.target.value); setFiltroMes(""); }} /></Field>
+          <Field label="Até"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={filtroAte} onChange={(e) => { setFiltroAte(e.target.value); setFiltroMes(""); }} /></Field>
+          <Field label="Canal"><select className="rounded-lg px-3 py-2 text-sm outline-none w-36" style={inputStyle} value={filtroCanal} onChange={(e) => setFiltroCanal(e.target.value)}><option value="">Todos</option>{["WhatsApp", "Google", "TikTok", "Instagram", "Facebook", "Indicação", "Outro"].map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
+          <Field label="Profissional"><select className="rounded-lg px-3 py-2 text-sm outline-none w-44" style={inputStyle} value={filtroProfissional} onChange={(e) => setFiltroProfissional(e.target.value)}><option value="">Todos</option>{nomesProfissionais.map((p) => <option key={p} value={p}>{p}</option>)}</select></Field>
+          {(filtroMes || filtroDe || filtroAte || filtroCanal || filtroProfissional) && <Btn small variant="ghost" onClick={() => { setFiltroMes(""); setFiltroDe(""); setFiltroAte(""); setFiltroCanal(""); setFiltroProfissional(""); }}>Limpar filtro</Btn>}
+        </div>
+      </Card>
     <ModuleShell icon={Megaphone} title="Marketing — Leads" subtitle="Leads recebidos via redes sociais e canais digitais" tone="rose" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Registrar lead" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
-      kpis={[{ label: "Leads no período", value: data.length }, { label: "Taxa de conversão", value: fmtPct(taxaConversao), tone: taxaConversao >= 20 ? "green" : "amber" }, { label: "Canal líder", value: porCanal[0] ? porCanal[0].canal : "—", tone: "rose" }, { label: "Agendados aguardando", value: agendadosPendentes, tone: "amber" }]}
+      dailyFields={fields} dailyCta="Registrar lead" fields={fields} columns={columns} rows={dataFiltrada} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd}
+      kpis={[{ label: "Leads no período", value: dataFiltrada.length }, { label: "Taxa de conversão", value: fmtPct(taxaConversao), tone: taxaConversao >= 20 ? "green" : "amber" }, { label: "Canal líder", value: porCanal[0] ? porCanal[0].canal : "—", tone: "rose" }, { label: "Agendados aguardando", value: agendadosPendentes, tone: "amber" }]}
       charts={<div className="grid md:grid-cols-2 gap-5">
         <ChartCard title="Funil de status dos leads"><BarChart data={porStatus}><CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} /><XAxis dataKey="status" tick={{ fontSize: 11, fill: T.muted }} /><YAxis tick={{ fontSize: 11, fill: T.muted }} /><Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} /><Bar dataKey="total" radius={[4, 4, 0, 0]}>{porStatus.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Bar></BarChart></ChartCard>
         <ChartCard title="Leads por canal"><PieChart><Pie data={porCanal} dataKey="total" nameKey="canal" innerRadius={55} outerRadius={85} paddingAngle={2}>{porCanal.map((_, i) => <Cell key={i} fill={CHART_SET[i % CHART_SET.length]} />)}</Pie><Tooltip /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart></ChartCard>
       </div>} />
+    </>
   );
 }
 
@@ -4031,7 +4133,7 @@ const ALL_MENU = [
   { group: "Setor de Vacinas", items: [{ key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "entradaEstoqueVacinas", label: "Entrada de Estoque", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "pacoteVacinas", label: "Pacote Personalizado", icon: Syringe, tone: "coral" }] },
   { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }, { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" }] },
   { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "relatorioColaborador", label: "Relatório de Colaborador", icon: FileText, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" } ] },
-  { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }] },
+  { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }, { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" }] },
   { group: "Plantão", items: [{ key: "plantaoRegistro", label: "Registrar Plantão", icon: Stethoscope, tone: "teal" }, { key: "plantaoValores", label: "Valores por Convênio", icon: ClipboardList, tone: "coral" }, { key: "plantaoResumo", label: "Resumo Financeiro", icon: ClipboardList, tone: "coral" }] },
   { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "metasColaborador", label: "Meta por Colaborador", icon: Users, tone: "coral" }, { key: "metasEquipe", label: "Meta por Equipe", icon: Users, tone: "coral" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
   { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }, { key: "cadBancos", label: "Bancos", icon: Wallet, tone: "ink" }, { key: "cadCategorias", label: "Categorias", icon: ClipboardList, tone: "ink" }, { key: "cadTiposPagamento", label: "Tipos de Pagamento", icon: Wallet, tone: "ink" }, { key: "cadSaldoCaixa", label: "Saldo Inicial do Caixa", icon: Wallet, tone: "ink" }] },
@@ -4052,6 +4154,7 @@ const RESTRICTED_MENUS = {
     { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
     { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" },
     { key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" },
+    { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" },
     { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
   enfermagem: { group: "Minha área", items: [
@@ -4125,6 +4228,7 @@ function AppInner() {
       case "meurh": return <MeuRHModulo />;
       case "marketing": return <MarketingModulo />;
       case "posVenda": return <PosVendaModulo />;
+      case "calendarioMarketing": return <CalendarioMarketingModulo />;
       case "procedimentos": return <ProcedimentosModulo />;
       case "faturamento": return <FaturamentoModulo />;
       case "protocoloGuias": return <ProtocoloGuiasModulo />;
@@ -4218,10 +4322,12 @@ function NotificationsMenu({ setTab }) {
   const insumos = useRecords("insumos");
   const contas = useRecords("contas", somenteAdmin);
   const leads = useRecords("marketing");
-  const loading = vacinas.loading || lotesVacinas.loading || insumos.loading || contas.loading || leads.loading;
+  const calendario = useRecords("marketingCalendario");
+  const loading = vacinas.loading || lotesVacinas.loading || insumos.loading || contas.loading || leads.loading || calendario.loading;
   const nomeVacina = (id) => (vacinas.data.find((v) => v.id === id) || {}).nome || "—";
 
   const notificacoes = [
+    ...calendario.data.filter(ehHojeOuAniversarioHoje).map((c) => ({ texto: `${c.tipo === "Aniversário" ? "🎂" : "📌"} Hoje: ${c.titulo}`, tone: "coral", tab: "calendarioMarketing" })),
     ...vacinas.data.filter((v) => v.qtdEstoque < v.qtdMinima).map((v) => ({ texto: `Vacina "${v.nome}" abaixo do estoque mínimo`, tone: "red", tab: "vacinas" })),
     ...lotesVacinas.data.filter((l) => { if (!l.validade) return false; const dias = Math.ceil((new Date(l.validade) - new Date(todayISO())) / 86400000); return dias <= 90; }).map((l) => { const dias = Math.ceil((new Date(l.validade) - new Date(todayISO())) / 86400000); return { texto: `"${nomeVacina(l.vacinaId)}" — lote ${l.lote} ${dias < 0 ? "vencido" : `vence em ${dias} dias`} (${fmtDate(l.validade)})`, tone: dias <= 45 ? "red" : "amber", tab: "entradaEstoqueVacinas" }; }),
     ...insumos.data.filter((i) => i.qtd < i.qtdMinima).map((i) => ({ texto: `Insumo "${i.nome}" em ponto crítico`, tone: "red", tab: "insumos" })),
@@ -4243,7 +4349,7 @@ function NotificationsMenu({ setTab }) {
             notificacoes.length === 0 ? <div className="px-4 py-6 text-sm text-center" style={{ color: T.muted }}>Tudo em dia — nenhum alerta no momento.</div> :
             notificacoes.map((n, i) => (
               <button key={i} onClick={() => { setTab(n.tab); setOpen(false); }} className="w-full text-left px-4 py-3 text-sm flex items-start gap-2" style={{ borderBottom: `1px solid ${T.border}` }}>
-                <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: n.tone === "red" ? T.red : n.tone === "amber" ? T.amber : T.teal }} />
+                <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: n.tone === "red" ? T.red : n.tone === "amber" ? T.amber : n.tone === "coral" ? T.coral : T.teal }} />
                 <span style={{ color: T.text }}>{n.texto}</span>
               </button>
             ))}
