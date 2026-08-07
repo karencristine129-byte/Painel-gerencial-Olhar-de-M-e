@@ -4148,6 +4148,8 @@ const RESTRICTED_MENUS = {
     { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" },
     { key: "insumos", label: "Estoque de Insumos", icon: Package, tone: "teal" },
     { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" },
+    { key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" },
+    { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" },
     { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
   marketing: { group: "Minha área", items: [
@@ -4161,11 +4163,15 @@ const RESTRICTED_MENUS = {
     { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
     { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" },
     { key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" },
+    { key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" },
+    { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" },
     { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
   posvenda: { group: "Minha área", items: [
     { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
     { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" },
+    { key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" },
+    { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" },
     { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
   vacinacao: { group: "Minha área", items: [
@@ -4177,12 +4183,16 @@ const RESTRICTED_MENUS = {
     { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" },
     { key: "insumos", label: "Estoque de Insumos", icon: Package, tone: "teal" },
     { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" },
+    { key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" },
+    { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" },
     { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
   servicos_gerais: { group: "Minha área", items: [
     { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" },
     { key: "insumos", label: "Estoque de Insumos", icon: Package, tone: "teal" },
     { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" },
+    { key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" },
+    { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" },
     { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
 };
