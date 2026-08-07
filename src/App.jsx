@@ -237,8 +237,8 @@ const MODULES = {
     toDb: (r) => ({ numero_lote: r.numeroLote, data_emissao: r.dataEmissao || null, data_envio: r.dataEnvio, valor_nota: r.valorNota, regime_tributario: r.regimeTributario, ir_valor: r.irValor, cofins_valor: r.cofinsValor, pis_valor: r.pisValor, csll_valor: r.csllValor, faturamento_guia_id: r.faturamentoGuiaId || null }),
     fromDb: (r) => ({ id: r.id, numeroLote: r.numero_lote, dataEmissao: r.data_emissao, dataEnvio: r.data_envio, valorNota: r.valor_nota, regimeTributario: r.regime_tributario, irValor: r.ir_valor, cofinsValor: r.cofins_valor, pisValor: r.pis_valor, csllValor: r.csll_valor, faturamentoGuiaId: r.faturamento_guia_id }) },
   posVenda: { table: "pos_venda_ligacoes", order: "data.desc",
-    toDb: (r) => ({ data: r.data, paciente: r.paciente, telefone: r.telefone, convertida: !!r.convertida, agendamento_feito: !!r.agendamentoFeito, data_agendamento: r.dataAgendamento || null, observacoes: r.observacoes }),
-    fromDb: (r) => ({ id: r.id, data: r.data, paciente: r.paciente, telefone: r.telefone, convertida: r.convertida, agendamentoFeito: r.agendamento_feito, dataAgendamento: r.data_agendamento, observacoes: r.observacoes }) },
+    toDb: (r) => ({ data: r.data, paciente: r.paciente, telefone: r.telefone, convertida: !!r.convertida, agendamento_feito: !!r.agendamentoFeito, data_agendamento: r.dataAgendamento || null, observacoes: r.observacoes, colaborador_id: r.colaboradorId || null, colaborador_nome: r.colaboradorNome || null }),
+    fromDb: (r) => ({ id: r.id, data: r.data, paciente: r.paciente, telefone: r.telefone, convertida: r.convertida, agendamentoFeito: r.agendamento_feito, dataAgendamento: r.data_agendamento, observacoes: r.observacoes, colaboradorId: r.colaborador_id, colaboradorNome: r.colaborador_nome }) },
   cadFornecedores: { table: "cadastro_fornecedores", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, categoria: r.categoria, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, categoria: r.categoria, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes }) },
@@ -1011,8 +1011,9 @@ function VacinasModulo() {
 }
 
 function PosVendaModulo() {
-  const { session } = useAuth();
+  const { session, perfil } = useAuth();
   const { data, add, update, remove, loading, erro } = useRecords("posVenda");
+  const { data: pontos, add: addPonto, update: updatePonto, loading: loadingPonto } = useOwnRecords("pos_venda_ponto");
   const fields = [
     { key: "paciente", label: "Paciente / contato", type: "text" },
     { key: "telefone", label: "Telefone", type: "text", required: false },
@@ -1022,7 +1023,7 @@ function PosVendaModulo() {
     { key: "dataAgendamento", label: "Data do agendamento", type: "date", required: false, showIf: (f) => f.agendamentoFeito === "Sim" },
     { key: "observacoes", label: "Observações — anote tudo que o paciente falou", type: "textarea", required: false },
   ];
-  const onAddConvertido = (record) => add({ ...record, convertida: record.convertida === "Sim", agendamentoFeito: record.agendamentoFeito === "Sim" });
+  const onAddConvertido = (record) => add({ ...record, convertida: record.convertida === "Sim", agendamentoFeito: record.agendamentoFeito === "Sim", colaboradorId: perfil.id, colaboradorNome: perfil.nome });
   const onUpdateConvertido = (id, record) => update(id, { ...record, convertida: record.convertida === "Sim", agendamentoFeito: record.agendamentoFeito === "Sim" });
   const columns = [
     { key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "paciente", label: "Paciente" }, { key: "telefone", label: "Telefone" },
@@ -1034,11 +1035,44 @@ function PosVendaModulo() {
   const convertidas = data.filter((r) => r.convertida).length;
   const agendamentos = data.filter((r) => r.agendamentoFeito).length;
   const taxaConversao = total ? (convertidas / total) * 100 : 0;
+  const taxaProdutividade = total ? (((convertidas / total) + (agendamentos / total)) / 2) * 100 : 0;
   const rowsParaForm = data.map((r) => ({ ...r, convertida: r.convertida ? "Sim" : "Não", agendamentoFeito: r.agendamentoFeito ? "Sim" : "Não" }));
+
+  const hoje = todayISO();
+  const pontoHoje = pontos.find((p) => p.data === hoje);
+  const proximaAcaoPonto = !pontoHoje ? "inicio" : !pontoHoje.hora_fim ? "fim" : "completo";
+  const [busyPonto, setBusyPonto] = useState(false);
+  const baterPontoPosVenda = async () => {
+    setBusyPonto(true);
+    const agora = new Date().toTimeString().slice(0, 5);
+    if (proximaAcaoPonto === "inicio") await addPonto({ data: hoje, hora_inicio: agora });
+    else if (proximaAcaoPonto === "fim") {
+      const [h1, m1] = pontoHoje.hora_inicio.split(":").map(Number); const [h2, m2] = agora.split(":").map(Number);
+      let mins = (h2 * 60 + m2) - (h1 * 60 + m1); if (mins < 0) mins += 24 * 60;
+      await updatePonto(pontoHoje.id, { hora_fim: agora, horas_total: Math.round((mins / 60) * 100) / 100 });
+    }
+    setBusyPonto(false);
+  };
+  const horasMesPosVenda = pontos.filter((p) => p.data.slice(0, 7) === hoje.slice(0, 7)).reduce((s, p) => s + (Number(p.horas_total) || 0), 0);
+
   return (
-    <ModuleShell icon={Megaphone} title="Pós-venda" subtitle="Ligações realizadas, conversão e agendamentos — com observações detalhadas" tone="rose" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Registrar ligação" fields={fields} columns={columns} rows={rowsParaForm} onAdd={onAddConvertido} onUpdate={onUpdateConvertido} onDelete={remove}
-      kpis={[{ label: "Ligações registradas", value: total }, { label: "Convertidas", value: convertidas, tone: "green" }, { label: "Taxa de conversão", value: fmtPct(taxaConversao), tone: taxaConversao >= 30 ? "green" : "amber" }, { label: "Agendamentos feitos", value: agendamentos, tone: "teal" }]} />
+    <div>
+      <SectionHeader icon={Megaphone} title="Pós-venda" subtitle="Ligações realizadas, conversão e agendamentos — com observações detalhadas" tone="rose" />
+      <Card className="mb-5" style={{ background: `linear-gradient(135deg, ${T.coralDeep}, ${T.coral})` }}>
+        <p className="text-[11px] font-semibold uppercase mb-2" style={{ color: "#FBDADD", letterSpacing: "0.06em" }}>Ponto do pós-venda — {fmtDate(hoje)}</p>
+        <div className="flex flex-wrap items-center gap-6 mb-4">
+          <div><div className="text-[10px] uppercase" style={{ color: "#FBDADD" }}>Início</div><div className="text-lg font-bold" style={{ color: "#fff" }}>{(pontoHoje && pontoHoje.hora_inicio) || "—"}</div></div>
+          <div><div className="text-[10px] uppercase" style={{ color: "#FBDADD" }}>Fim</div><div className="text-lg font-bold" style={{ color: "#fff" }}>{(pontoHoje && pontoHoje.hora_fim) || "—"}</div></div>
+          <div><div className="text-[10px] uppercase" style={{ color: "#FBDADD" }}>Horas no mês</div><div className="text-lg font-bold" style={{ color: "#fff" }}>{horasMesPosVenda.toFixed(1)}h</div></div>
+        </div>
+        <button disabled={busyPonto || loadingPonto || proximaAcaoPonto === "completo"} onClick={baterPontoPosVenda} className="px-6 py-3 rounded-xl font-bold text-sm" style={{ background: proximaAcaoPonto === "completo" ? "#FFFFFF30" : "#fff", color: proximaAcaoPonto === "completo" ? "#fff" : T.coralDeep, opacity: busyPonto ? 0.7 : 1 }}>
+          {busyPonto ? "Registrando…" : proximaAcaoPonto === "inicio" ? "Bater início do pós-venda" : proximaAcaoPonto === "fim" ? "Bater fim do pós-venda" : "Ponto do dia completo ✓"}
+        </button>
+      </Card>
+      <ModuleShell icon={Megaphone} title="Registro de ligações" subtitle="" tone="rose" loading={loading} erro={erro}
+        dailyFields={fields} dailyCta="Registrar ligação" fields={fields} columns={columns} rows={rowsParaForm} onAdd={onAddConvertido} onUpdate={onUpdateConvertido} onDelete={remove}
+        kpis={[{ label: "Ligações registradas", value: total }, { label: "Convertidas", value: convertidas, tone: "green" }, { label: "Atendidas (agendamentos)", value: agendamentos, tone: "teal" }, { label: "Taxa de conversão", value: fmtPct(taxaConversao), tone: taxaConversao >= 30 ? "green" : "amber" }, { label: "Taxa de produtividade", value: fmtPct(taxaProdutividade), tone: taxaProdutividade >= 40 ? "green" : "amber" }]} />
+    </div>
   );
 }
 
@@ -3684,6 +3718,8 @@ function EquipeModulo() {
   const [horas, setHoras] = useState([]);
   const [atestados, setAtestados] = useState([]);
   const [termos, setTermos] = useState([]);
+  const [posVendaLig, setPosVendaLig] = useState([]);
+  const [posVendaPonto, setPosVendaPonto] = useState([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(null);
   const mesAtual = todayISO().slice(0, 7);
@@ -3692,14 +3728,16 @@ function EquipeModulo() {
     (async () => {
       setLoading(true); setErro(null);
       try {
-        const [cs, pd, hr, at, tm] = await Promise.all([
+        const [cs, pd, hr, at, tm, pvl, pvp] = await Promise.all([
           sbRest(`perfis?unidade_id=eq.${unidadeId}&select=id,nome,cargo,papel&order=nome.asc`, { token: session.access_token }),
           sbRest(`producao_diaria_colaborador?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
           sbRest(`rh_horas?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
           sbRest(`rh_atestados?unidade_id=eq.${unidadeId}&select=*&order=data.desc`, { token: session.access_token }),
           sbRest(`termos_aceites?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
+          sbRest(`pos_venda_ligacoes?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
+          sbRest(`pos_venda_ponto?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
         ]);
-        setColaboradores(cs || []); setProd(pd || []); setHoras(hr || []); setAtestados(at || []); setTermos(tm || []);
+        setColaboradores(cs || []); setProd(pd || []); setHoras(hr || []); setAtestados(at || []); setTermos(tm || []); setPosVendaLig(pvl || []); setPosVendaPonto(pvp || []);
       } catch (e) { setErro(e.message); }
       setLoading(false);
     })();
@@ -3709,6 +3747,10 @@ function EquipeModulo() {
     const pdMes = prod.filter((p) => p.colaborador_id === c.id && p.data.slice(0, 7) === mesAtual);
     const hrMes = horas.filter((h) => h.colaborador_id === c.id && h.data.slice(0, 7) === mesAtual);
     const atMes = atestados.filter((a) => a.colaborador_id === c.id && a.data.slice(0, 7) === mesAtual);
+    const pvMes = posVendaLig.filter((p) => p.colaborador_id === c.id && p.data.slice(0, 7) === mesAtual);
+    const pvpMes = posVendaPonto.filter((p) => p.colaborador_id === c.id && p.data.slice(0, 7) === mesAtual);
+    const pvLigacoes = pvMes.length, pvConvertidas = pvMes.filter((p) => p.convertida).length, pvAtendidas = pvMes.filter((p) => p.agendamento_feito).length;
+    const pvTaxaProdutividade = pvLigacoes ? (((pvConvertidas / pvLigacoes) + (pvAtendidas / pvLigacoes)) / 2) * 100 : null;
     return {
       ...c,
       ligacoes: pdMes.reduce((s, p) => s + p.ligacoes, 0),
@@ -3720,6 +3762,8 @@ function EquipeModulo() {
       novosVacinas: pdMes.reduce((s, p) => s + (Number(p.novos_pacientes_vacinas) || 0), 0),
       horasTotal: hrMes.reduce((s, h) => s + (Number(h.horas_total) || 0), 0),
       atestados: atMes.length,
+      pvLigacoes, pvConvertidas, pvAtendidas, pvTaxaProdutividade,
+      pvHoras: pvpMes.reduce((s, p) => s + (Number(p.horas_total) || 0), 0),
     };
   });
 
@@ -3770,6 +3814,34 @@ function EquipeModulo() {
                 </tr>
               ))}</tbody>
             </table>
+          </div>
+        )}
+      </Card>
+      <Card className="mt-5">
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Produtividade — Pós-venda (mês atual)</p>
+        {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> : (
+          <div className="overflow-x-auto -mx-5 px-5">
+            <table className="w-full text-sm min-w-[640px]">
+              <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Nome</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Ligou</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Converteu</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Atendidas</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Taxa de produtividade</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Horas pós-venda</th>
+              </tr></thead>
+              <tbody>{linhas.filter((r) => r.pvLigacoes > 0 || r.pvHoras > 0).map((r) => (
+                <tr key={r.id} style={{ borderBottom: `1px solid ${T.border}` }}>
+                  <td className="py-2 px-2 font-medium" style={{ color: T.text }}>{r.nome}</td>
+                  <td className="py-2 px-2">{r.pvLigacoes}</td>
+                  <td className="py-2 px-2" style={{ color: T.green }}>{r.pvConvertidas}</td>
+                  <td className="py-2 px-2" style={{ color: T.teal }}>{r.pvAtendidas}</td>
+                  <td className="py-2 px-2">{r.pvTaxaProdutividade !== null ? <span style={{ color: r.pvTaxaProdutividade >= 40 ? T.green : T.amber, fontWeight: 600 }}>{fmtPct(r.pvTaxaProdutividade)}</span> : "—"}</td>
+                  <td className="py-2 px-2">{r.pvHoras.toFixed(1)}h</td>
+                </tr>
+              ))}</tbody>
+            </table>
+            {linhas.filter((r) => r.pvLigacoes > 0 || r.pvHoras > 0).length === 0 && <p className="text-sm text-center py-6" style={{ color: T.muted }}>Ninguém registrou pós-venda este mês ainda.</p>}
           </div>
         )}
       </Card>
