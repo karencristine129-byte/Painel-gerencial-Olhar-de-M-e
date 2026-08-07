@@ -179,6 +179,9 @@ const MODULES = {
   indicacoes: { table: "indicacoes", order: "data.desc",
     toDb: (r) => ({ data: r.data, nome_indicador: r.nomeIndicador, telefone_indicador: r.telefoneIndicador, convenio: r.convenio || null, canal_contato: r.canalContato || null, campanha_id: r.campanhaId || null, indicados: r.indicados || [], criado_por: r.criadoPor || null, criado_por_nome: r.criadoPorNome || null }),
     fromDb: (r) => ({ id: r.id, data: r.data, nomeIndicador: r.nome_indicador, telefoneIndicador: r.telefone_indicador, convenio: r.convenio, canalContato: r.canal_contato, campanhaId: r.campanha_id, indicados: r.indicados || [], criadoPor: r.criado_por, criadoPorNome: r.criado_por_nome }) },
+  avaliacoesColaborador: { table: "avaliacoes_colaborador", order: "data_avaliacao.desc",
+    toDb: (r) => ({ colaborador_id: r.colaboradorId || null, colaborador_nome: r.colaboradorNome, funcao: r.funcao, admissao: r.admissao || null, gestor: r.gestor, avaliador: r.avaliador, periodo_inicio: r.periodoInicio || null, periodo_fim: r.periodoFim || null, data_avaliacao: r.dataAvaliacao, notas: r.notas || {}, soma: r.soma, classificacao: r.classificacao }),
+    fromDb: (r) => ({ id: r.id, colaboradorId: r.colaborador_id, colaboradorNome: r.colaborador_nome, funcao: r.funcao, admissao: r.admissao, gestor: r.gestor, avaliador: r.avaliador, periodoInicio: r.periodo_inicio, periodoFim: r.periodo_fim, dataAvaliacao: r.data_avaliacao, notas: r.notas || {}, soma: r.soma, classificacao: r.classificacao }) },
   procedimentos: { table: "procedimentos_especiais", order: "data.desc",
     toDb: (r) => ({ tipo: r.tipo, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor }),
     fromDb: (r) => ({ id: r.id, tipo: r.tipo, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor }) },
@@ -4087,6 +4090,163 @@ function AgendamentosAdminModulo() {
   );
 }
 
+/* ============================== AVALIAÇÃO DE COLABORADOR (20-70-10) ============================== */
+const CRITERIOS_AVALIACAO = [
+  { classe: "Desempenho", criterio: "Produtividade", descricao: "Quantidade e qualidade do trabalho apresentado" },
+  { classe: "Desempenho", criterio: "Disposição", descricao: "Disponibilidade para colaboração com trabalho da equipe" },
+  { classe: "Desempenho", criterio: "Iniciativa", descricao: "Colaboração espontânea para tomar providências e solucionar problemas" },
+  { classe: "Desempenho", criterio: "Autonomia", descricao: "Atitudes de resolução diante das dificuldades de execução de procedimentos" },
+  { classe: "Desempenho", criterio: "Liderança", descricao: "Modo como influencia os colegas na direção dos objetivos e metas de trabalho" },
+  { classe: "Desempenho", criterio: "Metas", descricao: "Alcance de objetivos e metas de trabalho com eficiência" },
+  { classe: "Comportamento Empresarial", criterio: "Responsabilidade", descricao: "Atitudes de obediência às normas e procedimentos determinados pela empresa" },
+  { classe: "Comportamento Empresarial", criterio: "Ética", descricao: "Atitudes de idoneidade, cidadania e integridade com relação à empresa, clientes e comunidade" },
+  { classe: "Comportamento Empresarial", criterio: "Assiduidade", descricao: "Ausência de faltas e atestados" },
+  { classe: "Comportamento Empresarial", criterio: "Interação", descricao: "Comunicação positiva e bom relacionamento com superiores, colegas e clientes" },
+  { classe: "Comportamento Empresarial", criterio: "Gestão de Conflitos", descricao: "Solução de problemas e dificuldades dos funcionários entre si e com relação aos procedimentos" },
+  { classe: "Comportamento Empresarial", criterio: "Gestão de Recursos", descricao: "Utiliza os recursos da empresa com eficiência e cuidado evitando desperdícios" },
+  { classe: "Negócio", criterio: "Negócio", descricao: "Demonstração de atitudes relacionadas com os serviços da empresa e interesse do cliente" },
+  { classe: "Negócio", criterio: "Produto", descricao: "Domínio dos produtos e serviços da empresa" },
+  { classe: "Negócio", criterio: "Base", descricao: "Aplicação dos valores da empresa" },
+  { classe: "Negócio", criterio: "Resultado", descricao: "Geração de resultados com seu trabalho" },
+];
+const CONCEITOS_AVALIACAO = [
+  { v: 1, label: "1 — Não atende" }, { v: 2, label: "2 — Atende parcialmente" },
+  { v: 3, label: "3 — Atende satisfatoriamente" }, { v: 4, label: "4 — Supera as expectativas" },
+];
+function classificacaoDaMedia(media) {
+  const arred = Math.round(media);
+  return (CONCEITOS_AVALIACAO.find((c) => c.v === Math.min(4, Math.max(1, arred))) || CONCEITOS_AVALIACAO[0]).label.split(" — ")[1];
+}
+function AvaliacaoColaboradorModulo() {
+  const { perfil } = useAuth();
+  const { data: colaboradoresUnidade } = usePerfisDaUnidade();
+  const { data: avaliacoes, add, remove, loading, erro } = useRecords("avaliacoesColaborador");
+  const [colaboradorId, setColaboradorId] = useState("");
+  const [funcao, setFuncao] = useState(""); const [admissao, setAdmissao] = useState("");
+  const [gestor, setGestor] = useState(""); const [avaliador, setAvaliador] = useState(perfil.nome);
+  const [periodoInicio, setPeriodoInicio] = useState(""); const [periodoFim, setPeriodoFim] = useState("");
+  const [dataAvaliacao, setDataAvaliacao] = useState(todayISO());
+  const [notas, setNotas] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [verHistorico, setVerHistorico] = useState(false);
+
+  const colaboradorNome = (colaboradoresUnidade.find((c) => c.id === colaboradorId) || {}).nome || "";
+  const notaPreenchidas = CRITERIOS_AVALIACAO.filter((c) => notas[c.criterio]).length;
+  const soma = CRITERIOS_AVALIACAO.reduce((s, c) => s + (Number(notas[c.criterio]) || 0), 0);
+  const media = notaPreenchidas ? soma / CRITERIOS_AVALIACAO.length : 0;
+
+  const salvar = async () => {
+    if (!colaboradorId || notaPreenchidas < CRITERIOS_AVALIACAO.length) return alert("Selecione o colaborador e preencha a nota de todos os critérios.");
+    setBusy(true);
+    await add({ colaboradorId, colaboradorNome, funcao, admissao: admissao || null, gestor, avaliador, periodoInicio: periodoInicio || null, periodoFim: periodoFim || null, dataAvaliacao, notas, soma, classificacao: classificacaoDaMedia(media) });
+    setColaboradorId(""); setFuncao(""); setAdmissao(""); setGestor(""); setPeriodoInicio(""); setPeriodoFim(""); setDataAvaliacao(todayISO()); setNotas({});
+    setBusy(false);
+  };
+
+  const camposExport = [
+    { key: "dataAvaliacao", label: "Data da Avaliação" }, { key: "colaboradorNome", label: "Colaborador" }, { key: "funcao", label: "Função" },
+    { key: "periodoInicio", label: "Período (início)" }, { key: "periodoFim", label: "Período (fim)" }, { key: "avaliador", label: "Avaliador" },
+    { key: "soma", label: "Soma" }, { key: "classificacao", label: "Classificação" },
+  ];
+
+  return (
+    <div>
+      <SectionHeader icon={ClipboardList} title="Avaliação de Colaborador" subtitle="Modelo 20-70-10 — avaliação mensal, só para administradores" tone="purple" />
+      <div className="flex gap-2 mb-5">
+        <button onClick={() => setVerHistorico(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background: !verHistorico ? T.ink : "#F1EEE4", color: !verHistorico ? "#fff" : T.muted }}>Nova avaliação</button>
+        <button onClick={() => setVerHistorico(true)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background: verHistorico ? T.ink : "#F1EEE4", color: verHistorico ? "#fff" : T.muted }}>Histórico ({avaliacoes.length})</button>
+      </div>
+
+      {!verHistorico ? (
+        <>
+          <Card className="mb-5">
+            <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Avaliação de Colaborador 20-70-10</p>
+            <div className="grid md:grid-cols-3 gap-3 mb-3">
+              <Field label="Colaborador"><select className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={colaboradorId} onChange={(e) => setColaboradorId(e.target.value)}><option value="">Selecione…</option>{colaboradoresUnidade.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></Field>
+              <Field label="Função"><input className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={funcao} onChange={(e) => setFuncao(e.target.value)} /></Field>
+              <Field label="Admissão"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={admissao} onChange={(e) => setAdmissao(e.target.value)} /></Field>
+              <Field label="Gestor"><input className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={gestor} onChange={(e) => setGestor(e.target.value)} /></Field>
+              <Field label="Avaliador"><input className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={avaliador} onChange={(e) => setAvaliador(e.target.value)} /></Field>
+              <Field label="Data da Avaliação"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={dataAvaliacao} onChange={(e) => setDataAvaliacao(e.target.value)} /></Field>
+              <Field label="Período — início"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={periodoInicio} onChange={(e) => setPeriodoInicio(e.target.value)} /></Field>
+              <Field label="Período — fim"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={periodoFim} onChange={(e) => setPeriodoFim(e.target.value)} /></Field>
+            </div>
+          </Card>
+
+          {["Desempenho", "Comportamento Empresarial", "Negócio"].map((classe) => (
+            <Card key={classe} className="mb-5">
+              <p className="font-bold mb-3" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{classe}</p>
+              <table className="w-full text-sm">
+                <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                  <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted, width: "18%" }}>Classe</th>
+                  <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Descrição</th>
+                  <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted, width: "22%" }}>Nota</th>
+                </tr></thead>
+                <tbody>{CRITERIOS_AVALIACAO.filter((c) => c.classe === classe).map((c) => (
+                  <tr key={c.criterio} style={{ borderBottom: `1px solid ${T.border}` }}>
+                    <td className="py-2 px-2 font-medium" style={{ color: T.text }}>{c.criterio}</td>
+                    <td className="py-2 px-2 text-xs" style={{ color: T.muted }}>{c.descricao}</td>
+                    <td className="py-2 px-2">
+                      <select className="rounded-lg px-2 py-1.5 text-sm outline-none w-full" style={inputStyle} value={notas[c.criterio] || ""} onChange={(e) => setNotas((p) => ({ ...p, [c.criterio]: Number(e.target.value) }))}>
+                        <option value="">—</option>
+                        {CONCEITOS_AVALIACAO.map((op) => <option key={op.v} value={op.v}>{op.label}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </Card>
+          ))}
+
+          <Card className="mb-5">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-bold" style={{ color: T.text }}>Análise da Avaliação</span>
+              <div className="flex items-center gap-6">
+                <div className="text-right"><div className="text-[10px] uppercase" style={{ color: T.muted }}>Soma</div><div className="text-lg font-bold" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{soma} / {CRITERIOS_AVALIACAO.length * 4}</div></div>
+                <div className="text-right"><div className="text-[10px] uppercase" style={{ color: T.muted }}>Classificação</div><div className="text-lg font-bold" style={{ color: T.teal }}>{notaPreenchidas ? classificacaoDaMedia(media) : "—"}</div></div>
+              </div>
+            </div>
+            <p className="text-xs" style={{ color: T.muted }}>Índice de conceitos: 1- Não atende, 2- Atende parcialmente, 3- Atende satisfatoriamente, 4- Supera as expectativas. ({notaPreenchidas}/{CRITERIOS_AVALIACAO.length} critérios preenchidos)</p>
+          </Card>
+          <Btn disabled={busy || !colaboradorId || notaPreenchidas < CRITERIOS_AVALIACAO.length} onClick={salvar}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Salvar avaliação</Btn>
+        </>
+      ) : (
+        <>
+          <Card className="mb-5">
+            <div className="flex gap-2">
+              <Btn small variant="ghost" icon={Download} onClick={() => exportToCSV(camposExport, avaliacoes, "avaliacoes-colaboradores")}>CSV</Btn>
+              <Btn small tone="teal" icon={Download} onClick={() => exportToExcel(camposExport, avaliacoes, "avaliacoes-colaboradores")}>Excel</Btn>
+              <Btn small variant="ghost" icon={Printer} onClick={() => exportToPDF(camposExport, avaliacoes, "avaliacoes-colaboradores")}>PDF</Btn>
+            </div>
+          </Card>
+          <Card>
+            {erro && <p className="text-sm mb-3" style={{ color: T.red }}>{erro}</p>}
+            {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> :
+              avaliacoes.length === 0 ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhuma avaliação registrada ainda.</div> : (
+              <div className="flex flex-col gap-2">
+                {avaliacoes.map((a) => (
+                  <div key={a.id} className="rounded-xl px-4 py-3" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold text-sm" style={{ color: T.text }}>{a.colaboradorNome} <span className="text-xs font-normal" style={{ color: T.muted }}>— {a.funcao}</span></span>
+                      <div className="flex items-center gap-3">
+                        <Badge tone="purple">{a.classificacao}</Badge>
+                        <span style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{a.soma} pts</span>
+                        <span style={{ color: T.muted }}>{fmtDate(a.dataAvaliacao)}</span>
+                        <button onClick={() => { if (confirm("Remover esta avaliação?")) remove(a.id); }}><Trash2 size={13} style={{ color: T.red }} /></button>
+                      </div>
+                    </div>
+                    <p className="text-xs" style={{ color: T.muted }}>Avaliador: {a.avaliador} {a.periodoInicio && `• Período: ${fmtDate(a.periodoInicio)} a ${fmtDate(a.periodoFim)}`}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
 function EquipeModulo() {
   const { session } = useAuth();
   const { unidadeId } = useUnidade();
@@ -4416,7 +4576,7 @@ const ALL_MENU = [
   { group: "Atendimento", items: [{ key: "producaoParticulares", label: "Produção — Particulares", icon: Stethoscope, tone: "teal" }, { key: "producaoConveniosGeral", label: "Produção — Convênios", icon: Stethoscope, tone: "teal" }, { key: "producaoBradescoClinica", label: "Produção — Bradesco Clínica", icon: Stethoscope, tone: "teal" }, { key: "producaoAuroraSaude", label: "Produção — Aurora Saúde", icon: Stethoscope, tone: "teal" }, { key: "producaoIpsm", label: "Produção — IPSM", icon: Stethoscope, tone: "teal" }, { key: "producaoResumoGeral", label: "Produção — Valores Gerais", icon: Stethoscope, tone: "coral" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
   { group: "Setor de Vacinas", items: [{ key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "entradaEstoqueVacinas", label: "Entrada de Estoque", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "pacoteVacinas", label: "Pacote Personalizado", icon: Syringe, tone: "coral" }] },
   { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }, { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" }] },
-  { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "agendamentosAdmin", label: "Agendamentos", icon: CalendarDays, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "relatorioColaborador", label: "Relatório de Colaborador", icon: FileText, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" } ] },
+  { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "agendamentosAdmin", label: "Agendamentos", icon: CalendarDays, tone: "purple" }, { key: "avaliacaoColaborador", label: "Avaliação de Colaborador", icon: ClipboardList, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "relatorioColaborador", label: "Relatório de Colaborador", icon: FileText, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" } ] },
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }, { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" }, { key: "indicacao", label: "Indicação", icon: Megaphone, tone: "rose" }, { key: "cadCampanhasIndicacao", label: "Campanhas de Indicação", icon: Megaphone, tone: "rose" }] },
   { group: "Plantão", items: [{ key: "plantaoRegistro", label: "Registrar Plantão", icon: Stethoscope, tone: "teal" }, { key: "plantaoValores", label: "Valores por Convênio", icon: ClipboardList, tone: "coral" }, { key: "plantaoResumo", label: "Resumo Financeiro", icon: ClipboardList, tone: "coral" }] },
   { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "metasColaborador", label: "Meta por Colaborador", icon: Users, tone: "coral" }, { key: "metasEquipe", label: "Meta por Equipe", icon: Users, tone: "coral" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
@@ -4424,7 +4584,8 @@ const ALL_MENU = [
   { group: "Documentos & Chat", items: [{ key: "bancoDocumentos", label: "Banco de Documentos", icon: FileText, tone: "coral" }, { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas (E-mail/WhatsApp)", icon: Bell, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "agendamentosAdmin", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "cadCategorias", "cadTiposPagamento", "cadSaldoCaixa", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
+const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "agendamentosAdmin", "avaliacaoColaborador", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "cadCategorias", "cadTiposPagamento", "cadSaldoCaixa", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
+const ADMIN_ONLY_TABS = ["avaliacaoColaborador"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
 const RESTRICTED_MENUS = {
   recepcao: { group: "Minha área", items: [
@@ -4503,12 +4664,14 @@ function AppInner() {
   const [tab, setTab] = useState(customKeys ? customKeys[0] : (papelRestrito ? "meurh" : "visao"));
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const canFinance = perfil && perfil.papel !== "operacional";
+  const isAdmin = perfil && perfil.papel === "admin";
   const MENU = customKeys
-    ? [{ group: "Minha área", items: ALL_ITEMS.filter((i) => customKeys.includes(i.key)) }]
-    : (papelRestrito ? [papelRestrito] : (canFinance ? ALL_MENU : ALL_MENU.map((g) => ({ ...g, items: g.items.filter((i) => !FINANCE_TABS.includes(i.key)) })).filter((g) => g.items.length > 0)));
+    ? [{ group: "Minha área", items: ALL_ITEMS.filter((i) => customKeys.includes(i.key) && (isAdmin || !ADMIN_ONLY_TABS.includes(i.key))) }]
+    : (papelRestrito ? [papelRestrito] : (canFinance ? ALL_MENU.map((g) => ({ ...g, items: g.items.filter((i) => isAdmin || !ADMIN_ONLY_TABS.includes(i.key)) })).filter((g) => g.items.length > 0) : ALL_MENU.map((g) => ({ ...g, items: g.items.filter((i) => !FINANCE_TABS.includes(i.key)) })).filter((g) => g.items.length > 0)));
   const activeMeta = MENU.flatMap((g) => g.items).find((i) => i.key === tab) || MENU[0].items[0];
   const renderTab = () => {
     if (!canFinance && FINANCE_TABS.includes(tab)) return <VisaoGeral />;
+    if (!isAdmin && ADMIN_ONLY_TABS.includes(tab)) return <VisaoGeral />;
     switch (tab) {
       case "visao": return <VisaoGeral />;
       case "painelCritico": return <PainelCriticoModulo />;
@@ -4545,6 +4708,7 @@ function AppInner() {
       case "sublocacao": return <SublocacaoModulo />;
       case "importarOfx": return <ImportarOFXModulo />;
       case "equipe": return <EquipeModulo />;
+      case "avaliacaoColaborador": return <AvaliacaoColaboradorModulo />;
       case "agendamentosAdmin": return <AgendamentosAdminModulo />;
       case "metas": return <MetasModulo />;
       case "metasColaborador": return <MetasColaboradorModulo />;
