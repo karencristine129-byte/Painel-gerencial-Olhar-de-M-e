@@ -3870,11 +3870,17 @@ function EquipeModulo() {
     const pvpMes = posVendaPonto.filter((p) => p.colaborador_id === c.id && p.data.slice(0, 7) === mesAtual);
     const pvLigacoes = pvMes.length, pvConvertidas = pvMes.filter((p) => p.convertida).length, pvAtendidas = pvMes.filter((p) => p.agendamento_feito).length;
     const pvTaxaProdutividade = pvLigacoes ? (((pvConvertidas / pvLigacoes) + (pvAtendidas / pvLigacoes)) / 2) * 100 : null;
+    const ligacoesMes = pdMes.reduce((s, p) => s + p.ligacoes, 0);
+    const mensagensMes = pdMes.reduce((s, p) => s + p.mensagens, 0);
+    const agendadosMes = pdMes.reduce((s, p) => s + p.agendados, 0);
+    const contatosMes = ligacoesMes + mensagensMes;
+    const taxaProdutividadeGeral = contatosMes ? (agendadosMes / contatosMes) * 100 : null;
     return {
       ...c,
-      ligacoes: pdMes.reduce((s, p) => s + p.ligacoes, 0),
-      mensagens: pdMes.reduce((s, p) => s + p.mensagens, 0),
-      agendados: pdMes.reduce((s, p) => s + p.agendados, 0),
+      ligacoes: ligacoesMes,
+      mensagens: mensagensMes,
+      agendados: agendadosMes,
+      taxaProdutividadeGeral,
       agendadosVacinas: pdMes.reduce((s, p) => s + (Number(p.pacientes_agendados_vacinas) || 0), 0),
       avaliacoesGoogle: pdMes.reduce((s, p) => s + (Number(p.avaliacoes_google) || 0), 0),
       novosRecepcao: pdMes.reduce((s, p) => s + (Number(p.novos_pacientes_recepcao) || 0), 0),
@@ -3898,10 +3904,11 @@ function EquipeModulo() {
       </div>
       <GestaoDocumentosRH />
       <Card>
-        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Colaboradores — resumo do mês atual</p>
+        <p className="text-[11px] font-semibold uppercase mb-1" style={{ color: T.muted, letterSpacing: "0.06em" }}>Colaboradores — resumo do mês atual</p>
+        <p className="text-xs mb-3" style={{ color: T.muted }}>Taxa de produtividade = agendamentos ÷ (ligações + mensagens)</p>
         {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> : (
           <div className="overflow-x-auto -mx-5 px-5">
-            <table className="w-full text-sm min-w-[900px]">
+            <table className="w-full text-sm min-w-[980px]">
               <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Nome</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Cargo</th>
@@ -3909,6 +3916,7 @@ function EquipeModulo() {
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Ligações</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Mensagens</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Agendados</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Taxa de produtividade</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Agend. vacinas</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Aval. Google</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Novos (recepção)</th>
@@ -3924,6 +3932,7 @@ function EquipeModulo() {
                   <td className="py-2 px-2">{r.ligacoes}</td>
                   <td className="py-2 px-2">{r.mensagens}</td>
                   <td className="py-2 px-2">{r.agendados}</td>
+                  <td className="py-2 px-2">{r.taxaProdutividadeGeral !== null ? <span style={{ color: r.taxaProdutividadeGeral >= 30 ? T.green : T.amber, fontWeight: 600 }}>{fmtPct(r.taxaProdutividadeGeral)}</span> : <span style={{ color: T.muted }}>—</span>}</td>
                   <td className="py-2 px-2">{r.agendadosVacinas}</td>
                   <td className="py-2 px-2">{r.avaliacoesGoogle}</td>
                   <td className="py-2 px-2">{r.novosRecepcao}</td>
