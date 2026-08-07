@@ -171,8 +171,14 @@ const MODULES = {
     toDb: (r) => ({ tipo: r.tipo, titulo: r.titulo, data: r.data, recorrente_anual: !!r.recorrenteAnual, descricao: r.descricao, criado_por: r.criadoPor || null }),
     fromDb: (r) => ({ id: r.id, tipo: r.tipo, titulo: r.titulo, data: r.data, recorrenteAnual: r.recorrente_anual, descricao: r.descricao, criadoPor: r.criado_por }) },
   agendamentosAdmin: { table: "agendamentos_pacientes", order: "data_agendamento.desc",
-    toDb: (r) => ({ tipo: r.tipo, paciente: r.paciente, data_agendamento: r.dataAgendamento, convenio: r.convenio || null, vacina: r.vacina || null, paciente_novo: r.pacienteNovo || null, medico: r.medico || null, plantao: !!r.plantao, contato: r.contato || null, compareceu: r.compareceu || "Aguardando" }),
+    toDb: (r) => ({ tipo: r.tipo, paciente: r.paciente, data_agendamento: r.dataAgendamento, convenio: r.convenio || null, vacina: r.vacina || null, paciente_novo: r.pacienteNovo || null, medico: r.medico || null, plantao: !!r.plantao, contato: r.contato || null, compareceu: r.compareceu || "Aguardando", colaborador_nome: r.colaboradorNome || null, colaborador_id: r.colaboradorId || undefined }),
     fromDb: (r) => ({ id: r.id, tipo: r.tipo, paciente: r.paciente, dataAgendamento: r.data_agendamento, convenio: r.convenio, vacina: r.vacina, pacienteNovo: r.paciente_novo, medico: r.medico, plantao: r.plantao, contato: r.contato, compareceu: r.compareceu, colaboradorNome: r.colaborador_nome, colaboradorId: r.colaborador_id }) },
+  cadCampanhasIndicacao: { table: "campanhas_indicacao", order: "nome.asc",
+    toDb: (r) => ({ nome: r.nome, data_inicio: r.dataInicio || null, data_fim: r.dataFim || null, descricao: r.descricao }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, dataInicio: r.data_inicio, dataFim: r.data_fim, descricao: r.descricao }) },
+  indicacoes: { table: "indicacoes", order: "data.desc",
+    toDb: (r) => ({ data: r.data, nome_indicador: r.nomeIndicador, telefone_indicador: r.telefoneIndicador, convenio: r.convenio || null, canal_contato: r.canalContato || null, campanha_id: r.campanhaId || null, indicados: r.indicados || [], criado_por: r.criadoPor || null, criado_por_nome: r.criadoPorNome || null }),
+    fromDb: (r) => ({ id: r.id, data: r.data, nomeIndicador: r.nome_indicador, telefoneIndicador: r.telefone_indicador, convenio: r.convenio, canalContato: r.canal_contato, campanhaId: r.campanha_id, indicados: r.indicados || [], criadoPor: r.criado_por, criadoPorNome: r.criado_por_nome }) },
   procedimentos: { table: "procedimentos_especiais", order: "data.desc",
     toDb: (r) => ({ tipo: r.tipo, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor }),
     fromDb: (r) => ({ id: r.id, tipo: r.tipo, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor }) },
@@ -1412,6 +1418,151 @@ function ProtocoloGuiasModulo() {
                 </div>
                 <p className="text-xs" style={{ color: T.muted }}>{fmtDate(p.dataProtocolo)} — lançado por {p.criadoPorNome}</p>
                 <p className="text-xs mt-1" style={{ color: T.muted }}>{(p.itens || []).map((i) => `${i.profissional} (${i.convenio}: ${i.quantidade})`).join(", ")}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ============================== INDICAÇÃO ============================== */
+function CadastroCampanhasIndicacaoModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("cadCampanhasIndicacao");
+  const fields = [
+    { key: "nome", label: "Nome da campanha", type: "text", placeholder: "ex: Campanha Indique e Ganhe — Agosto" },
+    { key: "dataInicio", label: "Data de início", type: "date", required: false },
+    { key: "dataFim", label: "Data de fim", type: "date", required: false },
+    { key: "descricao", label: "Descrição / prêmio", type: "textarea", required: false },
+  ];
+  const columns = [{ key: "nome", label: "Campanha" }, { key: "dataInicio", label: "Início", render: (r) => r.dataInicio ? fmtDate(r.dataInicio) : "—" }, { key: "dataFim", label: "Fim", render: (r) => r.dataFim ? fmtDate(r.dataFim) : "—" }, { key: "descricao", label: "Descrição" }];
+  return (
+    <ModuleShell icon={Megaphone} title="Campanhas de Indicação" subtitle="Cadastre as campanhas — depois é só escolher em qual cada indicação está concorrendo" tone="rose" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Cadastrar campanha" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
+  );
+}
+
+function IndicacaoModulo() {
+  const { perfil } = useAuth();
+  const { data: campanhas } = useRecords("cadCampanhasIndicacao");
+  const { data: conveniosCat } = useRecords("cadConvenios");
+  const { data: indicacoes, add, remove, loading, erro } = useRecords("indicacoes");
+  const nomesConvenios = conveniosCat.length ? conveniosCat.map((c) => c.nome) : CONVENIOS;
+  const CANAIS = ["WhatsApp", "Google", "TikTok", "Instagram", "Facebook", "Ligação", "Presencial", "Outro"];
+
+  const [data, setData] = useState(todayISO());
+  const [nomeIndicador, setNomeIndicador] = useState("");
+  const [telefoneIndicador, setTelefoneIndicador] = useState("");
+  const [convenio, setConvenio] = useState("");
+  const [canalContato, setCanalContato] = useState("");
+  const [campanhaId, setCampanhaId] = useState("");
+  const [indicados, setIndicados] = useState([]);
+  const [nomeIndicado, setNomeIndicado] = useState("");
+  const [telefoneIndicado, setTelefoneIndicado] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const adicionarIndicado = () => {
+    if (!nomeIndicado) return;
+    setIndicados((p) => [...p, { nome: nomeIndicado, telefone: telefoneIndicado }]);
+    setNomeIndicado(""); setTelefoneIndicado("");
+  };
+  const removerIndicado = (idx) => setIndicados((p) => p.filter((_, i) => i !== idx));
+
+  const registrarIndicacao = async () => {
+    if (!nomeIndicador || indicados.length === 0) return alert("Informe quem indicou e adicione ao menos um indicado.");
+    setBusy(true);
+    await add({ data, nomeIndicador, telefoneIndicador, convenio: convenio || null, canalContato: canalContato || null, campanhaId: campanhaId || null, indicados, criadoPor: perfil.id, criadoPorNome: perfil.nome });
+    setNomeIndicador(""); setTelefoneIndicador(""); setConvenio(""); setCanalContato(""); setCampanhaId(""); setIndicados([]); setData(todayISO());
+    setBusy(false);
+  };
+
+  const nomeCampanha = (id) => (campanhas.find((c) => c.id === id) || {}).nome || "—";
+
+  const [filtroMes, setFiltroMes] = useState("");
+  const [filtroDe, setFiltroDe] = useState("");
+  const [filtroAte, setFiltroAte] = useState("");
+  const [filtroCampanha, setFiltroCampanha] = useState("");
+  const indicacoesFiltradas = filtrarPorPeriodo(indicacoes, "data", filtroMes, filtroDe, filtroAte).filter((r) => !filtroCampanha || r.campanhaId === filtroCampanha);
+
+  const totalIndicadores = indicacoesFiltradas.length;
+  const totalIndicados = indicacoesFiltradas.reduce((s, r) => s + (r.indicados || []).length, 0);
+
+  // Uma linha por indicado — pronto para o sorteio
+  const linhasParaSorteio = indicacoesFiltradas.flatMap((r) => (r.indicados || []).map((ind) => ({
+    data: fmtDate(r.data), campanha: nomeCampanha(r.campanhaId), nomeIndicador: r.nomeIndicador, telefoneIndicador: r.telefoneIndicador || "",
+    nomeIndicado: ind.nome, telefoneIndicado: ind.telefone || "",
+  })));
+  const camposSorteio = [{ key: "data", label: "Data" }, { key: "campanha", label: "Campanha" }, { key: "nomeIndicador", label: "Indicado por" }, { key: "telefoneIndicador", label: "Telefone de quem indicou" }, { key: "nomeIndicado", label: "Nome do indicado" }, { key: "telefoneIndicado", label: "Telefone do indicado" }];
+
+  return (
+    <div>
+      <SectionHeader icon={Megaphone} title="Indicação" subtitle="Registre quem indicou e quem foi indicado — gera lista pronta para sorteio" tone="rose" />
+      <Card className="mb-5">
+        <div className="flex flex-wrap gap-3 items-end mb-4">
+          <Field label="Data"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={data} onChange={(e) => setData(e.target.value)} /></Field>
+          <Field label="Nome de quem indicou"><input className="rounded-lg px-3 py-2 text-sm outline-none w-48" style={inputStyle} value={nomeIndicador} onChange={(e) => setNomeIndicador(e.target.value)} /></Field>
+          <Field label="Telefone"><input className="rounded-lg px-3 py-2 text-sm outline-none w-36" style={inputStyle} value={telefoneIndicador} onChange={(e) => setTelefoneIndicador(e.target.value)} /></Field>
+          <Field label="Convênio (opcional)"><select className="rounded-lg px-3 py-2 text-sm outline-none w-40" style={inputStyle} value={convenio} onChange={(e) => setConvenio(e.target.value)}><option value="">— não informar —</option>{nomesConvenios.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
+          <Field label="Contatada por qual canal"><select className="rounded-lg px-3 py-2 text-sm outline-none w-40" style={inputStyle} value={canalContato} onChange={(e) => setCanalContato(e.target.value)}><option value="">— não informar —</option>{CANAIS.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
+          <Field label="Campanha"><select className="rounded-lg px-3 py-2 text-sm outline-none w-52" style={inputStyle} value={campanhaId} onChange={(e) => setCampanhaId(e.target.value)}><option value="">— nenhuma —</option>{campanhas.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></Field>
+        </div>
+        <p className="text-[11px] font-semibold uppercase mb-2" style={{ color: T.muted, letterSpacing: "0.06em" }}>Adicionar indicação (quantas quiser)</p>
+        <div className="flex flex-wrap gap-3 items-end mb-4">
+          <Field label="Nome do indicado"><input className="rounded-lg px-3 py-2 text-sm outline-none w-48" style={inputStyle} value={nomeIndicado} onChange={(e) => setNomeIndicado(e.target.value)} /></Field>
+          <Field label="Telefone do indicado"><input className="rounded-lg px-3 py-2 text-sm outline-none w-36" style={inputStyle} value={telefoneIndicado} onChange={(e) => setTelefoneIndicado(e.target.value)} /></Field>
+          <Btn small tone="teal" icon={Plus} onClick={adicionarIndicado}>Adicionar indicado</Btn>
+        </div>
+        {indicados.length > 0 && (
+          <div className="mb-4">
+            <table className="w-full text-sm">
+              <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Indicado</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Telefone</th><th></th></tr></thead>
+              <tbody>{indicados.map((ind, idx) => (<tr key={idx} style={{ borderBottom: `1px solid ${T.border}` }}><td className="py-2 px-2" style={{ color: T.text }}>{ind.nome}</td><td className="py-2 px-2">{ind.telefone}</td><td className="py-2 px-2 text-right"><button onClick={() => removerIndicado(idx)}><Trash2 size={13} style={{ color: T.red }} /></button></td></tr>))}</tbody>
+            </table>
+          </div>
+        )}
+        <Btn disabled={busy || indicados.length === 0 || !nomeIndicador} onClick={registrarIndicacao}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Registrar indicação</Btn>
+      </Card>
+
+      <Card className="mb-5">
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Filtrar por competência, período ou campanha — e exportar (inclusive para o sorteio)</p>
+        <div className="flex flex-wrap gap-3 items-end">
+          <Field label="Competência (mês)"><input type="month" className="rounded-lg px-3 py-2 text-sm outline-none w-40" style={inputStyle} value={filtroMes} onChange={(e) => { setFiltroMes(e.target.value); setFiltroDe(""); setFiltroAte(""); }} /></Field>
+          <Field label="De"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={filtroDe} onChange={(e) => { setFiltroDe(e.target.value); setFiltroMes(""); }} /></Field>
+          <Field label="Até"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={filtroAte} onChange={(e) => { setFiltroAte(e.target.value); setFiltroMes(""); }} /></Field>
+          <Field label="Campanha"><select className="rounded-lg px-3 py-2 text-sm outline-none w-52" style={inputStyle} value={filtroCampanha} onChange={(e) => setFiltroCampanha(e.target.value)}><option value="">Todas</option>{campanhas.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></Field>
+          {(filtroMes || filtroDe || filtroAte || filtroCampanha) && <Btn small variant="ghost" onClick={() => { setFiltroMes(""); setFiltroDe(""); setFiltroAte(""); setFiltroCampanha(""); }}>Limpar filtro</Btn>}
+        </div>
+        <div className="flex gap-2 mt-4">
+          <Btn small variant="ghost" icon={Download} onClick={() => exportToCSV(camposSorteio, linhasParaSorteio, "indicacoes-sorteio")}>CSV</Btn>
+          <Btn small tone="teal" icon={Download} onClick={() => exportToExcel(camposSorteio, linhasParaSorteio, "indicacoes-sorteio")}>Excel</Btn>
+          <Btn small variant="ghost" icon={Printer} onClick={() => exportToPDF(camposSorteio, linhasParaSorteio, "indicacoes-sorteio")}>PDF</Btn>
+        </div>
+      </Card>
+
+      <div className="grid gap-3 mb-5 md:grid-cols-3">
+        <KpiCard label="Indicadores no período" value={totalIndicadores} tone="rose" />
+        <KpiCard label="Total de indicados (entradas p/ sorteio)" value={totalIndicados} tone="teal" />
+        <KpiCard label="Campanhas cadastradas" value={campanhas.length} />
+      </div>
+
+      <Card>
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Indicações registradas</p>
+        {erro && <p className="text-sm mb-3" style={{ color: T.red }}>{erro}</p>}
+        {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> :
+          indicacoesFiltradas.length === 0 ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhuma indicação no período/campanha selecionado.</div> : (
+          <div className="flex flex-col gap-2">
+            {indicacoesFiltradas.map((r) => (
+              <div key={r.id} className="rounded-xl px-4 py-3" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-sm" style={{ color: T.text }}>{r.nomeIndicador} <span className="text-xs font-normal" style={{ color: T.muted }}>({r.telefoneIndicador || "sem telefone"})</span></span>
+                  <div className="flex items-center gap-3">
+                    {r.campanhaId && <Badge tone="rose">{nomeCampanha(r.campanhaId)}</Badge>}
+                    <span style={{ color: T.muted }}>{fmtDate(r.data)}</span>
+                    <button onClick={() => { if (confirm("Remover esta indicação?")) remove(r.id); }}><Trash2 size={13} style={{ color: T.red }} /></button>
+                  </div>
+                </div>
+                <p className="text-xs" style={{ color: T.muted }}>{(r.indicados || []).length} indicado(s): {(r.indicados || []).map((i) => i.nome).join(", ")}</p>
               </div>
             ))}
           </div>
@@ -4266,7 +4417,7 @@ const ALL_MENU = [
   { group: "Setor de Vacinas", items: [{ key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "entradaEstoqueVacinas", label: "Entrada de Estoque", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "pacoteVacinas", label: "Pacote Personalizado", icon: Syringe, tone: "coral" }] },
   { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }, { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" }] },
   { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "agendamentosAdmin", label: "Agendamentos", icon: CalendarDays, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "relatorioColaborador", label: "Relatório de Colaborador", icon: FileText, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" } ] },
-  { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }, { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" }] },
+  { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }, { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" }, { key: "indicacao", label: "Indicação", icon: Megaphone, tone: "rose" }, { key: "cadCampanhasIndicacao", label: "Campanhas de Indicação", icon: Megaphone, tone: "rose" }] },
   { group: "Plantão", items: [{ key: "plantaoRegistro", label: "Registrar Plantão", icon: Stethoscope, tone: "teal" }, { key: "plantaoValores", label: "Valores por Convênio", icon: ClipboardList, tone: "coral" }, { key: "plantaoResumo", label: "Resumo Financeiro", icon: ClipboardList, tone: "coral" }] },
   { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "metasColaborador", label: "Meta por Colaborador", icon: Users, tone: "coral" }, { key: "metasEquipe", label: "Meta por Equipe", icon: Users, tone: "coral" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
   { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }, { key: "cadBancos", label: "Bancos", icon: Wallet, tone: "ink" }, { key: "cadCategorias", label: "Categorias", icon: ClipboardList, tone: "ink" }, { key: "cadTiposPagamento", label: "Tipos de Pagamento", icon: Wallet, tone: "ink" }, { key: "cadSaldoCaixa", label: "Saldo Inicial do Caixa", icon: Wallet, tone: "ink" }] },
@@ -4283,6 +4434,8 @@ const RESTRICTED_MENUS = {
     { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" },
     { key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" },
     { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" },
+    { key: "indicacao", label: "Indicação", icon: Megaphone, tone: "rose" },
+    { key: "cadCampanhasIndicacao", label: "Campanhas de Indicação", icon: Megaphone, tone: "rose" },
     { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
   marketing: { group: "Minha área", items: [
@@ -4290,6 +4443,8 @@ const RESTRICTED_MENUS = {
     { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" },
     { key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" },
     { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" },
+    { key: "indicacao", label: "Indicação", icon: Megaphone, tone: "rose" },
+    { key: "cadCampanhasIndicacao", label: "Campanhas de Indicação", icon: Megaphone, tone: "rose" },
     { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
   enfermagem: { group: "Minha área", items: [
@@ -4298,6 +4453,8 @@ const RESTRICTED_MENUS = {
     { key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" },
     { key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" },
     { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" },
+    { key: "indicacao", label: "Indicação", icon: Megaphone, tone: "rose" },
+    { key: "cadCampanhasIndicacao", label: "Campanhas de Indicação", icon: Megaphone, tone: "rose" },
     { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
   posvenda: { group: "Minha área", items: [
@@ -4305,6 +4462,8 @@ const RESTRICTED_MENUS = {
     { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" },
     { key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" },
     { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" },
+    { key: "indicacao", label: "Indicação", icon: Megaphone, tone: "rose" },
+    { key: "cadCampanhasIndicacao", label: "Campanhas de Indicação", icon: Megaphone, tone: "rose" },
     { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
   vacinacao: { group: "Minha área", items: [
@@ -4318,6 +4477,8 @@ const RESTRICTED_MENUS = {
     { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" },
     { key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" },
     { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" },
+    { key: "indicacao", label: "Indicação", icon: Megaphone, tone: "rose" },
+    { key: "cadCampanhasIndicacao", label: "Campanhas de Indicação", icon: Megaphone, tone: "rose" },
     { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
   servicos_gerais: { group: "Minha área", items: [
@@ -4326,6 +4487,8 @@ const RESTRICTED_MENUS = {
     { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" },
     { key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" },
     { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" },
+    { key: "indicacao", label: "Indicação", icon: Megaphone, tone: "rose" },
+    { key: "cadCampanhasIndicacao", label: "Campanhas de Indicação", icon: Megaphone, tone: "rose" },
     { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" },
   ] },
 };
@@ -4372,6 +4535,8 @@ function AppInner() {
       case "marketing": return <MarketingModulo />;
       case "posVenda": return <PosVendaModulo />;
       case "calendarioMarketing": return <CalendarioMarketingModulo />;
+      case "indicacao": return <IndicacaoModulo />;
+      case "cadCampanhasIndicacao": return <CadastroCampanhasIndicacaoModulo />;
       case "procedimentos": return <ProcedimentosModulo />;
       case "faturamento": return <FaturamentoModulo />;
       case "protocoloGuias": return <ProtocoloGuiasModulo />;
