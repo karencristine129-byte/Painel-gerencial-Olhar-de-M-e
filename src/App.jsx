@@ -182,6 +182,9 @@ const MODULES = {
   avaliacoesColaborador: { table: "avaliacoes_colaborador", order: "data_avaliacao.desc",
     toDb: (r) => ({ colaborador_id: r.colaboradorId || null, colaborador_nome: r.colaboradorNome, funcao: r.funcao, admissao: r.admissao || null, gestor: r.gestor, avaliador: r.avaliador, periodo_inicio: r.periodoInicio || null, periodo_fim: r.periodoFim || null, data_avaliacao: r.dataAvaliacao, notas: r.notas || {}, soma: r.soma, classificacao: r.classificacao }),
     fromDb: (r) => ({ id: r.id, colaboradorId: r.colaborador_id, colaboradorNome: r.colaborador_nome, funcao: r.funcao, admissao: r.admissao, gestor: r.gestor, avaliador: r.avaliador, periodoInicio: r.periodo_inicio, periodoFim: r.periodo_fim, dataAvaliacao: r.data_avaliacao, notas: r.notas || {}, soma: r.soma, classificacao: r.classificacao }) },
+  perfisAprovacao: { table: "perfis", order: "nome.asc",
+    toDb: (r) => ({ papel: r.papel, aprovado: r.aprovado }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, cargo: r.cargo, papel: r.papel, aprovado: r.aprovado }) },
   procedimentos: { table: "procedimentos_especiais", order: "data.desc",
     toDb: (r) => ({ tipo: r.tipo, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor }),
     fromDb: (r) => ({ id: r.id, tipo: r.tipo, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor }) },
@@ -437,6 +440,24 @@ function TermoBox({ texto }) {
   return <div className="rounded-lg p-3 text-xs max-h-32 overflow-y-auto mb-2" style={{ background: "#FBFAF6", border: `1px solid ${T.border}`, color: T.muted, lineHeight: 1.6 }}>{texto}</div>;
 }
 
+function AguardandoAprovacaoScreen({ onAtualizar, onSair }) {
+  const [verificando, setVerificando] = useState(false);
+  const verificar = async () => { setVerificando(true); await onAtualizar(); setVerificando(false); };
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: T.canvas }}>
+      <Card className="w-full max-w-md text-center">
+        <div className="flex justify-center mb-4"><div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: `${T.amber}20` }}><Lock size={24} style={{ color: T.amber }} /></div></div>
+        <p className="font-bold text-lg mb-2" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>Sua conta está aguardando aprovação</p>
+        <p className="text-sm mb-6" style={{ color: T.muted }}>Seu cadastro foi recebido. Assim que a Karen liberar o seu acesso, você já poderá entrar normalmente.</p>
+        <div className="flex flex-col gap-2">
+          <Btn onClick={verificar} disabled={verificando}>{verificando ? <Loader2 size={14} className="animate-spin" /> : null} Já fui aprovado(a) — verificar novamente</Btn>
+          <button onClick={onSair} className="text-xs" style={{ color: T.muted }}>Sair</button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function OnboardingPerfil({ onDone }) {
   const { session, unidadesIniciais } = useAuth();
   const [nome, setNome] = useState(""); const [cargo, setCargo] = useState(""); const [busy, setBusy] = useState(false); const [erro, setErro] = useState(null);
@@ -446,7 +467,7 @@ function OnboardingPerfil({ onDone }) {
     setBusy(true); setErro(null);
     try {
       const unidadePadrao = unidadesIniciais[0];
-      await sbRest("perfis", { method: "POST", token: session.access_token, body: { id: session.user.id, nome, cargo, unidade_id: unidadePadrao ? unidadePadrao.id : null, papel: "colaborador" } });
+      await sbRest("perfis", { method: "POST", token: session.access_token, body: { id: session.user.id, nome, cargo, unidade_id: unidadePadrao ? unidadePadrao.id : null, papel: "colaborador", aprovado: false } });
       const unidadeId = unidadePadrao ? unidadePadrao.id : null;
       await sbRest("termos_aceites", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, colaborador_id: session.user.id, tipo: "Propriedade Intelectual" } });
       await sbRest("termos_aceites", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, colaborador_id: session.user.id, tipo: "LGPD" } });
@@ -4249,6 +4270,54 @@ function AvaliacaoColaboradorModulo() {
   );
 }
 
+function AprovarContasModulo() {
+  const { data: perfis, update, loading, erro } = useRecords("perfisAprovacao");
+  const pendentes = perfis.filter((p) => p.aprovado === false);
+  const aprovados = perfis.filter((p) => p.aprovado !== false);
+  const [papelEscolhido, setPapelEscolhido] = useState({});
+  const [busyId, setBusyId] = useState(null);
+  const PAPEIS = ["colaborador", "operacional", "recepcao", "marketing", "enfermagem", "posvenda", "vacinacao", "servicos_gerais", "personalizado"];
+
+  const aprovar = async (p) => {
+    setBusyId(p.id);
+    await update(p.id, { papel: papelEscolhido[p.id] || p.papel || "colaborador", aprovado: true });
+    setBusyId(null);
+  };
+
+  return (
+    <div>
+      <SectionHeader icon={Lock} title="Aprovar Contas" subtitle="Contas novas ficam bloqueadas até você aprovar" tone="amber" />
+      <div className="grid gap-3 mb-6" style={{ gridTemplateColumns: "repeat(2, minmax(0,1fr))" }}>
+        <KpiCard label="Aguardando aprovação" value={pendentes.length} tone={pendentes.length ? "amber" : "green"} />
+        <KpiCard label="Contas já aprovadas" value={aprovados.length} tone="green" />
+      </div>
+      <Card>
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Aguardando aprovação</p>
+        {erro && <p className="text-sm mb-3" style={{ color: T.red }}>{erro}</p>}
+        {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> :
+          pendentes.length === 0 ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhuma conta aguardando aprovação. ✓</div> : (
+          <div className="flex flex-col gap-2">
+            {pendentes.map((p) => (
+              <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3" style={{ background: `${T.amber}10`, border: `1px solid ${T.amber}55` }}>
+                <div>
+                  <span className="font-semibold text-sm" style={{ color: T.text }}>{p.nome}</span>
+                  <span className="block text-xs" style={{ color: T.muted }}>{p.cargo || "Cargo não informado"}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select className="rounded-lg px-2 py-1.5 text-xs outline-none" style={inputStyle} value={papelEscolhido[p.id] || p.papel || "colaborador"} onChange={(e) => setPapelEscolhido((prev) => ({ ...prev, [p.id]: e.target.value }))}>
+                    {PAPEIS.map((pa) => <option key={pa} value={pa}>{pa}</option>)}
+                  </select>
+                  <Btn small tone="green" icon={CheckCircle2} disabled={busyId === p.id} onClick={() => aprovar(p)}>{busyId === p.id ? <Loader2 size={13} className="animate-spin" /> : null} Aprovar</Btn>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 function EquipeModulo() {
   const { session } = useAuth();
   const { unidadeId } = useUnidade();
@@ -4578,7 +4647,7 @@ const ALL_MENU = [
   { group: "Atendimento", items: [{ key: "producaoParticulares", label: "Produção — Particulares", icon: Stethoscope, tone: "teal" }, { key: "producaoConveniosGeral", label: "Produção — Convênios", icon: Stethoscope, tone: "teal" }, { key: "producaoBradescoClinica", label: "Produção — Bradesco Clínica", icon: Stethoscope, tone: "teal" }, { key: "producaoAuroraSaude", label: "Produção — Aurora Saúde", icon: Stethoscope, tone: "teal" }, { key: "producaoIpsm", label: "Produção — IPSM", icon: Stethoscope, tone: "teal" }, { key: "producaoResumoGeral", label: "Produção — Valores Gerais", icon: Stethoscope, tone: "coral" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
   { group: "Setor de Vacinas", items: [{ key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "entradaEstoqueVacinas", label: "Entrada de Estoque", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "pacoteVacinas", label: "Pacote Personalizado", icon: Syringe, tone: "coral" }] },
   { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }, { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" }] },
-  { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "agendamentosAdmin", label: "Agendamentos", icon: CalendarDays, tone: "purple" }, { key: "avaliacaoColaborador", label: "Avaliação de Colaborador", icon: ClipboardList, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "relatorioColaborador", label: "Relatório de Colaborador", icon: FileText, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" } ] },
+  { group: "Pessoas", items: [{ key: "equipe", label: "Painel da Equipe", icon: Users, tone: "purple" }, { key: "aprovarContas", label: "Aprovar Contas", icon: Lock, tone: "amber" }, { key: "agendamentosAdmin", label: "Agendamentos", icon: CalendarDays, tone: "purple" }, { key: "avaliacaoColaborador", label: "Avaliação de Colaborador", icon: ClipboardList, tone: "purple" }, { key: "pessoal", label: "Departamento Pessoal", icon: Users, tone: "purple" }, { key: "relatorioColaborador", label: "Relatório de Colaborador", icon: FileText, tone: "purple" }, { key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" } ] },
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }, { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" }, { key: "indicacao", label: "Indicação", icon: Megaphone, tone: "rose" }, { key: "cadCampanhasIndicacao", label: "Campanhas de Indicação", icon: Megaphone, tone: "rose" }] },
   { group: "Plantão", items: [{ key: "plantaoRegistro", label: "Registrar Plantão", icon: Stethoscope, tone: "teal" }, { key: "plantaoValores", label: "Valores por Convênio", icon: ClipboardList, tone: "coral" }, { key: "plantaoResumo", label: "Resumo Financeiro", icon: ClipboardList, tone: "coral" }] },
   { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "metasColaborador", label: "Meta por Colaborador", icon: Users, tone: "coral" }, { key: "metasEquipe", label: "Meta por Equipe", icon: Users, tone: "coral" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
@@ -4586,8 +4655,8 @@ const ALL_MENU = [
   { group: "Documentos & Chat", items: [{ key: "bancoDocumentos", label: "Banco de Documentos", icon: FileText, tone: "coral" }, { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas (E-mail/WhatsApp)", icon: Bell, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "agendamentosAdmin", "avaliacaoColaborador", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "cadCategorias", "cadTiposPagamento", "cadSaldoCaixa", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
-const ADMIN_ONLY_TABS = ["avaliacaoColaborador"];
+const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "aprovarContas", "agendamentosAdmin", "avaliacaoColaborador", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "cadCategorias", "cadTiposPagamento", "cadSaldoCaixa", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
+const ADMIN_ONLY_TABS = ["avaliacaoColaborador", "aprovarContas"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
 const RESTRICTED_MENUS = {
   recepcao: { group: "Minha área", items: [
@@ -4710,6 +4779,7 @@ function AppInner() {
       case "sublocacao": return <SublocacaoModulo />;
       case "importarOfx": return <ImportarOFXModulo />;
       case "equipe": return <EquipeModulo />;
+      case "aprovarContas": return <AprovarContasModulo />;
       case "avaliacaoColaborador": return <AvaliacaoColaboradorModulo />;
       case "agendamentosAdmin": return <AgendamentosAdminModulo />;
       case "metas": return <MetasModulo />;
@@ -4798,10 +4868,12 @@ function NotificationsMenu({ setTab }) {
   const contas = useRecords("contas", somenteAdmin);
   const leads = useRecords("marketing");
   const calendario = useRecords("marketingCalendario");
-  const loading = vacinas.loading || lotesVacinas.loading || insumos.loading || contas.loading || leads.loading || calendario.loading;
+  const perfisAprovacao = useRecords("perfisAprovacao", somenteAdmin);
+  const loading = vacinas.loading || lotesVacinas.loading || insumos.loading || contas.loading || leads.loading || calendario.loading || perfisAprovacao.loading;
   const nomeVacina = (id) => (vacinas.data.find((v) => v.id === id) || {}).nome || "—";
 
   const notificacoes = [
+    ...(somenteAdmin ? perfisAprovacao.data.filter((p) => p.aprovado === false).map((p) => ({ texto: `🔒 "${p.nome}" aguardando aprovação de acesso`, tone: "amber", tab: "aprovarContas" })) : []),
     ...calendario.data.filter(ehHojeOuAniversarioHoje).map((c) => ({ texto: `${c.tipo === "Aniversário" ? "🎂" : "📌"} Hoje: ${c.titulo}`, tone: "coral", tab: "calendarioMarketing" })),
     ...vacinas.data.filter((v) => v.qtdEstoque < v.qtdMinima).map((v) => ({ texto: `Vacina "${v.nome}" abaixo do estoque mínimo`, tone: "red", tab: "vacinas" })),
     ...lotesVacinas.data.filter((l) => { if (!l.validade) return false; const dias = Math.ceil((new Date(l.validade) - new Date(todayISO())) / 86400000); return dias <= 90; }).map((l) => { const dias = Math.ceil((new Date(l.validade) - new Date(todayISO())) / 86400000); return { texto: `"${nomeVacina(l.vacinaId)}" — lote ${l.lote} ${dias < 0 ? "vencido" : `vence em ${dias} dias`} (${fmtDate(l.validade)})`, tone: dias <= 45 ? "red" : "amber", tab: "entradaEstoqueVacinas" }; }),
@@ -4956,6 +5028,11 @@ function AuthProvider({ children }) {
   if (!perfil) return (
     <AuthContext.Provider value={value}>
       <OnboardingPerfil onDone={() => carregarPerfil(session)} />
+    </AuthContext.Provider>
+  );
+  if (perfil.aprovado === false) return (
+    <AuthContext.Provider value={value}>
+      <AguardandoAprovacaoScreen onAtualizar={() => carregarPerfil(session)} onSair={logout} />
     </AuthContext.Provider>
   );
 
