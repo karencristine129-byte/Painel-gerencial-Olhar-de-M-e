@@ -4655,8 +4655,9 @@ const ALL_MENU = [
   { group: "Documentos & Chat", items: [{ key: "bancoDocumentos", label: "Banco de Documentos", icon: FileText, tone: "coral" }, { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas (E-mail/WhatsApp)", icon: Bell, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "aprovarContas", "agendamentosAdmin", "avaliacaoColaborador", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "cadCategorias", "cadTiposPagamento", "cadSaldoCaixa", "plantaoValores", "plantaoResumo", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
+const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "aprovarContas", "agendamentosAdmin", "avaliacaoColaborador", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "cadCategorias", "cadTiposPagamento", "cadSaldoCaixa", "plantaoValores", "plantaoResumo", "producaoParticulares", "producaoConveniosGeral", "producaoBradescoClinica", "producaoAuroraSaude", "producaoIpsm", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
 const ADMIN_ONLY_TABS = ["avaliacaoColaborador", "aprovarContas"];
+const PRODUCAO_TABS = ["producaoParticulares", "producaoConveniosGeral", "producaoBradescoClinica", "producaoAuroraSaude", "producaoIpsm"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
 const RESTRICTED_MENUS = {
   recepcao: { group: "Minha área", items: [
@@ -4738,11 +4739,14 @@ function AppInner() {
   const isAdmin = perfil && perfil.papel === "admin";
   const MENU = customKeys
     ? [{ group: "Minha área", items: ALL_ITEMS.filter((i) => customKeys.includes(i.key) && (isAdmin || !ADMIN_ONLY_TABS.includes(i.key))) }]
-    : (papelRestrito ? [papelRestrito] : (canFinance ? ALL_MENU.map((g) => ({ ...g, items: g.items.filter((i) => isAdmin || !ADMIN_ONLY_TABS.includes(i.key)) })).filter((g) => g.items.length > 0) : ALL_MENU.map((g) => ({ ...g, items: g.items.filter((i) => !FINANCE_TABS.includes(i.key)) })).filter((g) => g.items.length > 0)));
+    : (papelRestrito ? [papelRestrito] : (canFinance
+        ? ALL_MENU.map((g) => ({ ...g, items: g.items.filter((i) => (isAdmin || !ADMIN_ONLY_TABS.includes(i.key)) && (isAdmin || !PRODUCAO_TABS.includes(i.key))) })).filter((g) => g.items.length > 0)
+        : ALL_MENU.map((g) => ({ ...g, items: g.items.filter((i) => !FINANCE_TABS.includes(i.key)) })).filter((g) => g.items.length > 0)));
   const activeMeta = MENU.flatMap((g) => g.items).find((i) => i.key === tab) || MENU[0].items[0];
   const renderTab = () => {
     if (!canFinance && FINANCE_TABS.includes(tab)) return <VisaoGeral />;
     if (!isAdmin && ADMIN_ONLY_TABS.includes(tab)) return <VisaoGeral />;
+    if (!isAdmin && PRODUCAO_TABS.includes(tab) && !(customKeys && customKeys.includes(tab))) return <VisaoGeral />;
     switch (tab) {
       case "visao": return <VisaoGeral />;
       case "painelCritico": return <PainelCriticoModulo />;
@@ -4844,7 +4848,7 @@ function AppInner() {
           <div className="hidden md:flex items-center justify-between px-8 py-4" style={{ background: T.card, borderBottom: `1px solid ${T.border}` }}>
             <h1 className="text-lg font-bold" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{activeMeta.label}</h1>
             <div className="flex items-center gap-4">
-              <Btn tone="coral" icon={Plus} onClick={() => setTab("producaoConveniosGeral")}>Novo Atendimento</Btn>
+              {(isAdmin || (customKeys && customKeys.includes("producaoConveniosGeral"))) && <Btn tone="coral" icon={Plus} onClick={() => setTab("producaoConveniosGeral")}>Novo Atendimento</Btn>}
               <div className="flex items-center gap-3 pl-2" style={{ borderLeft: `1px solid ${T.border}` }}>
                 <NotificationsMenu setTab={setTab} />
                 <button title="Configurações" onClick={() => setTab("unidades")}><Settings size={18} style={{ color: T.muted }} /></button>
