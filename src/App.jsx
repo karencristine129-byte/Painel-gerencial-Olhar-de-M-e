@@ -210,8 +210,11 @@ const MODULES = {
     toDb: (r) => ({ nome: r.nome, valor_teste: r.valorTeste, valor_repasse_clinica: r.valorRepasseClinica }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, valorTeste: r.valor_teste, valorRepasseClinica: r.valor_repasse_clinica }) },
   cadBancos: { table: "cadastro_bancos", order: "nome.asc",
-    toDb: (r) => ({ nome: r.nome, agencia: r.agencia, conta: r.conta, observacoes: r.observacoes }),
-    fromDb: (r) => ({ id: r.id, nome: r.nome, agencia: r.agencia, conta: r.conta, observacoes: r.observacoes }) },
+    toDb: (r) => ({ nome: r.nome, agencia: r.agencia, conta: r.conta, observacoes: r.observacoes, saldo_inicial: r.saldoInicial || 0, data_saldo_inicial: r.dataSaldoInicial || null }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, agencia: r.agencia, conta: r.conta, observacoes: r.observacoes, saldoInicial: r.saldo_inicial, dataSaldoInicial: r.data_saldo_inicial }) },
+  investimentos: { table: "investimentos", order: "nome.asc",
+    toDb: (r) => ({ nome: r.nome, valor_inicial: r.valorInicial, data_inicial: r.dataInicial || null }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, valorInicial: r.valor_inicial, dataInicial: r.data_inicial }) },
   caixaLancamentos: { table: "caixa_lancamentos", order: "data.desc",
     toDb: (r) => ({ tipo_caixa: r.tipoCaixa, data: r.data, tipo: r.tipo, categoria: r.categoria, descricao: r.descricao, valor: r.valor }),
     fromDb: (r) => ({ id: r.id, tipoCaixa: r.tipo_caixa, data: r.data, tipo: r.tipo, categoria: r.categoria, descricao: r.descricao, valor: r.valor }) },
@@ -2442,7 +2445,7 @@ function VisaoGeral() {
   const { perfil } = useAuth();
   const canFinance = perfil && perfil.papel !== "operacional";
   const financeiro = useRecords("financeiro", canFinance), atendimentos = useRecords("convenios"), vacinas = useRecords("vacinas"), insumos = useRecords("insumos"), contas = useRecords("contas", canFinance), pessoal = useRecords("pessoal"), leads = useRecords("marketing"), procedimentos = useRecords("procedimentos"), faturamento = useRecords("faturamento", canFinance), producao = useRecords("producao"), metas = useRecords("metas", canFinance);
-  const caixaLanc = useRecords("caixaLancamentos", canFinance), caixaSaldoIni = useRecords("caixaSaldoInicial", canFinance), bancosCad = useRecords("cadBancos", canFinance);
+  const caixaLanc = useRecords("caixaLancamentos", canFinance), caixaSaldoIni = useRecords("caixaSaldoInicial", canFinance), bancosCad = useRecords("cadBancos", canFinance), investimentosCad = useRecords("investimentos", canFinance);
   const anyLoading = [financeiro, atendimentos, vacinas, insumos, contas, pessoal, leads, procedimentos, faturamento, producao, metas].some((m) => m.loading);
   const [mesSelecionado, setMesSelecionado] = useState(todayISO().slice(0, 7));
   const [atualizando, setAtualizando] = useState(false);
@@ -2488,11 +2491,17 @@ function VisaoGeral() {
     const sai = doMes.filter((r) => r.tipo === "saida").reduce((s, r) => s + Number(r.valor), 0);
     return (inicial ? Number(inicial.valorInicial) : 0) + ent - sai;
   };
-  const saldoBanco = (nomeBanco) => financeiro.data.filter((r) => r.banco === nomeBanco).reduce((s, r) => s + (r.tipo === "entrada" ? Number(r.valor) : -Number(r.valor)), 0);
+  const saldoBanco = (banco) => {
+    const inicial = Number(banco.saldoInicial) || 0;
+    const desde = banco.dataSaldoInicial;
+    const movimentos = financeiro.data.filter((r) => r.banco === banco.nome && (!desde || r.data >= desde));
+    return inicial + movimentos.reduce((s, r) => s + (r.tipo === "entrada" ? Number(r.valor) : -Number(r.valor)), 0);
+  };
   const contasCorrentes = [
     { grupo: "Caixa", nome: "Caixa Recepção", valor: saldoCaixa("Recepção") },
     { grupo: "Caixa", nome: "Caixa Vacina", valor: saldoCaixa("Vacinas") },
-    ...bancosCad.data.map((b) => ({ grupo: "Conta Corrente", nome: b.nome, valor: saldoBanco(b.nome) })),
+    ...bancosCad.data.map((b) => ({ grupo: "Conta Corrente", nome: b.nome, valor: saldoBanco(b) })),
+    ...investimentosCad.data.map((i) => ({ grupo: "Investimento", nome: i.nome, valor: Number(i.valorInicial) || 0 })),
   ];
   const disponibilidadeTotal = contasCorrentes.reduce((s, c) => s + c.valor, 0);
 
@@ -2576,7 +2585,7 @@ function VisaoGeral() {
 
           <Card className="mb-6">
             <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Saldo das contas — {labelMes}</p>
-            {["Caixa", "Conta Corrente"].map((grupo) => {
+            {["Caixa", "Conta Corrente", "Investimento"].map((grupo) => {
               const itens = contasCorrentes.filter((c) => c.grupo === grupo);
               if (itens.length === 0) return null;
               return (
@@ -3797,12 +3806,30 @@ function CadastroBancosModulo() {
     { key: "nome", label: "Nome do banco", type: "text" },
     { key: "agencia", label: "Agência", type: "text", required: false },
     { key: "conta", label: "Conta", type: "text", required: false },
+    { key: "saldoInicial", label: "Saldo inicial (R$)", type: "currency", required: false },
+    { key: "dataSaldoInicial", label: "Data do saldo inicial", type: "date", required: false },
     { key: "observacoes", label: "Observações", type: "text", required: false },
   ];
-  const columns = [{ key: "nome", label: "Banco" }, { key: "agencia", label: "Agência" }, { key: "conta", label: "Conta" }];
+  const columns = [{ key: "nome", label: "Banco" }, { key: "agencia", label: "Agência" }, { key: "conta", label: "Conta" }, { key: "saldoInicial", label: "Saldo inicial", render: (r) => fmtBRL(r.saldoInicial) }];
   return (
-    <ModuleShell icon={Wallet} title="Cadastro de Bancos" subtitle="Bancos usados para importar extratos (OFX)" tone="coral" loading={loading} erro={erro}
+    <ModuleShell icon={Wallet} title="Cadastro de Bancos" subtitle="Bancos usados para importar extratos (OFX) — o saldo inicial aparece no Dashboard" tone="coral" loading={loading} erro={erro}
       dailyFields={fields} dailyCta="Cadastrar banco" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
+  );
+}
+
+function CadastroInvestimentosModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("investimentos");
+  const fields = [
+    { key: "nome", label: "Nome do investimento/aplicação", type: "text" },
+    { key: "valorInicial", label: "Valor (R$)", type: "currency" },
+    { key: "dataInicial", label: "Data", type: "date", required: false },
+  ];
+  const columns = [{ key: "nome", label: "Investimento" }, { key: "valorInicial", label: "Valor", render: (r) => fmtBRL(r.valorInicial) }, { key: "dataInicial", label: "Data", render: (r) => r.dataInicial ? fmtDate(r.dataInicial) : "—" }];
+  const total = data.reduce((s, r) => s + Number(r.valorInicial || 0), 0);
+  return (
+    <ModuleShell icon={Wallet} title="Investimentos" subtitle="Aplicações e investimentos — aparecem no Dashboard em Saldo das Contas" tone="teal" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Cadastrar investimento" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove}
+      kpis={[{ label: "Total investido", value: fmtBRL(total), tone: "teal" }, { label: "Aplicações cadastradas", value: data.length }]} />
   );
 }
 
@@ -4651,11 +4678,11 @@ const ALL_MENU = [
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }, { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" }, { key: "indicacao", label: "Indicação", icon: Megaphone, tone: "rose" }, { key: "cadCampanhasIndicacao", label: "Campanhas de Indicação", icon: Megaphone, tone: "rose" }] },
   { group: "Plantão", items: [{ key: "plantaoRegistro", label: "Registrar Plantão", icon: Stethoscope, tone: "teal" }, { key: "plantaoValores", label: "Valores por Convênio", icon: ClipboardList, tone: "coral" }, { key: "plantaoResumo", label: "Resumo Financeiro", icon: ClipboardList, tone: "coral" }] },
   { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "metasColaborador", label: "Meta por Colaborador", icon: Users, tone: "coral" }, { key: "metasEquipe", label: "Meta por Equipe", icon: Users, tone: "coral" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
-  { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }, { key: "cadBancos", label: "Bancos", icon: Wallet, tone: "ink" }, { key: "cadCategorias", label: "Categorias", icon: ClipboardList, tone: "ink" }, { key: "cadTiposPagamento", label: "Tipos de Pagamento", icon: Wallet, tone: "ink" }, { key: "cadSaldoCaixa", label: "Saldo Inicial do Caixa", icon: Wallet, tone: "ink" }] },
+  { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }, { key: "cadBancos", label: "Bancos", icon: Wallet, tone: "ink" }, { key: "investimentos", label: "Investimentos", icon: Wallet, tone: "ink" }, { key: "cadCategorias", label: "Categorias", icon: ClipboardList, tone: "ink" }, { key: "cadTiposPagamento", label: "Tipos de Pagamento", icon: Wallet, tone: "ink" }, { key: "cadSaldoCaixa", label: "Saldo Inicial do Caixa", icon: Wallet, tone: "ink" }] },
   { group: "Documentos & Chat", items: [{ key: "bancoDocumentos", label: "Banco de Documentos", icon: FileText, tone: "coral" }, { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas (E-mail/WhatsApp)", icon: Bell, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "aprovarContas", "agendamentosAdmin", "avaliacaoColaborador", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "cadCategorias", "cadTiposPagamento", "cadSaldoCaixa", "plantaoValores", "plantaoResumo", "producaoParticulares", "producaoConveniosGeral", "producaoBradescoClinica", "producaoAuroraSaude", "producaoIpsm", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
+const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "aprovarContas", "agendamentosAdmin", "avaliacaoColaborador", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "investimentos", "cadCategorias", "cadTiposPagamento", "cadSaldoCaixa", "plantaoValores", "plantaoResumo", "producaoParticulares", "producaoConveniosGeral", "producaoBradescoClinica", "producaoAuroraSaude", "producaoIpsm", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
 const ADMIN_ONLY_TABS = ["avaliacaoColaborador", "aprovarContas"];
 const PRODUCAO_TABS = ["producaoParticulares", "producaoConveniosGeral", "producaoBradescoClinica", "producaoAuroraSaude", "producaoIpsm"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
@@ -4799,6 +4826,7 @@ function AppInner() {
       case "cadFornecedores": return <CadastroFornecedoresModulo />;
       case "cadTestesGeneticos": return <CadastroTestesGeneticosModulo />;
       case "cadBancos": return <CadastroBancosModulo />;
+      case "investimentos": return <CadastroInvestimentosModulo />;
       case "cadCategorias": return <CadastroCategoriasModulo />;
       case "cadTiposPagamento": return <CadastroTiposPagamentoModulo />;
       case "cadSaldoCaixa": return <CadastroSaldoCaixaModulo />;
