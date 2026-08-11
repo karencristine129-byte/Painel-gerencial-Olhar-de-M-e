@@ -215,6 +215,9 @@ const MODULES = {
   investimentos: { table: "investimentos", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, valor_inicial: r.valorInicial, data_inicial: r.dataInicial || null }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, valorInicial: r.valor_inicial, dataInicial: r.data_inicial }) },
+  contatos: { table: "contatos", order: "nome.asc",
+    toDb: (r) => ({ nome: r.nome, documento: r.documento || null, email: r.email || null, telefone: r.telefone || null }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, documento: r.documento, email: r.email, telefone: r.telefone }) },
   caixaLancamentos: { table: "caixa_lancamentos", order: "data.desc",
     toDb: (r) => ({ tipo_caixa: r.tipoCaixa, data: r.data, tipo: r.tipo, categoria: r.categoria, descricao: r.descricao, valor: r.valor }),
     fromDb: (r) => ({ id: r.id, tipoCaixa: r.tipo_caixa, data: r.data, tipo: r.tipo, categoria: r.categoria, descricao: r.descricao, valor: r.valor }) },
@@ -3833,6 +3836,21 @@ function CadastroInvestimentosModulo() {
   );
 }
 
+function CadastroContatosModulo() {
+  const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("contatos");
+  const fields = [
+    { key: "nome", label: "Nome", type: "text" },
+    { key: "documento", label: "CPF/CNPJ", type: "text", required: false },
+    { key: "telefone", label: "Telefone", type: "text", required: false },
+    { key: "email", label: "E-mail", type: "text", required: false },
+  ];
+  const columns = [{ key: "nome", label: "Nome" }, { key: "documento", label: "CPF/CNPJ" }, { key: "telefone", label: "Telefone" }, { key: "email", label: "E-mail" }];
+  return (
+    <ModuleShell icon={Users} title="Cadastro de Contatos" subtitle="Pessoas e entidades usadas em pagamentos e recebimentos" tone="ink" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Cadastrar contato" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd} />
+  );
+}
+
 function CadastroFornecedoresModulo() {
   const { data, add, update, remove, loading, erro } = useRecords("cadFornecedores");
   const fields = [
@@ -4678,11 +4696,11 @@ const ALL_MENU = [
   { group: "Marketing", items: [{ key: "marketing", label: "Leads", icon: Megaphone, tone: "rose" }, { key: "posVenda", label: "Pós-venda", icon: Megaphone, tone: "rose" }, { key: "calendarioMarketing", label: "Calendário de Marketing", icon: CalendarDays, tone: "rose" }, { key: "indicacao", label: "Indicação", icon: Megaphone, tone: "rose" }, { key: "cadCampanhasIndicacao", label: "Campanhas de Indicação", icon: Megaphone, tone: "rose" }] },
   { group: "Plantão", items: [{ key: "plantaoRegistro", label: "Registrar Plantão", icon: Stethoscope, tone: "teal" }, { key: "plantaoValores", label: "Valores por Convênio", icon: ClipboardList, tone: "coral" }, { key: "plantaoResumo", label: "Resumo Financeiro", icon: ClipboardList, tone: "coral" }] },
   { group: "Metas & Relatórios", items: [{ key: "metas", label: "Acompanhamento de Metas", icon: ClipboardList, tone: "ink" }, { key: "metasColaborador", label: "Meta por Colaborador", icon: Users, tone: "coral" }, { key: "metasEquipe", label: "Meta por Equipe", icon: Users, tone: "coral" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "ink" }] },
-  { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }, { key: "cadBancos", label: "Bancos", icon: Wallet, tone: "ink" }, { key: "investimentos", label: "Investimentos", icon: Wallet, tone: "ink" }, { key: "cadCategorias", label: "Categorias", icon: ClipboardList, tone: "ink" }, { key: "cadTiposPagamento", label: "Tipos de Pagamento", icon: Wallet, tone: "ink" }, { key: "cadSaldoCaixa", label: "Saldo Inicial do Caixa", icon: Wallet, tone: "ink" }] },
+  { group: "Cadastros", items: [{ key: "cadConvenios", label: "Convênios", icon: HeartHandshake, tone: "ink" }, { key: "cadColaboradores", label: "Colaboradores", icon: Users, tone: "ink" }, { key: "cadProfissionais", label: "Profissionais", icon: Stethoscope, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadContatos", label: "Contatos", icon: Users, tone: "ink" }, { key: "cadTestesGeneticos", label: "Testes Genéticos", icon: FlaskConical, tone: "ink" }, { key: "cadBancos", label: "Bancos", icon: Wallet, tone: "ink" }, { key: "investimentos", label: "Investimentos", icon: Wallet, tone: "ink" }, { key: "cadCategorias", label: "Categorias", icon: ClipboardList, tone: "ink" }, { key: "cadTiposPagamento", label: "Tipos de Pagamento", icon: Wallet, tone: "ink" }, { key: "cadSaldoCaixa", label: "Saldo Inicial do Caixa", icon: Wallet, tone: "ink" }] },
   { group: "Documentos & Chat", items: [{ key: "bancoDocumentos", label: "Banco de Documentos", icon: FileText, tone: "coral" }, { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas (E-mail/WhatsApp)", icon: Bell, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "aprovarContas", "agendamentosAdmin", "avaliacaoColaborador", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadTestesGeneticos", "cadBancos", "investimentos", "cadCategorias", "cadTiposPagamento", "cadSaldoCaixa", "plantaoValores", "plantaoResumo", "producaoParticulares", "producaoConveniosGeral", "producaoBradescoClinica", "producaoAuroraSaude", "producaoIpsm", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
+const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "aprovarContas", "agendamentosAdmin", "avaliacaoColaborador", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadContatos", "cadTestesGeneticos", "cadBancos", "investimentos", "cadCategorias", "cadTiposPagamento", "cadSaldoCaixa", "plantaoValores", "plantaoResumo", "producaoParticulares", "producaoConveniosGeral", "producaoBradescoClinica", "producaoAuroraSaude", "producaoIpsm", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
 const ADMIN_ONLY_TABS = ["avaliacaoColaborador", "aprovarContas"];
 const PRODUCAO_TABS = ["producaoParticulares", "producaoConveniosGeral", "producaoBradescoClinica", "producaoAuroraSaude", "producaoIpsm"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
@@ -4824,6 +4842,7 @@ function AppInner() {
       case "cadColaboradores": return <CadastroColaboradoresModulo />;
       case "cadProfissionais": return <CadastroProfissionaisModulo />;
       case "cadFornecedores": return <CadastroFornecedoresModulo />;
+      case "cadContatos": return <CadastroContatosModulo />;
       case "cadTestesGeneticos": return <CadastroTestesGeneticosModulo />;
       case "cadBancos": return <CadastroBancosModulo />;
       case "investimentos": return <CadastroInvestimentosModulo />;
