@@ -1050,12 +1050,14 @@ function PosVendaModulo() {
     { key: "agendamentoFeito", label: "Agendamento", render: (r) => r.agendamentoFeito ? <Badge tone="teal">{fmtDate(r.dataAgendamento)}</Badge> : <span style={{ color: T.muted }}>—</span> },
     { key: "observacoes", label: "Observações" },
   ];
-  const total = data.length;
-  const convertidas = data.filter((r) => r.convertida).length;
-  const agendamentos = data.filter((r) => r.agendamentoFeito).length;
+  const isAdmin = perfil.papel === "admin";
+  const dataVisivel = isAdmin ? data : data.filter((r) => r.colaboradorId === perfil.id);
+  const total = dataVisivel.length;
+  const convertidas = dataVisivel.filter((r) => r.convertida).length;
+  const agendamentos = dataVisivel.filter((r) => r.agendamentoFeito).length;
   const taxaConversao = total ? (convertidas / total) * 100 : 0;
   const taxaProdutividade = total ? (((convertidas / total) + (agendamentos / total)) / 2) * 100 : 0;
-  const rowsParaForm = data.map((r) => ({ ...r, convertida: r.convertida ? "Sim" : "Não", agendamentoFeito: r.agendamentoFeito ? "Sim" : "Não", realizadoPor: r.colaboradorNome }));
+  const rowsParaForm = dataVisivel.map((r) => ({ ...r, convertida: r.convertida ? "Sim" : "Não", agendamentoFeito: r.agendamentoFeito ? "Sim" : "Não", realizadoPor: r.colaboradorNome }));
 
   const hoje = todayISO();
   const pontoHoje = pontos.find((p) => p.data === hoje);
@@ -1088,7 +1090,7 @@ function PosVendaModulo() {
           {busyPonto ? "Registrando…" : proximaAcaoPonto === "inicio" ? "Bater início do pós-venda" : proximaAcaoPonto === "fim" ? "Bater fim do pós-venda" : "Ponto do dia completo ✓"}
         </button>
       </Card>
-      <ModuleShell icon={Megaphone} title="Registro de ligações" subtitle="" tone="rose" loading={loading} erro={erro}
+      <ModuleShell icon={Megaphone} title="Registro de ligações" subtitle={isAdmin ? "Mostrando as ligações de toda a equipe" : "Mostrando só as suas ligações"} tone="rose" loading={loading} erro={erro}
         dailyFields={fields} dailyCta="Registrar ligação" fields={fields} columns={columns} rows={rowsParaForm} onAdd={onAddConvertido} onUpdate={onUpdateConvertido} onDelete={remove}
         kpis={[{ label: "Ligações registradas", value: total }, { label: "Convertidas", value: convertidas, tone: "green" }, { label: "Atendidas (agendamentos)", value: agendamentos, tone: "teal" }, { label: "Taxa de conversão", value: fmtPct(taxaConversao), tone: taxaConversao >= 30 ? "green" : "amber" }, { label: "Taxa de produtividade", value: fmtPct(taxaProdutividade), tone: taxaProdutividade >= 40 ? "green" : "amber" }]} />
     </div>
