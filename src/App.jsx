@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useReducer, createContext, useContext } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useReducer, useRef, createContext, useContext } from "react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import {
@@ -4373,6 +4373,7 @@ function EquipeModulo() {
   const [termos, setTermos] = useState([]);
   const [posVendaLig, setPosVendaLig] = useState([]);
   const [posVendaPonto, setPosVendaPonto] = useState([]);
+  const [agendamentos, setAgendamentos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(null);
   const mesAtual = todayISO().slice(0, 7);
@@ -4381,7 +4382,7 @@ function EquipeModulo() {
     (async () => {
       setLoading(true); setErro(null);
       try {
-        const [cs, pd, hr, at, tm, pvl, pvp] = await Promise.all([
+        const [cs, pd, hr, at, tm, pvl, pvp, ag] = await Promise.all([
           sbRest(`perfis?unidade_id=eq.${unidadeId}&select=id,nome,cargo,papel&order=nome.asc`, { token: session.access_token }),
           sbRest(`producao_diaria_colaborador?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
           sbRest(`rh_horas?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
@@ -4389,8 +4390,9 @@ function EquipeModulo() {
           sbRest(`termos_aceites?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
           sbRest(`pos_venda_ligacoes?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
           sbRest(`pos_venda_ponto?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
+          sbRest(`agendamentos_pacientes?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
         ]);
-        setColaboradores(cs || []); setProd(pd || []); setHoras(hr || []); setAtestados(at || []); setTermos(tm || []); setPosVendaLig(pvl || []); setPosVendaPonto(pvp || []);
+        setColaboradores(cs || []); setProd(pd || []); setHoras(hr || []); setAtestados(at || []); setTermos(tm || []); setPosVendaLig(pvl || []); setPosVendaPonto(pvp || []); setAgendamentos(ag || []);
       } catch (e) { setErro(e.message); }
       setLoading(false);
     })();
@@ -4402,18 +4404,23 @@ function EquipeModulo() {
     const atMes = atestados.filter((a) => a.colaborador_id === c.id && a.data.slice(0, 7) === mesAtual);
     const pvMes = posVendaLig.filter((p) => p.colaborador_id === c.id && p.data.slice(0, 7) === mesAtual);
     const pvpMes = posVendaPonto.filter((p) => p.colaborador_id === c.id && p.data.slice(0, 7) === mesAtual);
+    const agMes = agendamentos.filter((a) => a.colaborador_id === c.id && a.data_agendamento && a.data_agendamento.slice(0, 7) === mesAtual);
+    const agendamentosPlantao = agMes.filter((a) => a.plantao).length;
+    const agendamentosOutros = agMes.filter((a) => !a.plantao).length;
     const pvLigacoes = pvMes.length, pvConvertidas = pvMes.filter((p) => p.convertida).length, pvAtendidas = pvMes.filter((p) => p.agendamento_feito).length;
     const pvTaxaProdutividade = pvLigacoes ? (((pvConvertidas / pvLigacoes) + (pvAtendidas / pvLigacoes)) / 2) * 100 : null;
     const ligacoesMes = pdMes.reduce((s, p) => s + p.ligacoes, 0);
     const mensagensMes = pdMes.reduce((s, p) => s + p.mensagens, 0);
     const agendadosMes = pdMes.reduce((s, p) => s + p.agendados, 0);
     const contatosMes = ligacoesMes + mensagensMes;
-    const taxaProdutividadeGeral = contatosMes ? (agendadosMes / contatosMes) * 100 : null;
+    const totalAgendamentos = agendadosMes + agendamentosPlantao + agendamentosOutros;
+    const taxaProdutividadeGeral = contatosMes ? (totalAgendamentos / contatosMes) * 100 : null;
     return {
       ...c,
       ligacoes: ligacoesMes,
       mensagens: mensagensMes,
       agendados: agendadosMes,
+      agendamentosPlantao, agendamentosOutros,
       taxaProdutividadeGeral,
       agendadosVacinas: pdMes.reduce((s, p) => s + (Number(p.pacientes_agendados_vacinas) || 0), 0),
       avaliacoesGoogle: pdMes.reduce((s, p) => s + (Number(p.avaliacoes_google) || 0), 0),
@@ -4439,10 +4446,10 @@ function EquipeModulo() {
       <GestaoDocumentosRH />
       <Card>
         <p className="text-[11px] font-semibold uppercase mb-1" style={{ color: T.muted, letterSpacing: "0.06em" }}>Colaboradores — resumo do mês atual</p>
-        <p className="text-xs mb-3" style={{ color: T.muted }}>Taxa de produtividade = agendamentos ÷ (ligações + mensagens)</p>
+        <p className="text-xs mb-3" style={{ color: T.muted }}>Taxa de produtividade = (agendados + agendamentos de plantão + demais agendamentos) ÷ (ligações + mensagens)</p>
         {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> : (
           <div className="overflow-x-auto -mx-5 px-5">
-            <table className="w-full text-sm min-w-[980px]">
+            <table className="w-full text-sm min-w-[1180px]">
               <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Nome</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Cargo</th>
@@ -4450,6 +4457,8 @@ function EquipeModulo() {
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Ligações</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Mensagens</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Agendados</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Agend. Plantão</th>
+                <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Demais Agend.</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Taxa de produtividade</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Agend. vacinas</th>
                 <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Aval. Google</th>
@@ -4466,6 +4475,8 @@ function EquipeModulo() {
                   <td className="py-2 px-2">{r.ligacoes}</td>
                   <td className="py-2 px-2">{r.mensagens}</td>
                   <td className="py-2 px-2">{r.agendados}</td>
+                  <td className="py-2 px-2"><Badge tone="amber">{r.agendamentosPlantao}</Badge></td>
+                  <td className="py-2 px-2"><Badge tone="teal">{r.agendamentosOutros}</Badge></td>
                   <td className="py-2 px-2">{r.taxaProdutividadeGeral !== null ? <span style={{ color: r.taxaProdutividadeGeral >= 30 ? T.green : T.amber, fontWeight: 600 }}>{fmtPct(r.taxaProdutividadeGeral)}</span> : <span style={{ color: T.muted }}>—</span>}</td>
                   <td className="py-2 px-2">{r.agendadosVacinas}</td>
                   <td className="py-2 px-2">{r.avaliacoesGoogle}</td>
@@ -5049,6 +5060,27 @@ function AuthProvider({ children }) {
   const [perfil, setPerfil] = useState(null);
   const [checkingPerfil, setCheckingPerfil] = useState(false);
   const [unidadesIniciais, setUnidadesIniciais] = useState([]);
+  const refreshTimerRef = useRef(null);
+
+  const agendarRenovacao = (sess) => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    if (!sess || !sess.refresh_token) return;
+    const expiraEmMs = (sess.expires_in || 3600) * 1000;
+    const renovarEmMs = Math.max(expiraEmMs - 5 * 60 * 1000, 10000); // renova 5min antes de expirar
+    refreshTimerRef.current = setTimeout(() => renovarSessao(sess), renovarEmMs);
+  };
+
+  const renovarSessao = async (sess) => {
+    try {
+      const data = await sbAuth("token?grant_type=refresh_token", { refresh_token: sess.refresh_token });
+      setSession(data);
+      agendarRenovacao(data);
+    } catch (e) {
+      // sessão não pôde ser renovada — desloga para a pessoa entrar de novo
+      setSession(null);
+      setPerfil(null);
+    }
+  };
 
   const carregarPerfil = async (sess) => {
     setCheckingPerfil(true);
@@ -5064,15 +5096,23 @@ function AuthProvider({ children }) {
     setCheckingPerfil(false);
   };
 
-  const login = async (email, senha) => { const data = await sbAuth("token?grant_type=password", { email, password: senha }); setSession(data); await carregarPerfil(data); };
-  const signUp = async (email, senha, nome) => { const data = await sbAuth("signup", { email, password: senha, data: { nome } }); if (data.access_token) { setSession(data); await carregarPerfil(data); } };
-  const logout = () => { setSession(null); setPerfil(null); };
+  const login = async (email, senha) => { const data = await sbAuth("token?grant_type=password", { email, password: senha }); setSession(data); agendarRenovacao(data); await carregarPerfil(data); };
+  const signUp = async (email, senha, nome) => { const data = await sbAuth("signup", { email, password: senha, data: { nome } }); if (data.access_token) { setSession(data); agendarRenovacao(data); await carregarPerfil(data); } };
+  const logout = () => { if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current); setSession(null); setPerfil(null); };
   const marcarTourVisto = async () => {
     setPerfil((p) => ({ ...p, tour_visto: true }));
     try { await sbRest(`perfis?id=eq.${session.user.id}`, { method: "PATCH", token: session.access_token, body: { tour_visto: true } }); } catch (e) { /* não bloqueia a experiência */ }
   };
 
   const value = { session, perfil, login, signUp, logout, unidadesIniciais };
+
+  useEffect(() => {
+    const aoVoltarVisivel = () => {
+      if (document.visibilityState === "visible" && session && session.refresh_token) renovarSessao(session);
+    };
+    document.addEventListener("visibilitychange", aoVoltarVisivel);
+    return () => document.removeEventListener("visibilitychange", aoVoltarVisivel);
+  }, [session]);
 
   if (!session) return <AuthContext.Provider value={value}><LoginScreen /></AuthContext.Provider>;
   if (checkingPerfil) return <div className="min-h-screen flex items-center justify-center" style={{ background: T.canvas, color: T.muted }}><Loader2 size={20} className="animate-spin mr-2" /> Verificando perfil…</div>;
