@@ -369,7 +369,7 @@ function FieldInput({ f, value, onChange }) {
       </div>
     );
   }
-  return <input type={f.type === "currency" ? "number" : f.type} step={f.type === "currency" || f.type === "number" ? "0.01" : undefined}
+  return <input type={f.type === "currency" ? "number" : f.type} step={f.type === "currency" || f.type === "number" ? "0.01" : undefined} min={f.min}
     className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={value} onChange={(e) => onChange(e.target.value)} placeholder={f.placeholder || ""} />;
 }
 
@@ -2509,6 +2509,17 @@ function RelatorioColaboradorModulo() {
   ];
   const nomeArquivo = `relatorio-colaborador-${colaboradorId === "todos" ? "todos" : (perfis.find((p) => p.id === colaboradorId) || {}).nome || "colaborador"}`;
 
+  const [verPontoDetalhado, setVerPontoDetalhado] = useState(false);
+  const nomeDoColaborador = (id) => (perfis.find((p) => p.id === id) || {}).nome || "—";
+  const registrosDePonto = horas
+    .filter((h) => (colaboradorId === "todos" || h.colaborador_id === colaboradorId) && noPeriodo(h.data))
+    .map((h) => ({ data: h.data, nome: nomeDoColaborador(h.colaborador_id), entrada: h.hora_entrada || "—", saidaAlmoco: h.hora_saida_almoco || "—", voltaAlmoco: h.hora_volta_almoco || "—", saida: h.hora_saida || "—", horasTotal: h.horas_total ? Number(h.horas_total).toFixed(1) : "—" }))
+    .sort((a, b) => b.data.localeCompare(a.data) || a.nome.localeCompare(b.nome));
+  const camposExportPonto = [
+    { key: "data", label: "Data" }, { key: "nome", label: "Colaborador(a)" }, { key: "entrada", label: "Entrada" },
+    { key: "saidaAlmoco", label: "Saída (almoço)" }, { key: "voltaAlmoco", label: "Volta (almoço)" }, { key: "saida", label: "Saída" }, { key: "horasTotal", label: "Horas no dia" },
+  ];
+
   return (
     <div>
       <SectionHeader icon={Users} title="Relatório de Colaborador" subtitle="Ligação, mensagem respondida, jornada de trabalho e acompanhamento de meta" tone="purple" />
@@ -2527,6 +2538,34 @@ function RelatorioColaboradorModulo() {
           <Btn variant="ghost" onClick={() => exportToCSV(camposExport, linhas, nomeArquivo)}>CSV</Btn>
         </div>
       </Card>
+      <div className="flex gap-2 mb-5">
+        <button onClick={() => setVerPontoDetalhado(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background: !verPontoDetalhado ? T.ink : "#F1EEE4", color: !verPontoDetalhado ? "#fff" : T.muted }}>Resumo por colaborador</button>
+        <button onClick={() => setVerPontoDetalhado(true)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background: verPontoDetalhado ? T.ink : "#F1EEE4", color: verPontoDetalhado ? "#fff" : T.muted }}>Horas trabalhadas — todos os registros de ponto ({registrosDePonto.length})</button>
+      </div>
+      {verPontoDetalhado ? (
+        <Card>
+          <div className="flex justify-end gap-2 mb-3">
+            <Btn small tone="teal" icon={Download} onClick={() => exportToExcel(camposExportPonto, registrosDePonto, `${nomeArquivo}-ponto`)}>Excel</Btn>
+            <Btn small variant="ghost" icon={Printer} onClick={() => exportToPDF(camposExportPonto, registrosDePonto, `${nomeArquivo}-ponto`)}>PDF</Btn>
+            <Btn small variant="ghost" icon={Download} onClick={() => exportToCSV(camposExportPonto, registrosDePonto, `${nomeArquivo}-ponto`)}>CSV</Btn>
+          </div>
+          {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> :
+            registrosDePonto.length === 0 ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhum registro de ponto no período selecionado.</div> : (
+            <div className="overflow-x-auto -mx-5 px-5">
+              <table className="w-full text-sm min-w-[720px]">
+                <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>{camposExportPonto.map((c) => <th key={c.key} className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>{c.label}</th>)}</tr></thead>
+                <tbody>{registrosDePonto.map((r, i) => (
+                  <tr key={i} style={{ borderBottom: `1px solid ${T.border}` }}>
+                    <td className="py-2 px-2">{fmtDate(r.data)}</td><td className="py-2 px-2 font-medium" style={{ color: T.text }}>{r.nome}</td>
+                    <td className="py-2 px-2">{r.entrada}</td><td className="py-2 px-2">{r.saidaAlmoco}</td><td className="py-2 px-2">{r.voltaAlmoco}</td><td className="py-2 px-2">{r.saida}</td>
+                    <td className="py-2 px-2 font-semibold" style={{ color: T.text }}>{r.horasTotal}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      ) : (
       <Card>
         {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> : (
           <div className="overflow-x-auto -mx-5 px-5">
@@ -2541,6 +2580,7 @@ function RelatorioColaboradorModulo() {
           </div>
         )}
       </Card>
+      )}
     </div>
   );
 }
@@ -3781,12 +3821,12 @@ function PlantaoRegistroModulo() {
     { key: "data", label: "Data do plantão", type: "date", default: todayISO() },
     { key: "medico", label: "Médico(a)", type: "select", options: nomesProfissionais.length ? nomesProfissionais : ["Cadastre em Cadastros → Profissionais"] },
     { key: "convenio", label: "Convênio", type: "select", options: opcoesConvenioPlantao },
-    { key: "qtdPacientes", label: "Quantidade de pacientes atendidos", type: "number" },
+    { key: "qtdPacientes", label: "Quantidade de pacientes atendidos (pode ser 0 — plantão de sobreaviso)", type: "number", min: 0, default: 0 },
   ];
-  const columns = [{ key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "medico", label: "Médico(a)" }, { key: "convenio", label: "Convênio" }, { key: "qtdPacientes", label: "Pacientes" }];
+  const columns = [{ key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "medico", label: "Médico(a)" }, { key: "convenio", label: "Convênio" }, { key: "qtdPacientes", label: "Pacientes", render: (r) => Number(r.qtdPacientes) === 0 ? <Badge tone="amber">0 — sobreaviso</Badge> : r.qtdPacientes }];
   const totalPacientes = data.reduce((s, r) => s + Number(r.qtdPacientes), 0);
   return (
-    <ModuleShell icon={Stethoscope} title="Registrar Plantão" subtitle="Lançamento diário — médico, convênio e quantidade de pacientes atendidos" tone="teal" loading={loading} erro={erro}
+    <ModuleShell icon={Stethoscope} title="Registrar Plantão" subtitle="Lançamento diário — médico, convênio e quantidade de pacientes atendidos (0 conta como plantão de sobreaviso, e o médico recebe só o valor fixo do dia)" tone="teal" loading={loading} erro={erro}
       dailyFields={fields} dailyCta="Registrar plantão" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove}
       kpis={[{ label: "Registros no período", value: data.length }, { label: "Pacientes atendidos", value: fmtNum(totalPacientes), tone: "teal" }]}
       extra={conveniosPlantao.length === 0 && <Card className="mb-5" style={{ borderColor: `${T.amber}55` }}><span className="text-sm" style={{ color: T.text }}>Nenhum convênio marcado como "Atende plantão?" ainda em Cadastros → Convênios — por enquanto mostrando todos os convênios.</span></Card>} />
