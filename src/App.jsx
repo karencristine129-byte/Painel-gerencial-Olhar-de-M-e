@@ -1363,7 +1363,13 @@ function ProtocoloBradescoModulo() {
   const statusDaGuiaFaturamento = (faturamentoGuiaId) => { const g = faturamento.find((x) => x.id === faturamentoGuiaId); return g ? g.status : "—"; };
   const alterarStatusGuia = async (faturamentoGuiaId, novoStatus) => {
     if (!faturamentoGuiaId) return;
-    await updateGuiaStatus(faturamentoGuiaId, { status: novoStatus, dataPagamento: novoStatus === "Paga" ? todayISO() : null });
+    if (novoStatus === "Paga") {
+      const data = window.prompt("Data em que foi paga (AAAA-MM-DD):", todayISO());
+      if (!data) return;
+      await updateGuiaStatus(faturamentoGuiaId, { status: novoStatus, dataPagamento: data });
+    } else {
+      await updateGuiaStatus(faturamentoGuiaId, { status: novoStatus });
+    }
   };
   const numeroDoLote = (str) => { const m = String(str || "").match(/\d+/); return m ? parseInt(m[0], 10) : 0; };
 
@@ -1862,6 +1868,20 @@ function PacoteVacinasModulo() {
   );
 }
 
+function MarcarPagoCell({ vencimento, onConfirmar }) {
+  const [abrir, setAbrir] = useState(false);
+  const [data, setData] = useState(vencimento || todayISO());
+  const [busy, setBusy] = useState(false);
+  if (!abrir) return <Btn small tone="green" onClick={() => setAbrir(true)}>Marcar como pago</Btn>;
+  return (
+    <div className="flex items-center gap-1.5">
+      <input type="date" className="rounded-lg px-2 py-1.5 text-xs outline-none" style={inputStyle} value={data} onChange={(e) => setData(e.target.value)} />
+      <Btn small tone="green" disabled={busy || !data} onClick={async () => { setBusy(true); await onConfirmar(data); setBusy(false); setAbrir(false); }}>{busy ? "…" : "Confirmar"}</Btn>
+      <button onClick={() => setAbrir(false)} className="text-xs" style={{ color: T.muted }}>Cancelar</button>
+    </div>
+  );
+}
+
 function AjusteEstoqueCell({ onAjustar, placeholder, tone = "ink" }) {
   const [valor, setValor] = useState("");
   const [busy, setBusy] = useState(false);
@@ -2084,7 +2104,7 @@ function ContasModulo() {
     { key: "tipoPagamento", label: "Tipo pgto.", render: (r) => r.tipoPagamento || "—" },
     { key: "bancoNome", label: "Banco", render: (r) => (bancosCadastro.find((b) => b.id === r.bancoId) || {}).nome || "—" },
     { key: "status", label: "Status", render: (r) => <Badge tone={r.status === "Pago" ? "green" : r.status === "Atrasado" ? "red" : "amber"}>{r.status}</Badge> },
-    { key: "acaoPagar", label: "", render: (r) => r.status !== "Pago" ? <Btn small tone="green" onClick={() => update(r.id, { status: "Pago", dataPagamento: todayISO() })}>Marcar como pago</Btn> : <span className="text-xs" style={{ color: T.muted }}>Pago em {fmtDate(r.dataPagamento)}</span> },
+    { key: "acaoPagar", label: "", render: (r) => r.status !== "Pago" ? <MarcarPagoCell vencimento={r.vencimento} onConfirmar={(data) => update(r.id, { status: "Pago", dataPagamento: data })} /> : <span className="text-xs" style={{ color: T.muted }}>Pago em {fmtDate(r.dataPagamento)}</span> },
   ];
   const [filtroMes, setFiltroMes] = useState("");
   const [filtroDe, setFiltroDe] = useState("");
@@ -2291,7 +2311,14 @@ function FaturamentoModulo() {
     { key: "valor", label: "Valor", render: (r) => fmtBRL(r.valor) },
     { key: "bancoNome", label: "Banco", render: (r) => (bancosCadastro.find((b) => b.id === r.bancoId) || {}).nome || "—" },
     { key: "status", label: "Status", render: (r) => (
-      <select className="rounded-lg px-2 py-1 text-xs outline-none" style={inputStyle} value={r.status} onChange={(e) => update(r.id, { status: e.target.value, dataPagamento: e.target.value === "Paga" ? todayISO() : r.dataPagamento })}>
+      <select className="rounded-lg px-2 py-1 text-xs outline-none" style={inputStyle} value={r.status} onChange={(e) => {
+        const novoStatus = e.target.value;
+        if (novoStatus === "Paga") {
+          const data = window.prompt("Data em que foi paga (AAAA-MM-DD):", r.dataProtocolo || todayISO());
+          if (!data) return;
+          update(r.id, { status: novoStatus, dataPagamento: data });
+        } else update(r.id, { status: novoStatus, dataPagamento: r.dataPagamento });
+      }}>
         <option value="Protocolada">Protocolada</option><option value="Faturada">Faturada</option><option value="Paga">Paga</option><option value="Vencida">Vencida</option>
       </select>
     ) },
