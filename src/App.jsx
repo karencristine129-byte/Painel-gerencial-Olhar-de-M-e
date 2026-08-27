@@ -50,6 +50,10 @@ async function sbAuth(path, body) {
   return data;
 }
 const RH_BUCKET = "documentos-rh";
+function sanitizeFileName(nome) {
+  const semAcento = nome.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return semAcento.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
 async function sbStorageUpload(path, file, token, bucket = RH_BUCKET) {
   const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
     method: "POST",
@@ -1315,7 +1319,7 @@ function ProtocoloBradescoModulo() {
   const { data: guias } = useRecords("faturamento");
   const fields = [
     { key: "numeroLote", label: "Nº do lote", type: "text", placeholder: "ex: LOTE 3" },
-    { key: "convenio", label: "Convênio", type: "select", options: ["Bradesco Clínica", "Bradesco Saúde"], default: "Bradesco Clínica" },
+    { key: "convenio", label: "Convênio", type: "select", options: ["Bradesco Saúde", "Bradesco Saúde Clínica", "Bradesco Operadora de Planos Clínica"], default: "Bradesco Saúde Clínica" },
     { key: "dataEmissao", label: "Data de emissão", type: "date", required: false },
     { key: "dataEnvio", label: "Data de envio do lote", type: "date", default: todayISO() },
     { key: "valorNota", label: "Valor da nota (R$)", type: "currency" },
@@ -2714,7 +2718,7 @@ function BancoDocumentosModulo() {
     if (!titulo || !arquivo) return alert("Preencha o título e escolha um arquivo.");
     setBusy(true);
     try {
-      const path = `${Date.now()}-${arquivo.name}`;
+      const path = `${Date.now()}-${sanitizeFileName(arquivo.name)}`;
       await sbStorageUpload(path, arquivo, session.access_token, "documentos-gerais");
       await sbRest("documentos_gerais", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, titulo, categoria, descricao, caminho_arquivo: path, enviado_por: session.user.id } });
       setTitulo(""); setCategoria(""); setDescricao(""); setArquivo(null);
@@ -3040,7 +3044,7 @@ function EnviarAtestado() {
     if (!arquivo) return alert("Escolha um arquivo para enviar.");
     setBusy(true);
     try {
-      const path = `${session.user.id}/atestados/${Date.now()}-${arquivo.name}`;
+      const path = `${session.user.id}/atestados/${Date.now()}-${sanitizeFileName(arquivo.name)}`;
       await sbStorageUpload(path, arquivo, session.access_token);
       await add({ data: dataAtestado, descricao, caminho_arquivo: path });
       setDescricao(""); setArquivo(null);
@@ -3340,7 +3344,7 @@ function GestaoDocumentosRH() {
     setBusy(true);
     try {
       const pasta = tipo === "Holerite" ? "holerites" : "ferias";
-      const path = `${colaboradorId}/${pasta}/${Date.now()}-${arquivo.name}`;
+      const path = `${colaboradorId}/${pasta}/${Date.now()}-${sanitizeFileName(arquivo.name)}`;
       await sbStorageUpload(path, arquivo, session.access_token);
       await sbRest("rh_documentos", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, colaborador_id: colaboradorId, tipo, competencia, caminho_arquivo: path, enviado_por: session.user.id } });
       setArquivo(null);
