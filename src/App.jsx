@@ -2155,7 +2155,11 @@ function FaturamentoModulo() {
     { key: "dataProtocolo", label: "Protocolo", render: (r) => fmtDate(r.dataProtocolo) },
     { key: "valor", label: "Valor", render: (r) => fmtBRL(r.valor) },
     { key: "bancoNome", label: "Banco", render: (r) => (bancosCadastro.find((b) => b.id === r.bancoId) || {}).nome || "—" },
-    { key: "status", label: "Status", render: (r) => { const tone = { Protocolada: "muted", Faturada: "amber", Paga: "green", Vencida: "red" }[r.status]; return <Badge tone={tone}>{r.status}</Badge>; } },
+    { key: "status", label: "Status", render: (r) => (
+      <select className="rounded-lg px-2 py-1 text-xs outline-none" style={inputStyle} value={r.status} onChange={(e) => update(r.id, { status: e.target.value, dataPagamento: e.target.value === "Paga" ? todayISO() : r.dataPagamento })}>
+        <option value="Protocolada">Protocolada</option><option value="Faturada">Faturada</option><option value="Paga">Paga</option><option value="Vencida">Vencida</option>
+      </select>
+    ) },
   ];
   const [filtroMes, setFiltroMes] = useState("");
   const [filtroDe, setFiltroDe] = useState("");
