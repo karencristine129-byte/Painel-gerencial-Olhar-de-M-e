@@ -529,7 +529,11 @@ function DailyEntryPanel({ tone, fields, onSubmit, cta = "Registrar lançamento"
         <span className="text-xs" style={{ color: T.muted }}>— preencha aqui diariamente</span>
       </div>
       <div className="flex flex-wrap gap-3 items-end">
-        {visiveis.map((f) => <Field key={f.key} label={f.label}><FieldInput f={f} value={form[f.key]} onChange={(v) => setForm((p) => ({ ...p, [f.key]: v }))} /></Field>)}
+        {visiveis.map((f) => <Field key={f.key} label={f.label}><FieldInput f={f} value={form[f.key]} onChange={(v) => setForm((p) => {
+          const next = { ...p, [f.key]: v };
+          fields.forEach((ff) => { if (ff.autoFill) { const computado = ff.autoFill(next); if (computado !== undefined) next[ff.key] = computado; } });
+          return next;
+        })} /></Field>)}
         <Btn tone={tone} icon={busy ? undefined : Plus} disabled={busy} onClick={async () => {
           const missing = visiveis.some((f) => f.required !== false && (form[f.key] === "" || form[f.key] === undefined));
           if (missing) return;
@@ -548,7 +552,11 @@ function EditModal({ title, fields, initial, onSave, onClose }) {
         <div className="flex items-center justify-between px-5 py-4 sticky top-0" style={{ background: T.card, borderBottom: `1px solid ${T.border}` }}>
           <h3 className="font-bold" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{title}</h3><button onClick={onClose}><X size={18} style={{ color: T.muted }} /></button>
         </div>
-        <div className="p-5 flex flex-col gap-3.5">{fields.filter((f) => !f.showIf || f.showIf(form)).map((f) => <Field key={f.key} label={f.label}><FieldInput f={f} value={form[f.key]} onChange={(v) => setForm((p) => ({ ...p, [f.key]: v }))} /></Field>)}</div>
+        <div className="p-5 flex flex-col gap-3.5">{fields.filter((f) => !f.showIf || f.showIf(form)).map((f) => <Field key={f.key} label={f.label}><FieldInput f={f} value={form[f.key]} onChange={(v) => setForm((p) => {
+          const next = { ...p, [f.key]: v };
+          fields.forEach((ff) => { if (ff.autoFill) { const computado = ff.autoFill(next); if (computado !== undefined) next[ff.key] = computado; } });
+          return next;
+        })} /></Field>)}</div>
         <div className="flex justify-end gap-2 px-5 py-4" style={{ borderTop: `1px solid ${T.border}` }}>
           <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
           <Btn disabled={busy} onClick={async () => { setBusy(true); await onSave(form); setBusy(false); }}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Salvar alterações</Btn>
