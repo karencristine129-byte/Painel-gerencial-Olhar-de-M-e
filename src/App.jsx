@@ -760,7 +760,7 @@ function useRecords(moduleKey, enabled = true) {
     try { await sbRest(`${cfg.table}?id=eq.${id}`, { method: "DELETE", token: session.access_token }); await reload(); }
     catch (e) { alert("Não foi possível remover: " + e.message); }
   };
-  return { data, add, bulkAdd, update, remove, loading, erro };
+  return { data, add, bulkAdd, update, remove, loading, erro, reload };
 }
 
 /* Hook: registros pessoais do colaborador logado (Meu RH) */
@@ -1316,7 +1316,7 @@ function ProtocoloBradescoModulo() {
   const { session } = useAuth();
   const { unidadeId } = useUnidade();
   const { data: protocolos, remove, loading, erro, reload } = useRecords("protocoloBradesco");
-  const { data: guias } = useRecords("faturamento");
+  const { data: guias, update: updateGuia } = useRecords("faturamento");
   const fields = [
     { key: "numeroLote", label: "Nº do lote", type: "text", placeholder: "ex: LOTE 3" },
     { key: "convenio", label: "Convênio", type: "select", options: ["Bradesco Saúde", "Bradesco Saúde Clínica", "Bradesco Operadora de Planos Clínica"], default: "Bradesco Saúde Clínica" },
@@ -1324,6 +1324,7 @@ function ProtocoloBradescoModulo() {
     { key: "dataEnvio", label: "Data de envio do lote", type: "date", default: todayISO() },
     { key: "valorNota", label: "Valor da nota (R$)", type: "currency" },
     { key: "regimeTributario", label: "Regime tributário", type: "select", options: ["Simples Nacional", "Lucro Presumido", "Lucro Real"], default: "Simples Nacional" },
+    { key: "statusInicial", label: "Status", type: "select", options: ["Protocolada", "Faturada", "Paga", "Vencida"], default: "Protocolada" },
   ];
   const calcularImpostos = (valorNota) => ({
     irValor: valorNota * 0.015, cofinsValor: valorNota * 0.03, pisValor: valorNota * 0.0065, csllValor: valorNota * 0.01,
@@ -1332,18 +1333,30 @@ function ProtocoloBradescoModulo() {
     const valorNota = Number(record.valorNota) || 0;
     const impostos = calcularImpostos(valorNota);
     try {
-      const guiaCriada = await sbRest("faturamento_guias", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, convenio: record.convenio, numero_guia: record.numeroLote, tipo: "Outro", data_protocolo: record.dataEnvio, valor: valorNota, status: "Protocolada" } });
+      const guiaCriada = await sbRest("faturamento_guias", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, convenio: record.convenio, numero_guia: record.numeroLote, tipo: "Outro", data_protocolo: record.dataEnvio, valor: valorNota, status: record.statusInicial || "Protocolada", data_pagamento: record.statusInicial === "Paga" ? record.dataEnvio : null } });
       const guiaId = guiaCriada && guiaCriada[0] ? guiaCriada[0].id : null;
       await sbRest("protocolo_bradesco", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, numero_lote: record.numeroLote, data_emissao: record.dataEmissao || null, data_envio: record.dataEnvio, valor_nota: valorNota, regime_tributario: record.regimeTributario, ir_valor: impostos.irValor, cofins_valor: impostos.cofinsValor, pis_valor: impostos.pisValor, csll_valor: impostos.csllValor, faturamento_guia_id: guiaId } });
       await reload();
     } catch (e) { alert("Não foi possível salvar: " + e.message); }
   };
   const statusDaGuia = (faturamentoGuiaId) => { const g = guias.find((x) => x.id === faturamentoGuiaId); return g ? g.status : "—"; };
+  const alterarStatus = async (faturamentoGuiaId, novoStatus) => {
+    if (!faturamentoGuiaId) return alert("Este lote não tem uma guia vinculada em Contas a Receber.");
+    await updateGuia(faturamentoGuiaId, { status: novoStatus, dataPagamento: novoStatus === "Paga" ? todayISO() : null });
+  };
+  const numeroDoLote = (str) => { const m = String(str || "").match(/\d+/); return m ? parseInt(m[0], 10) : 0; };
   const columns = [
     { key: "numeroLote", label: "Lote" }, { key: "dataEnvio", label: "Envio", render: (r) => fmtDate(r.dataEnvio) },
     { key: "valorNota", label: "Valor da nota", render: (r) => fmtBRL(r.valorNota) },
     { key: "totalImpostos", label: "Impostos retidos", render: (r) => <span className="text-xs" style={{ color: T.muted }}>{fmtBRL(r.irValor + r.cofinsValor + r.pisValor + r.csllValor)}</span> },
-    { key: "statusGuia", label: "Status (Contas a Receber)", render: (r) => { const s = statusDaGuia(r.faturamentoGuiaId); const tone = { Protocolada: "muted", Faturada: "amber", Paga: "green", Vencida: "red" }[s] || "muted"; return <Badge tone={tone}>{s}</Badge>; } },
+    { key: "statusGuia", label: "Status (Contas a Receber)", render: (r) => {
+      const s = statusDaGuia(r.faturamentoGuiaId);
+      return (
+        <select className="rounded-lg px-2 py-1 text-xs outline-none" style={inputStyle} value={s} onChange={(e) => alterarStatus(r.faturamentoGuiaId, e.target.value)}>
+          <option value="Protocolada">Protocolada</option><option value="Faturada">Faturada</option><option value="Paga">Paga</option><option value="Vencida">Vencida</option>
+        </select>
+      );
+    } },
   ];
   const totalNotas = protocolos.reduce((s, r) => s + Number(r.valorNota), 0);
   const totalImpostos = protocolos.reduce((s, r) => s + Number(r.irValor) + Number(r.cofinsValor) + Number(r.pisValor) + Number(r.csllValor), 0);
@@ -1354,7 +1367,7 @@ function ProtocoloBradescoModulo() {
   const [filtroMes, setFiltroMes] = useState("");
   const [filtroDe, setFiltroDe] = useState("");
   const [filtroAte, setFiltroAte] = useState("");
-  const protocolosFiltrados = filtrarPorPeriodo(protocolos, "dataEnvio", filtroMes, filtroDe, filtroAte);
+  const protocolosFiltrados = [...filtrarPorPeriodo(protocolos, "dataEnvio", filtroMes, filtroDe, filtroAte)].sort((a, b) => numeroDoLote(a.numeroLote) - numeroDoLote(b.numeroLote));
   return (
     <>
       <FiltroPeriodoBar filtroMes={filtroMes} setFiltroMes={setFiltroMes} filtroDe={filtroDe} setFiltroDe={setFiltroDe} filtroAte={filtroAte} setFiltroAte={setFiltroAte} />
