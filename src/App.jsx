@@ -205,8 +205,8 @@ const MODULES = {
     toDb: (r) => ({ nome: r.nome, valor_padrao: r.valorPadrao, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes, atende_plantao: !!r.atendePlantao }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, valorPadrao: r.valor_padrao, contato: r.contato, telefone: r.telefone, observacoes: r.observacoes, atendePlantao: r.atende_plantao }) },
   cadColaboradores: { table: "cadastro_colaboradores", order: "nome.asc",
-    toDb: (r) => ({ nome: r.nome, cargo: r.cargo, tipo: r.tipo || "Interno", telefone: r.telefone, observacoes: r.observacoes, carga_horaria_mensal: r.cargaHorariaMensal || 0, horario_entrada_padrao: r.horarioEntradaPadrao || null, horario_saida_almoco_padrao: r.horarioSaidaAlmocoPadrao || null, horario_volta_almoco_padrao: r.horarioVoltaAlmocoPadrao || null, horario_saida_padrao: r.horarioSaidaPadrao || null }),
-    fromDb: (r) => ({ id: r.id, nome: r.nome, cargo: r.cargo, tipo: r.tipo, telefone: r.telefone, observacoes: r.observacoes, cargaHorariaMensal: r.carga_horaria_mensal, horarioEntradaPadrao: r.horario_entrada_padrao, horarioSaidaAlmocoPadrao: r.horario_saida_almoco_padrao, horarioVoltaAlmocoPadrao: r.horario_volta_almoco_padrao, horarioSaidaPadrao: r.horario_saida_padrao }) },
+    toDb: (r) => ({ nome: r.nome, cargo: r.cargo, tipo: r.tipo || "Interno", telefone: r.telefone, observacoes: r.observacoes, carga_horaria_mensal: r.cargaHorariaMensal || 0, admissao: r.admissao || null, horario_entrada_padrao: r.horarioEntradaPadrao || null, horario_saida_almoco_padrao: r.horarioSaidaAlmocoPadrao || null, horario_volta_almoco_padrao: r.horarioVoltaAlmocoPadrao || null, horario_saida_padrao: r.horarioSaidaPadrao || null }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, cargo: r.cargo, tipo: r.tipo, telefone: r.telefone, observacoes: r.observacoes, cargaHorariaMensal: r.carga_horaria_mensal, admissao: r.admissao, horarioEntradaPadrao: r.horario_entrada_padrao, horarioSaidaAlmocoPadrao: r.horario_saida_almoco_padrao, horarioVoltaAlmocoPadrao: r.horario_volta_almoco_padrao, horarioSaidaPadrao: r.horario_saida_padrao }) },
   cadProfissionais: { table: "cadastro_profissionais", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcao_sublocacao: r.direcaoSublocacao || null, tipo_sublocacao: r.tipoSublocacao || null, percentual_sublocacao: r.percentualSublocacao || 0, valor_fixo_sublocacao: r.valorFixoSublocacao || 0, valor_abatimento: r.valorAbatimento || 0, valor_plantao_fixo: r.valorPlantaoFixo || 0, valor_repasse_atendimento_plantao: r.valorRepasseAtendimentoPlantao || 0, valor_consulta_particular: r.valorConsultaParticular || 0, convenios_atendidos: r.conveniosAtendidos || [] }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcaoSublocacao: r.direcao_sublocacao, tipoSublocacao: r.tipo_sublocacao, percentualSublocacao: r.percentual_sublocacao, valorFixoSublocacao: r.valor_fixo_sublocacao, valorAbatimento: r.valor_abatimento, valorPlantaoFixo: r.valor_plantao_fixo, valorRepasseAtendimentoPlantao: r.valor_repasse_atendimento_plantao, valorConsultaParticular: r.valor_consulta_particular, conveniosAtendidos: r.convenios_atendidos || [] }) },
@@ -1745,12 +1745,13 @@ function IndicacaoModulo() {
   const [indicados, setIndicados] = useState([]);
   const [nomeIndicado, setNomeIndicado] = useState("");
   const [telefoneIndicado, setTelefoneIndicado] = useState("");
+  const [instagramIndicado, setInstagramIndicado] = useState("");
   const [busy, setBusy] = useState(false);
 
   const adicionarIndicado = () => {
     if (!nomeIndicado) return;
-    setIndicados((p) => [...p, { nome: nomeIndicado, telefone: telefoneIndicado }]);
-    setNomeIndicado(""); setTelefoneIndicado("");
+    setIndicados((p) => [...p, { nome: nomeIndicado, telefone: telefoneIndicado, instagram: instagramIndicado }]);
+    setNomeIndicado(""); setTelefoneIndicado(""); setInstagramIndicado("");
   };
   const removerIndicado = (idx) => setIndicados((p) => p.filter((_, i) => i !== idx));
 
@@ -1776,9 +1777,9 @@ function IndicacaoModulo() {
   // Uma linha por indicado — pronto para o sorteio
   const linhasParaSorteio = indicacoesFiltradas.flatMap((r) => (r.indicados || []).map((ind) => ({
     data: fmtDate(r.data), campanha: nomeCampanha(r.campanhaId), nomeIndicador: r.nomeIndicador, telefoneIndicador: r.telefoneIndicador || "",
-    nomeIndicado: ind.nome, telefoneIndicado: ind.telefone || "",
+    nomeIndicado: ind.nome, telefoneIndicado: ind.telefone || "", instagramIndicado: ind.instagram || "",
   })));
-  const camposSorteio = [{ key: "data", label: "Data" }, { key: "campanha", label: "Campanha" }, { key: "nomeIndicador", label: "Indicado por" }, { key: "telefoneIndicador", label: "Telefone de quem indicou" }, { key: "nomeIndicado", label: "Nome do indicado" }, { key: "telefoneIndicado", label: "Telefone do indicado" }];
+  const camposSorteio = [{ key: "data", label: "Data" }, { key: "campanha", label: "Campanha" }, { key: "nomeIndicador", label: "Indicado por" }, { key: "telefoneIndicador", label: "Telefone de quem indicou" }, { key: "nomeIndicado", label: "Nome do indicado" }, { key: "telefoneIndicado", label: "Telefone do indicado" }, { key: "instagramIndicado", label: "Instagram do indicado" }];
 
   return (
     <div>
@@ -1795,14 +1796,15 @@ function IndicacaoModulo() {
         <p className="text-[11px] font-semibold uppercase mb-2" style={{ color: T.muted, letterSpacing: "0.06em" }}>Adicionar indicação (quantas quiser)</p>
         <div className="flex flex-wrap gap-3 items-end mb-4">
           <Field label="Nome do indicado"><input className="rounded-lg px-3 py-2 text-sm outline-none w-48" style={inputStyle} value={nomeIndicado} onChange={(e) => setNomeIndicado(e.target.value)} /></Field>
-          <Field label="Telefone do indicado"><input className="rounded-lg px-3 py-2 text-sm outline-none w-36" style={inputStyle} value={telefoneIndicado} onChange={(e) => setTelefoneIndicado(e.target.value)} /></Field>
+          <Field label="Telefone do indicado (opcional)"><input className="rounded-lg px-3 py-2 text-sm outline-none w-36" style={inputStyle} value={telefoneIndicado} onChange={(e) => setTelefoneIndicado(e.target.value)} /></Field>
+          <Field label="Instagram do indicado (opcional)"><input className="rounded-lg px-3 py-2 text-sm outline-none w-40" style={inputStyle} placeholder="@usuario" value={instagramIndicado} onChange={(e) => setInstagramIndicado(e.target.value)} /></Field>
           <Btn small tone="teal" icon={Plus} onClick={adicionarIndicado}>Adicionar indicado</Btn>
         </div>
         {indicados.length > 0 && (
           <div className="mb-4">
             <table className="w-full text-sm">
-              <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Indicado</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Telefone</th><th></th></tr></thead>
-              <tbody>{indicados.map((ind, idx) => (<tr key={idx} style={{ borderBottom: `1px solid ${T.border}` }}><td className="py-2 px-2" style={{ color: T.text }}>{ind.nome}</td><td className="py-2 px-2">{ind.telefone}</td><td className="py-2 px-2 text-right"><button onClick={() => removerIndicado(idx)}><Trash2 size={13} style={{ color: T.red }} /></button></td></tr>))}</tbody>
+              <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Indicado</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Telefone</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Instagram</th><th></th></tr></thead>
+              <tbody>{indicados.map((ind, idx) => (<tr key={idx} style={{ borderBottom: `1px solid ${T.border}` }}><td className="py-2 px-2" style={{ color: T.text }}>{ind.nome}</td><td className="py-2 px-2">{ind.telefone || "—"}</td><td className="py-2 px-2">{ind.instagram || "—"}</td><td className="py-2 px-2 text-right"><button onClick={() => removerIndicado(idx)}><Trash2 size={13} style={{ color: T.red }} /></button></td></tr>))}</tbody>
             </table>
           </div>
         )}
@@ -3691,6 +3693,7 @@ function CadastroColaboradoresModulo() {
     { key: "nome", label: "Nome", type: "text" },
     { key: "cargo", label: "Cargo", type: "text", required: false },
     { key: "tipo", label: "Tipo", type: "select", options: ["Interno", "Terceirizado"], required: false, default: "Interno" },
+    { key: "admissao", label: "Data de admissão", type: "date", required: false },
     { key: "telefone", label: "Telefone", type: "text", required: false },
     { key: "cargaHorariaMensal", label: "Carga horária mensal (horas)", type: "number", required: false, placeholder: "ex: 220" },
     { key: "horarioEntradaPadrao", label: "Horário padrão de entrada", type: "time", required: false },
@@ -3699,7 +3702,7 @@ function CadastroColaboradoresModulo() {
     { key: "horarioSaidaPadrao", label: "Horário padrão de saída", type: "time", required: false },
     { key: "observacoes", label: "Observações", type: "text", required: false },
   ];
-  const columns = [{ key: "nome", label: "Nome" }, { key: "cargo", label: "Cargo" }, { key: "tipo", label: "Tipo", render: (r) => <Badge tone={r.tipo === "Interno" ? "teal" : "amber"}>{r.tipo || "—"}</Badge> }, { key: "cargaHorariaMensal", label: "Carga horária/mês", render: (r) => r.cargaHorariaMensal ? `${r.cargaHorariaMensal} h` : "—" },
+  const columns = [{ key: "nome", label: "Nome" }, { key: "cargo", label: "Cargo" }, { key: "tipo", label: "Tipo", render: (r) => <Badge tone={r.tipo === "Interno" ? "teal" : "amber"}>{r.tipo || "—"}</Badge> }, { key: "admissao", label: "Admissão", render: (r) => r.admissao ? fmtDate(r.admissao) : "—" }, { key: "cargaHorariaMensal", label: "Carga horária/mês", render: (r) => r.cargaHorariaMensal ? `${r.cargaHorariaMensal} h` : "—" },
     { key: "horarioPadrao", label: "Horário padrão", render: (r) => (r.horarioEntradaPadrao || r.horarioSaidaPadrao) ? <span className="text-xs" style={{ color: T.muted }}>{r.horarioEntradaPadrao || "—"} às {r.horarioSaidaPadrao || "—"}{r.horarioSaidaAlmocoPadrao ? ` (almoço ${r.horarioSaidaAlmocoPadrao}–${r.horarioVoltaAlmocoPadrao || "—"})` : ""}</span> : "—" },
     { key: "telefone", label: "Telefone" }];
   return (
@@ -4464,8 +4467,10 @@ function classificacaoDaMedia(media) {
   return (CONCEITOS_AVALIACAO.find((c) => c.v === Math.min(4, Math.max(1, arred))) || CONCEITOS_AVALIACAO[0]).label.split(" — ")[1];
 }
 function AvaliacaoColaboradorModulo() {
-  const { perfil } = useAuth();
+  const { perfil, session } = useAuth();
+  const { unidadeId } = useUnidade();
   const { data: colaboradoresUnidade } = usePerfisDaUnidade();
+  const { data: cadastrosColaboradores } = useRecords("cadColaboradores");
   const { data: avaliacoes, add, remove, loading, erro } = useRecords("avaliacoesColaborador");
   const [colaboradorId, setColaboradorId] = useState("");
   const [funcao, setFuncao] = useState(""); const [admissao, setAdmissao] = useState("");
@@ -4475,8 +4480,29 @@ function AvaliacaoColaboradorModulo() {
   const [notas, setNotas] = useState({});
   const [busy, setBusy] = useState(false);
   const [verHistorico, setVerHistorico] = useState(false);
+  const [horasLancadas, setHorasLancadas] = useState(null);
+  const [cargaHorariaMensal, setCargaHorariaMensal] = useState(null);
 
   const colaboradorNome = (colaboradoresUnidade.find((c) => c.id === colaboradorId) || {}).nome || "";
+
+  // ao trocar o colaborador, preenche função/admissão a partir do Cadastro de
+  // Colaboradores (é o mesmo nome usado no login) e cruza com as horas lançadas
+  useEffect(() => {
+    if (!colaboradorId) { setFuncao(""); setAdmissao(""); setHorasLancadas(null); setCargaHorariaMensal(null); return; }
+    const cadastro = cadastrosColaboradores.find((c) => normalizarTexto(c.nome) === normalizarTexto(colaboradorNome));
+    setFuncao(cadastro ? (cadastro.cargo || "") : "");
+    setAdmissao(cadastro ? (cadastro.admissao || "") : "");
+    setCargaHorariaMensal(cadastro ? cadastro.cargaHorariaMensal : null);
+    (async () => {
+      try {
+        const de = periodoInicio || todayISO().slice(0, 7) + "-01";
+        const ate = periodoFim || todayISO();
+        const horas = await sbRest(`rh_horas?unidade_id=eq.${unidadeId}&colaborador_id=eq.${colaboradorId}&data=gte.${de}&data=lte.${ate}&select=horas_total`, { token: session.access_token });
+        setHorasLancadas((horas || []).reduce((s, h) => s + (Number(h.horas_total) || 0), 0));
+      } catch (e) { setHorasLancadas(null); }
+    })();
+  }, [colaboradorId, periodoInicio, periodoFim, cadastrosColaboradores]);
+
   const notaPreenchidas = CRITERIOS_AVALIACAO.filter((c) => notas[c.criterio]).length;
   const soma = CRITERIOS_AVALIACAO.reduce((s, c) => s + (Number(notas[c.criterio]) || 0), 0);
   const media = notaPreenchidas ? soma / CRITERIOS_AVALIACAO.length : 0;
@@ -4517,6 +4543,15 @@ function AvaliacaoColaboradorModulo() {
               <Field label="Período — início"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={periodoInicio} onChange={(e) => setPeriodoInicio(e.target.value)} /></Field>
               <Field label="Período — fim"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={periodoFim} onChange={(e) => setPeriodoFim(e.target.value)} /></Field>
             </div>
+            {colaboradorId && (
+              <div className="flex items-center gap-6 rounded-xl px-4 py-3" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}>
+                <div><div className="text-[10px] uppercase" style={{ color: T.muted }}>Carga horária mensal (cadastro)</div><div className="font-bold" style={{ color: T.text }}>{cargaHorariaMensal ? `${cargaHorariaMensal}h` : "não cadastrada"}</div></div>
+                <div><div className="text-[10px] uppercase" style={{ color: T.muted }}>Horas lançadas no período</div><div className="font-bold" style={{ color: T.text }}>{horasLancadas !== null ? `${horasLancadas.toFixed(1)}h` : "—"}</div></div>
+                {cargaHorariaMensal && horasLancadas !== null && (
+                  <div><div className="text-[10px] uppercase" style={{ color: T.muted }}>Diferença</div><div className="font-bold" style={{ color: horasLancadas >= cargaHorariaMensal ? T.green : T.amber }}>{(horasLancadas - cargaHorariaMensal).toFixed(1)}h</div></div>
+                )}
+              </div>
+            )}
           </Card>
 
           {["Desempenho", "Comportamento Empresarial", "Negócio"].map((classe) => (
