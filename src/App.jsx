@@ -211,8 +211,8 @@ const MODULES = {
     toDb: (r) => ({ nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcao_sublocacao: r.direcaoSublocacao || null, tipo_sublocacao: r.tipoSublocacao || null, percentual_sublocacao: r.percentualSublocacao || 0, valor_fixo_sublocacao: r.valorFixoSublocacao || 0, valor_abatimento: r.valorAbatimento || 0, valor_plantao_fixo: r.valorPlantaoFixo || 0, valor_repasse_atendimento_plantao: r.valorRepasseAtendimentoPlantao || 0, valor_consulta_particular: r.valorConsultaParticular || 0, convenios_atendidos: r.conveniosAtendidos || [] }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcaoSublocacao: r.direcao_sublocacao, tipoSublocacao: r.tipo_sublocacao, percentualSublocacao: r.percentual_sublocacao, valorFixoSublocacao: r.valor_fixo_sublocacao, valorAbatimento: r.valor_abatimento, valorPlantaoFixo: r.valor_plantao_fixo, valorRepasseAtendimentoPlantao: r.valor_repasse_atendimento_plantao, valorConsultaParticular: r.valor_consulta_particular, conveniosAtendidos: r.convenios_atendidos || [] }) },
   cadTestesGeneticos: { table: "cadastro_testes_geneticos", order: "nome.asc",
-    toDb: (r) => ({ nome: r.nome, valor_teste: r.valorTeste, valor_repasse_clinica: r.valorRepasseClinica }),
-    fromDb: (r) => ({ id: r.id, nome: r.nome, valorTeste: r.valor_teste, valorRepasseClinica: r.valor_repasse_clinica }) },
+    toDb: (r) => ({ nome: r.nome, laboratorio: r.laboratorio, custo_processamento: r.custoProcessamento, valor_teste: r.valorTeste, valor_parcelado: r.valorParcelado, valor_apos_impostos: r.valorAposImpostos, ganho_bruto: r.ganhoBruto, valor_apos_custos_operacionais: r.valorAposCustosOperacionais, valor_repasse_clinica: r.valorRepasseClinica }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, laboratorio: r.laboratorio, custoProcessamento: r.custo_processamento, valorTeste: r.valor_teste, valorParcelado: r.valor_parcelado, valorAposImpostos: r.valor_apos_impostos, ganhoBruto: r.ganho_bruto, valorAposCustosOperacionais: r.valor_apos_custos_operacionais, valorRepasseClinica: r.valor_repasse_clinica }) },
   cadBancos: { table: "cadastro_bancos", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, agencia: r.agencia, conta: r.conta, observacoes: r.observacoes, saldo_inicial: r.saldoInicial || 0, data_saldo_inicial: r.dataSaldoInicial || null }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, agencia: r.agencia, conta: r.conta, observacoes: r.observacoes, saldoInicial: r.saldo_inicial, dataSaldoInicial: r.data_saldo_inicial }) },
@@ -3783,16 +3783,28 @@ function CadastroProfissionaisModulo() {
   );
 }
 function CadastroTestesGeneticosModulo() {
-  const { data, add, update, remove, loading, erro } = useRecords("cadTestesGeneticos");
+  const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("cadTestesGeneticos");
   const fields = [
     { key: "nome", label: "Nome do teste", type: "text" },
-    { key: "valorTeste", label: "Valor do teste (R$)", type: "currency" },
-    { key: "valorRepasseClinica", label: "Valor de repasse para a clínica (R$)", type: "currency" },
+    { key: "laboratorio", label: "Laboratório", type: "text", required: false },
+    { key: "custoProcessamento", label: "Custo de processamento e análise (R$)", type: "currency", required: false },
+    { key: "valorTeste", label: "Valor à vista para o paciente (PIX/débito) (R$)", type: "currency" },
+    { key: "valorParcelado", label: "Valor parcelado em até 12x no cartão (R$)", type: "currency", required: false },
+    { key: "valorAposImpostos", label: "Valor após impostos (15%) (R$)", type: "currency", required: false },
+    { key: "ganhoBruto", label: "Ganho bruto (R$)", type: "currency", required: false },
+    { key: "valorAposCustosOperacionais", label: "Valor após custos operacionais (15%) (R$)", type: "currency", required: false },
+    { key: "valorRepasseClinica", label: "Repasse Olhar de Mãe (30% — só exames com entrada pela clínica) (R$)", type: "currency", required: false },
   ];
-  const columns = [{ key: "nome", label: "Teste" }, { key: "valorTeste", label: "Valor do teste", render: (r) => fmtBRL(r.valorTeste) }, { key: "valorRepasseClinica", label: "Repasse à clínica", render: (r) => fmtBRL(r.valorRepasseClinica) }];
+  const columns = [
+    { key: "nome", label: "Teste" }, { key: "laboratorio", label: "Laboratório" },
+    { key: "valorTeste", label: "Valor à vista", render: (r) => fmtBRL(r.valorTeste) },
+    { key: "valorParcelado", label: "Parcelado (12x)", render: (r) => r.valorParcelado ? fmtBRL(r.valorParcelado) : "—" },
+    { key: "ganhoBruto", label: "Ganho bruto", render: (r) => r.ganhoBruto ? fmtBRL(r.ganhoBruto) : "—" },
+    { key: "valorRepasseClinica", label: "Repasse à clínica", render: (r) => r.valorRepasseClinica ? fmtBRL(r.valorRepasseClinica) : "—" },
+  ];
   return (
-    <ModuleShell icon={FlaskConical} title="Cadastro de Testes Genéticos" subtitle="Tipos de teste, valor cobrado e valor de repasse para a clínica" tone="coral" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Cadastrar teste" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
+    <ModuleShell icon={FlaskConical} title="Cadastro de Testes Genéticos" subtitle="Laboratório, custos, valores à vista/parcelado, impostos e repasse para a clínica" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Cadastrar teste" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} onBulkImport={bulkAdd} />
   );
 }
 
