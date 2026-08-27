@@ -261,6 +261,9 @@ const MODULES = {
   protocolosGuias: { table: "protocolos_guias", order: "data_protocolo.desc",
     toDb: (r) => ({ numero_protocolo: r.numeroProtocolo, data_protocolo: r.dataProtocolo, itens: r.itens, total_guias: r.totalGuias, criado_por: r.criadoPor, criado_por_nome: r.criadoPorNome }),
     fromDb: (r) => ({ id: r.id, numeroProtocolo: r.numero_protocolo, dataProtocolo: r.data_protocolo, itens: r.itens, totalGuias: r.total_guias, criadoPor: r.criado_por, criadoPorNome: r.criado_por_nome, criadoEm: r.criado_em }) },
+  protocoloBradescoGuias: { table: "protocolo_bradesco_guias", order: "criado_em.asc",
+    toDb: (r) => ({ protocolo_bradesco_id: r.protocoloBradescoId, numero_guia: r.numeroGuia, valor: r.valor, faturamento_guia_id: r.faturamentoGuiaId || null }),
+    fromDb: (r) => ({ id: r.id, protocoloBradescoId: r.protocolo_bradesco_id, numeroGuia: r.numero_guia, valor: r.valor, faturamentoGuiaId: r.faturamento_guia_id }) },
   protocoloBradesco: { table: "protocolo_bradesco", order: "data_envio.desc",
     toDb: (r) => ({ numero_lote: r.numeroLote, data_emissao: r.dataEmissao || null, data_envio: r.dataEnvio, valor_nota: r.valorNota, regime_tributario: r.regimeTributario, ir_valor: r.irValor, cofins_valor: r.cofinsValor, pis_valor: r.pisValor, csll_valor: r.csllValor, faturamento_guia_id: r.faturamentoGuiaId || null }),
     fromDb: (r) => ({ id: r.id, numeroLote: r.numero_lote, dataEmissao: r.data_emissao, dataEnvio: r.data_envio, valorNota: r.valor_nota, regimeTributario: r.regime_tributario, irValor: r.ir_valor, cofinsValor: r.cofins_valor, pisValor: r.pis_valor, csllValor: r.csll_valor, faturamentoGuiaId: r.faturamento_guia_id }) },
@@ -1313,68 +1316,200 @@ function gerarNumeroProtocolo(nomeUsuario) {
   return `${iniciais}-${dataParte}-${horaParte}`;
 }
 function ProtocoloBradescoModulo() {
-  const { session } = useAuth();
+  const { session, perfil } = useAuth();
   const { unidadeId } = useUnidade();
-  const { data: protocolos, remove, loading, erro, reload } = useRecords("protocoloBradesco");
-  const { data: guias, update: updateGuia } = useRecords("faturamento");
-  const fields = [
-    { key: "numeroLote", label: "Nº do lote", type: "text", placeholder: "ex: LOTE 3" },
-    { key: "convenio", label: "Convênio", type: "select", options: ["Bradesco Saúde", "Bradesco Saúde Clínica", "Bradesco Operadora de Planos Clínica"], default: "Bradesco Saúde Clínica" },
-    { key: "dataEmissao", label: "Data de emissão", type: "date", required: false },
-    { key: "dataEnvio", label: "Data de envio do lote", type: "date", default: todayISO() },
-    { key: "valorNota", label: "Valor da nota (R$)", type: "currency" },
-    { key: "regimeTributario", label: "Regime tributário", type: "select", options: ["Simples Nacional", "Lucro Presumido", "Lucro Real"], default: "Simples Nacional" },
-    { key: "statusInicial", label: "Status", type: "select", options: ["Protocolada", "Faturada", "Paga", "Vencida"], default: "Protocolada" },
-  ];
-  const calcularImpostos = (valorNota) => ({
-    irValor: valorNota * 0.015, cofinsValor: valorNota * 0.03, pisValor: valorNota * 0.0065, csllValor: valorNota * 0.01,
-  });
-  const onAddProtocolo = async (record) => {
-    const valorNota = Number(record.valorNota) || 0;
-    const impostos = calcularImpostos(valorNota);
-    try {
-      const guiaCriada = await sbRest("faturamento_guias", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, convenio: record.convenio, numero_guia: record.numeroLote, tipo: "Outro", data_protocolo: record.dataEnvio, valor: valorNota, status: record.statusInicial || "Protocolada", data_pagamento: record.statusInicial === "Paga" ? record.dataEnvio : null } });
-      const guiaId = guiaCriada && guiaCriada[0] ? guiaCriada[0].id : null;
-      await sbRest("protocolo_bradesco", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, numero_lote: record.numeroLote, data_emissao: record.dataEmissao || null, data_envio: record.dataEnvio, valor_nota: valorNota, regime_tributario: record.regimeTributario, ir_valor: impostos.irValor, cofins_valor: impostos.cofinsValor, pis_valor: impostos.pisValor, csll_valor: impostos.csllValor, faturamento_guia_id: guiaId } });
-      await reload();
-    } catch (e) { alert("Não foi possível salvar: " + e.message); }
+  const { data: protocolos, remove: removeLote, loading, erro, reload } = useRecords("protocoloBradesco");
+  const { data: guiasDoLote, reload: reloadGuiasDoLote } = useRecords("protocoloBradescoGuias");
+  const { data: faturamento, update: updateGuiaStatus } = useRecords("faturamento");
+  const CONVENIOS_BRADESCO = ["Bradesco Saúde", "Bradesco Saúde Clínica", "Bradesco Operadora de Planos Clínica"];
+
+  // --- formulário de novo lote ---
+  const [numeroLote, setNumeroLote] = useState("");
+  const [convenio, setConvenio] = useState("Bradesco Saúde Clínica");
+  const [dataEmissao, setDataEmissao] = useState("");
+  const [dataEnvio, setDataEnvio] = useState(todayISO());
+  const [regimeTributario, setRegimeTributario] = useState("Simples Nacional");
+  const [carrinhoGuias, setCarrinhoGuias] = useState([]);
+  const [numeroGuiaAtual, setNumeroGuiaAtual] = useState("");
+  const [valorGuiaAtual, setValorGuiaAtual] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const adicionarGuiaAoCarrinho = () => {
+    if (!valorGuiaAtual) return;
+    setCarrinhoGuias((p) => [...p, { numeroGuia: numeroGuiaAtual || `Guia ${p.length + 1}`, valor: Number(valorGuiaAtual) }]);
+    setNumeroGuiaAtual(""); setValorGuiaAtual("");
   };
-  const statusDaGuia = (faturamentoGuiaId) => { const g = guias.find((x) => x.id === faturamentoGuiaId); return g ? g.status : "—"; };
-  const alterarStatus = async (faturamentoGuiaId, novoStatus) => {
-    if (!faturamentoGuiaId) return alert("Este lote não tem uma guia vinculada em Contas a Receber.");
-    await updateGuia(faturamentoGuiaId, { status: novoStatus, dataPagamento: novoStatus === "Paga" ? todayISO() : null });
+  const removerGuiaDoCarrinho = (idx) => setCarrinhoGuias((p) => p.filter((_, i) => i !== idx));
+  const totalCarrinho = carrinhoGuias.reduce((s, g) => s + g.valor, 0);
+
+  const fecharLote = async () => {
+    if (!numeroLote || carrinhoGuias.length === 0) return alert("Preencha o nº do lote e adicione ao menos uma guia.");
+    setBusy(true);
+    try {
+      const impostos = { ir_valor: totalCarrinho * 0.015, cofins_valor: totalCarrinho * 0.03, pis_valor: totalCarrinho * 0.0065, csll_valor: totalCarrinho * 0.01 };
+      const loteCriado = await sbRest("protocolo_bradesco", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, numero_lote: numeroLote, data_emissao: dataEmissao || null, data_envio: dataEnvio, valor_nota: totalCarrinho, regime_tributario: regimeTributario, ...impostos } });
+      const loteId = loteCriado && loteCriado[0] ? loteCriado[0].id : null;
+      for (const g of carrinhoGuias) {
+        const guiaCriada = await sbRest("faturamento_guias", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, convenio, numero_guia: g.numeroGuia, tipo: "Outro", data_protocolo: dataEnvio, valor: g.valor, status: "Protocolada" } });
+        const guiaId = guiaCriada && guiaCriada[0] ? guiaCriada[0].id : null;
+        await sbRest("protocolo_bradesco_guias", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, protocolo_bradesco_id: loteId, numero_guia: g.numeroGuia, valor: g.valor, faturamento_guia_id: guiaId } });
+      }
+      setNumeroLote(""); setDataEmissao(""); setDataEnvio(todayISO()); setCarrinhoGuias([]);
+      await reload(); await reloadGuiasDoLote();
+    } catch (e) { alert("Não foi possível salvar: " + e.message); }
+    setBusy(false);
+  };
+
+  const statusDaGuiaFaturamento = (faturamentoGuiaId) => { const g = faturamento.find((x) => x.id === faturamentoGuiaId); return g ? g.status : "—"; };
+  const alterarStatusGuia = async (faturamentoGuiaId, novoStatus) => {
+    if (!faturamentoGuiaId) return;
+    await updateGuiaStatus(faturamentoGuiaId, { status: novoStatus, dataPagamento: novoStatus === "Paga" ? todayISO() : null });
   };
   const numeroDoLote = (str) => { const m = String(str || "").match(/\d+/); return m ? parseInt(m[0], 10) : 0; };
-  const columns = [
-    { key: "numeroLote", label: "Lote" }, { key: "dataEnvio", label: "Envio", render: (r) => fmtDate(r.dataEnvio) },
-    { key: "valorNota", label: "Valor da nota", render: (r) => fmtBRL(r.valorNota) },
-    { key: "totalImpostos", label: "Impostos retidos", render: (r) => <span className="text-xs" style={{ color: T.muted }}>{fmtBRL(r.irValor + r.cofinsValor + r.pisValor + r.csllValor)}</span> },
-    { key: "statusGuia", label: "Status (Contas a Receber)", render: (r) => {
-      const s = statusDaGuia(r.faturamentoGuiaId);
-      return (
-        <select className="rounded-lg px-2 py-1 text-xs outline-none" style={inputStyle} value={s} onChange={(e) => alterarStatus(r.faturamentoGuiaId, e.target.value)}>
-          <option value="Protocolada">Protocolada</option><option value="Faturada">Faturada</option><option value="Paga">Paga</option><option value="Vencida">Vencida</option>
-        </select>
-      );
-    } },
-  ];
-  const totalNotas = protocolos.reduce((s, r) => s + Number(r.valorNota), 0);
-  const totalImpostos = protocolos.reduce((s, r) => s + Number(r.irValor) + Number(r.cofinsValor) + Number(r.pisValor) + Number(r.csllValor), 0);
-  const pagos = protocolos.filter((r) => statusDaGuia(r.faturamentoGuiaId) === "Paga");
-  const faturados = protocolos.filter((r) => statusDaGuia(r.faturamentoGuiaId) === "Faturada");
-  const valorRecebido = pagos.reduce((s, r) => s + Number(r.valorNota), 0);
-  const valorAReceber = protocolos.filter((r) => statusDaGuia(r.faturamentoGuiaId) !== "Paga").reduce((s, r) => s + Number(r.valorNota), 0);
+
   const [filtroMes, setFiltroMes] = useState("");
   const [filtroDe, setFiltroDe] = useState("");
   const [filtroAte, setFiltroAte] = useState("");
   const protocolosFiltrados = [...filtrarPorPeriodo(protocolos, "dataEnvio", filtroMes, filtroDe, filtroAte)].sort((a, b) => numeroDoLote(a.numeroLote) - numeroDoLote(b.numeroLote));
+  const idsDosLotesFiltrados = new Set(protocolosFiltrados.map((p) => p.id));
+  const guiasVisiveis = guiasDoLote.filter((g) => idsDosLotesFiltrados.has(g.protocoloBradescoId));
+
+  const totalNotas = guiasVisiveis.reduce((s, g) => s + Number(g.valor), 0);
+  const totalImpostos = protocolosFiltrados.reduce((s, r) => s + Number(r.irValor) + Number(r.cofinsValor) + Number(r.pisValor) + Number(r.csllValor), 0);
+  const guiasPagas = guiasVisiveis.filter((g) => statusDaGuiaFaturamento(g.faturamentoGuiaId) === "Paga");
+  const valorRecebido = guiasPagas.reduce((s, g) => s + Number(g.valor), 0);
+  const valorAReceber = guiasVisiveis.filter((g) => statusDaGuiaFaturamento(g.faturamentoGuiaId) !== "Paga").reduce((s, g) => s + Number(g.valor), 0);
+
+  // --- reconciliação: guias Bradesco em Contas a Receber que não vieram de nenhum lote daqui ---
+  const idsGuiasVinculadas = new Set(guiasDoLote.map((g) => g.faturamentoGuiaId).filter(Boolean));
+  const guiasOrfas = faturamento.filter((f) => f.convenio && f.convenio.toLowerCase().includes("bradesco") && !idsGuiasVinculadas.has(f.id));
+  const [loteParaVincular, setLoteParaVincular] = useState({});
+  const vincularOrfaExistente = async (guiaOrfa) => {
+    const loteId = loteParaVincular[guiaOrfa.id];
+    if (!loteId) return alert("Escolha um lote para vincular.");
+    try {
+      await sbRest("protocolo_bradesco_guias", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, protocolo_bradesco_id: loteId, numero_guia: guiaOrfa.numeroGuia || "—", valor: guiaOrfa.valor, faturamento_guia_id: guiaOrfa.id } });
+      await reloadGuiasDoLote();
+    } catch (e) { alert("Não foi possível vincular: " + e.message); }
+  };
+  const criarLoteSoParaOrfa = async (guiaOrfa) => {
+    try {
+      const loteCriado = await sbRest("protocolo_bradesco", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, numero_lote: guiaOrfa.numeroGuia || `AVULSO-${guiaOrfa.id.slice(0, 6)}`, data_envio: guiaOrfa.dataProtocolo, valor_nota: guiaOrfa.valor, regime_tributario: "Simples Nacional", ir_valor: guiaOrfa.valor * 0.015, cofins_valor: guiaOrfa.valor * 0.03, pis_valor: guiaOrfa.valor * 0.0065, csll_valor: guiaOrfa.valor * 0.01 } });
+      const loteId = loteCriado && loteCriado[0] ? loteCriado[0].id : null;
+      await sbRest("protocolo_bradesco_guias", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, protocolo_bradesco_id: loteId, numero_guia: guiaOrfa.numeroGuia || "—", valor: guiaOrfa.valor, faturamento_guia_id: guiaOrfa.id } });
+      await reload(); await reloadGuiasDoLote();
+    } catch (e) { alert("Não foi possível criar o lote: " + e.message); }
+  };
+
   return (
     <>
       <FiltroPeriodoBar filtroMes={filtroMes} setFiltroMes={setFiltroMes} filtroDe={filtroDe} setFiltroDe={setFiltroDe} filtroAte={filtroAte} setFiltroAte={setFiltroAte} />
-    <ModuleShell icon={ClipboardList} title="Protocolo Bradesco" subtitle="Histórico completo — lotes protocolados, faturados, pagos e vencidos, tudo num lugar só" tone="coral" loading={loading} erro={erro}
-      dailyFields={fields} dailyCta="Registrar lote" fields={fields} columns={columns} rows={protocolosFiltrados} onAdd={onAddProtocolo} onUpdate={() => {}} onDelete={remove}
-      kpis={[{ label: "Lotes registrados", value: protocolosFiltrados.length }, { label: "Valor total das notas", value: fmtBRL(protocolosFiltrados.reduce((s, r) => s + Number(r.valorNota), 0)), tone: "coral" }, { label: "Valor recebido", value: fmtBRL(protocolosFiltrados.filter((r) => statusDaGuia(r.faturamentoGuiaId) === "Paga").reduce((s, r) => s + Number(r.valorNota), 0)), tone: "green" }, { label: "Valor a receber", value: fmtBRL(protocolosFiltrados.filter((r) => statusDaGuia(r.faturamentoGuiaId) !== "Paga").reduce((s, r) => s + Number(r.valorNota), 0)), tone: "amber" }, { label: "Impostos retidos (total)", value: fmtBRL(protocolosFiltrados.reduce((s, r) => s + Number(r.irValor) + Number(r.cofinsValor) + Number(r.pisValor) + Number(r.csllValor), 0)), tone: "amber" }, { label: "Lotes pagos", value: protocolosFiltrados.filter((r) => statusDaGuia(r.faturamentoGuiaId) === "Paga").length, tone: "green" }, { label: "Lotes faturados (aguardando)", value: protocolosFiltrados.filter((r) => statusDaGuia(r.faturamentoGuiaId) === "Faturada").length, tone: "amber" }]}
-      extra={<Card className="mb-5"><p className="text-xs" style={{ color: T.muted }}>Esta tela mostra <b>todos</b> os lotes, independente do status. Cada um já aparece automaticamente em Contas a Receber enquanto não for pago — marque como pago por lá (ou pela conciliação automática do OFX) que o status atualiza aqui também.</p></Card>} />
+      <SectionHeader icon={ClipboardList} title="Protocolo Bradesco" subtitle="O Bradesco paga por guia, não por lote — cada guia tem seu próprio status" tone="coral" />
+
+      <div className="grid gap-3 mb-6" style={{ gridTemplateColumns: "repeat(4, minmax(0,1fr))" }}>
+        <KpiCard label="Lotes registrados" value={protocolosFiltrados.length} />
+        <KpiCard label="Valor total das guias" value={fmtBRL(totalNotas)} tone="coral" />
+        <KpiCard label="Valor recebido" value={fmtBRL(valorRecebido)} tone="green" />
+        <KpiCard label="Valor a receber" value={fmtBRL(valorAReceber)} tone="amber" />
+      </div>
+      <div className="grid gap-3 mb-6" style={{ gridTemplateColumns: "repeat(3, minmax(0,1fr))" }}>
+        <KpiCard label="Impostos retidos (total)" value={fmtBRL(totalImpostos)} tone="amber" />
+        <KpiCard label="Guias pagas" value={guiasPagas.length} tone="green" />
+        <KpiCard label="Guias registradas" value={guiasVisiveis.length} />
+      </div>
+
+      {erro && <Card className="mb-5"><span className="text-sm" style={{ color: T.red }}>Erro ao carregar: {erro}</span></Card>}
+
+      <Card className="mb-5">
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Novo lote — adicione as guias que ele contém</p>
+        <div className="grid md:grid-cols-3 gap-3 mb-4">
+          <Field label="Nº do lote"><input className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} placeholder="ex: LOTE 65" value={numeroLote} onChange={(e) => setNumeroLote(e.target.value)} /></Field>
+          <Field label="Convênio"><select className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={convenio} onChange={(e) => setConvenio(e.target.value)}>{CONVENIOS_BRADESCO.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
+          <Field label="Regime tributário"><select className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={regimeTributario} onChange={(e) => setRegimeTributario(e.target.value)}><option>Simples Nacional</option><option>Lucro Presumido</option><option>Lucro Real</option></select></Field>
+          <Field label="Data de emissão"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={dataEmissao} onChange={(e) => setDataEmissao(e.target.value)} /></Field>
+          <Field label="Data de envio do lote"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={dataEnvio} onChange={(e) => setDataEnvio(e.target.value)} /></Field>
+        </div>
+        <p className="text-[11px] font-semibold uppercase mb-2" style={{ color: T.muted, letterSpacing: "0.06em" }}>Adicionar guia ao lote (quantas tiver)</p>
+        <div className="flex flex-wrap gap-3 items-end mb-4">
+          <Field label="Nº da guia (opcional)"><input className="rounded-lg px-3 py-2 text-sm outline-none w-40" style={inputStyle} value={numeroGuiaAtual} onChange={(e) => setNumeroGuiaAtual(e.target.value)} /></Field>
+          <Field label="Valor da guia (R$)"><input type="number" step="0.01" className="rounded-lg px-3 py-2 text-sm outline-none w-36" style={inputStyle} value={valorGuiaAtual} onChange={(e) => setValorGuiaAtual(e.target.value)} /></Field>
+          <Btn small tone="teal" icon={Plus} onClick={adicionarGuiaAoCarrinho}>Adicionar guia</Btn>
+        </div>
+        {carrinhoGuias.length > 0 && (
+          <div className="mb-4">
+            <table className="w-full text-sm">
+              <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Guia</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Valor</th><th></th></tr></thead>
+              <tbody>{carrinhoGuias.map((g, idx) => (<tr key={idx} style={{ borderBottom: `1px solid ${T.border}` }}><td className="py-2 px-2" style={{ color: T.text }}>{g.numeroGuia}</td><td className="py-2 px-2">{fmtBRL(g.valor)}</td><td className="py-2 px-2 text-right"><button onClick={() => removerGuiaDoCarrinho(idx)}><Trash2 size={13} style={{ color: T.red }} /></button></td></tr>))}</tbody>
+              <tfoot><tr><td className="py-2 px-2 font-bold" style={{ color: T.text }}>Total do lote</td><td className="py-2 px-2 font-bold">{fmtBRL(totalCarrinho)}</td><td></td></tr></tfoot>
+            </table>
+          </div>
+        )}
+        <Btn disabled={busy || carrinhoGuias.length === 0 || !numeroLote} onClick={fecharLote}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Fechar lote</Btn>
+      </Card>
+
+      {guiasOrfas.length > 0 && (
+        <Card className="mb-5" style={{ borderColor: `${T.amber}55`, background: `${T.amber}10` }}>
+          <div className="flex items-center gap-2 mb-2"><AlertTriangle size={15} style={{ color: T.amber }} /><span className="font-semibold text-sm" style={{ color: T.text }}>{guiasOrfas.length} guia(s) do Bradesco em Contas a Receber sem lote vinculado aqui</span></div>
+          <p className="text-xs mb-3" style={{ color: T.muted }}>Isso é o que causava a diferença de valores entre as duas telas. Vincule cada uma a um lote já existente, ou crie um lote avulso só pra ela.</p>
+          <div className="flex flex-col gap-2">
+            {guiasOrfas.map((f) => (
+              <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2" style={{ background: T.card, border: `1px solid ${T.border}` }}>
+                <span className="text-sm" style={{ color: T.text }}>{f.convenio} — {f.numeroGuia || "sem nº"} — {fmtBRL(f.valor)} — <Badge tone="muted">{f.status}</Badge></span>
+                <div className="flex items-center gap-2">
+                  <select className="rounded-lg px-2 py-1.5 text-xs outline-none" style={inputStyle} value={loteParaVincular[f.id] || ""} onChange={(e) => setLoteParaVincular((p) => ({ ...p, [f.id]: e.target.value }))}>
+                    <option value="">Escolher lote…</option>
+                    {protocolos.map((p) => <option key={p.id} value={p.id}>{p.numeroLote}</option>)}
+                  </select>
+                  <Btn small variant="ghost" onClick={() => vincularOrfaExistente(f)}>Vincular</Btn>
+                  <Btn small tone="teal" onClick={() => criarLoteSoParaOrfa(f)}>Criar lote avulso</Btn>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <Card>
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Lotes ({protocolosFiltrados.length})</p>
+        {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> :
+          protocolosFiltrados.length === 0 ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhum lote no período selecionado.</div> : (
+          <div className="flex flex-col gap-3">
+            {protocolosFiltrados.map((lote) => {
+              const guiasDesteLote = guiasDoLote.filter((g) => g.protocoloBradescoId === lote.id);
+              const totalLote = guiasDesteLote.reduce((s, g) => s + Number(g.valor), 0);
+              return (
+                <div key={lote.id} className="rounded-xl px-4 py-3" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-semibold text-sm" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{lote.numeroLote} <span className="text-xs font-normal" style={{ color: T.muted }}>— envio {fmtDate(lote.dataEnvio)} — {guiasDesteLote.length} guia(s)</span></span>
+                    <div className="flex items-center gap-3">
+                      <span style={{ color: T.text, fontWeight: 700 }}>{fmtBRL(totalLote)}</span>
+                      <button onClick={() => { if (confirm("Remover este lote e todas as suas guias?")) removeLote(lote.id); }}><Trash2 size={13} style={{ color: T.red }} /></button>
+                    </div>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                      <th className="text-left py-1.5 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Guia</th>
+                      <th className="text-left py-1.5 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Valor</th>
+                      <th className="text-left py-1.5 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Status</th>
+                    </tr></thead>
+                    <tbody>{guiasDesteLote.map((g) => (
+                      <tr key={g.id}>
+                        <td className="py-1.5 px-2" style={{ color: T.text }}>{g.numeroGuia}</td>
+                        <td className="py-1.5 px-2">{fmtBRL(g.valor)}</td>
+                        <td className="py-1.5 px-2">
+                          <select className="rounded-lg px-2 py-1 text-xs outline-none" style={inputStyle} value={statusDaGuiaFaturamento(g.faturamentoGuiaId)} onChange={(e) => alterarStatusGuia(g.faturamentoGuiaId, e.target.value)}>
+                            <option value="Protocolada">Protocolada</option><option value="Faturada">Faturada</option><option value="Paga">Paga</option><option value="Vencida">Vencida</option>
+                          </select>
+                        </td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
     </>
   );
 }
