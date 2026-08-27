@@ -1443,6 +1443,35 @@ function ProtocoloBradescoModulo() {
     } catch (e) { alert("Não foi possível criar o lote: " + e.message); }
   };
 
+  // --- reconciliação automática: casa cada guia órfã com o lote a que ela
+  // provavelmente pertence, comparando o valor que falta no lote (valor
+  // cheio registrado - guias já vinculadas) com o valor da órfã ---
+  const [reconciliando, setReconciliando] = useState(false);
+  const [resultadoReconciliacao, setResultadoReconciliacao] = useState(null);
+  const reconciliarAutomaticamente = async () => {
+    setReconciliando(true);
+    let vinculadas = 0;
+    let naoCasaram = 0;
+    try {
+      for (const orfa of guiasOrfas) {
+        let loteEncontrado = null;
+        for (const lote of protocolos) {
+          const guiasJaVinculadas = guiasDoLote.filter((g) => g.protocoloBradescoId === lote.id);
+          const somaVinculada = guiasJaVinculadas.reduce((s, g) => s + Number(g.valor), 0);
+          const faltaNoLote = Number(lote.valorNota) - somaVinculada;
+          if (Math.abs(faltaNoLote - Number(orfa.valor)) < 0.02) { loteEncontrado = lote; break; }
+        }
+        if (loteEncontrado) {
+          await sbRest("protocolo_bradesco_guias", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, protocolo_bradesco_id: loteEncontrado.id, numero_guia: orfa.numeroGuia || "—", valor: orfa.valor, faturamento_guia_id: orfa.id } });
+          vinculadas++;
+        } else naoCasaram++;
+      }
+      await reloadGuiasDoLote();
+      setResultadoReconciliacao({ vinculadas, naoCasaram });
+    } catch (e) { alert("Erro na reconciliação: " + e.message); }
+    setReconciliando(false);
+  };
+
   return (
     <>
       <FiltroPeriodoBar filtroMes={filtroMes} setFiltroMes={setFiltroMes} filtroDe={filtroDe} setFiltroDe={setFiltroDe} filtroAte={filtroAte} setFiltroAte={setFiltroAte} />
@@ -1511,8 +1540,15 @@ function ProtocoloBradescoModulo() {
       {guiasOrfas.length > 0 && (
         <Card className="mb-5" style={{ borderColor: `${T.amber}55`, background: `${T.amber}10` }}>
           <div className="flex items-center gap-2 mb-2"><AlertTriangle size={15} style={{ color: T.amber }} /><span className="font-semibold text-sm" style={{ color: T.text }}>{guiasOrfas.length} guia(s) do Bradesco em Contas a Receber sem lote vinculado aqui</span></div>
-          <p className="text-xs mb-3" style={{ color: T.muted }}>Isso é o que causava a diferença de valores entre as duas telas. Vincule cada uma a um lote já existente, ou crie um lote avulso só pra ela.</p>
-          <div className="flex flex-col gap-2">
+          <p className="text-xs mb-3" style={{ color: T.muted }}>Isso é o que causava a diferença de valores entre as duas telas. Clique abaixo pra tentar resolver tudo de uma vez — o sistema procura, pra cada guia solta, um lote em que ela encaixa exatamente (valor cheio do lote menos o que já está vinculado bate com o valor dela).</p>
+          <Btn disabled={reconciliando} onClick={reconciliarAutomaticamente}>{reconciliando ? <Loader2 size={14} className="animate-spin" /> : null} Reconciliar automaticamente</Btn>
+          {resultadoReconciliacao && (
+            <p className="text-sm mt-3" style={{ color: T.green }}>
+              {resultadoReconciliacao.vinculadas} guia(s) vinculada(s) automaticamente.
+              {resultadoReconciliacao.naoCasaram > 0 && <span style={{ color: T.amber }}> {resultadoReconciliacao.naoCasaram} não encontraram um lote com o valor exato que faltava — essas continuam na lista abaixo pra você resolver manualmente.</span>}
+            </p>
+          )}
+          <div className="flex flex-col gap-2 mt-4">
             {guiasOrfas.map((f) => (
               <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2" style={{ background: T.card, border: `1px solid ${T.border}` }}>
                 <span className="text-sm" style={{ color: T.text }}>{f.convenio} — {f.numeroGuia || "sem nº"} — {fmtBRL(f.valor)} — <Badge tone="muted">{f.status}</Badge></span>
