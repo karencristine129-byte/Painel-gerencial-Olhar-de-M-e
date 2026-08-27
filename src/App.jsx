@@ -1330,14 +1330,24 @@ function ProtocoloBradescoModulo() {
   const [dataEnvio, setDataEnvio] = useState(todayISO());
   const [regimeTributario, setRegimeTributario] = useState("Simples Nacional");
   const [carrinhoGuias, setCarrinhoGuias] = useState([]);
-  const [numeroGuiaAtual, setNumeroGuiaAtual] = useState("");
-  const [valorGuiaAtual, setValorGuiaAtual] = useState("");
+  const [prefixoGuiaAtual, setPrefixoGuiaAtual] = useState("");
+  const [quantidadeGuiasAtual, setQuantidadeGuiasAtual] = useState(1);
+  const [valorUnitarioAtual, setValorUnitarioAtual] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const adicionarGuiaAoCarrinho = () => {
-    if (!valorGuiaAtual) return;
-    setCarrinhoGuias((p) => [...p, { numeroGuia: numeroGuiaAtual || `Guia ${p.length + 1}`, valor: Number(valorGuiaAtual) }]);
-    setNumeroGuiaAtual(""); setValorGuiaAtual("");
+  const adicionarGuiasAoCarrinho = () => {
+    if (!valorUnitarioAtual || !quantidadeGuiasAtual) return;
+    const qtd = Number(quantidadeGuiasAtual);
+    const valorUnitario = Number(valorUnitarioAtual);
+    setCarrinhoGuias((p) => {
+      const novas = [];
+      for (let i = 1; i <= qtd; i++) {
+        const numero = qtd > 1 ? (prefixoGuiaAtual ? `${prefixoGuiaAtual} - ${i}` : `Guia ${p.length + novas.length + 1}`) : (prefixoGuiaAtual || `Guia ${p.length + 1}`);
+        novas.push({ numeroGuia: numero, valor: valorUnitario });
+      }
+      return [...p, ...novas];
+    });
+    setPrefixoGuiaAtual(""); setQuantidadeGuiasAtual(1); setValorUnitarioAtual("");
   };
   const removerGuiaDoCarrinho = (idx) => setCarrinhoGuias((p) => p.filter((_, i) => i !== idx));
   const totalCarrinho = carrinhoGuias.reduce((s, g) => s + g.valor, 0);
@@ -1372,6 +1382,32 @@ function ProtocoloBradescoModulo() {
     }
   };
   const numeroDoLote = (str) => { const m = String(str || "").match(/\d+/); return m ? parseInt(m[0], 10) : 0; };
+
+  // --- registrar pagamento recebido do Bradesco para um lote ---
+  const [loteDoPagamento, setLoteDoPagamento] = useState("");
+  const [valorDoPagamento, setValorDoPagamento] = useState("");
+  const [dataDoPagamento, setDataDoPagamento] = useState(todayISO());
+  const [busyPagamento, setBusyPagamento] = useState(false);
+  const [resultadoPagamento, setResultadoPagamento] = useState(null);
+
+  const registrarPagamentoBradesco = async () => {
+    if (!loteDoPagamento || !valorDoPagamento) return alert("Escolha o lote e informe o valor recebido.");
+    setBusyPagamento(true); setResultadoPagamento(null);
+    try {
+      let saldo = Number(valorDoPagamento);
+      const guiasDoLoteEscolhido = guiasDoLote.filter((g) => g.protocoloBradescoId === loteDoPagamento && statusDaGuiaFaturamento(g.faturamentoGuiaId) !== "Paga");
+      let quantasPagas = 0;
+      for (const g of guiasDoLoteEscolhido) {
+        if (saldo + 0.01 < Number(g.valor)) continue; // não dá pra pagar essa guia inteira com o que sobrou
+        await updateGuiaStatus(g.faturamentoGuiaId, { status: "Paga", dataPagamento: dataDoPagamento });
+        saldo -= Number(g.valor);
+        quantasPagas++;
+      }
+      setResultadoPagamento({ quantasPagas, saldoNaoAplicado: saldo });
+      setLoteDoPagamento(""); setValorDoPagamento("");
+    } catch (e) { alert("Não foi possível registrar o pagamento: " + e.message); }
+    setBusyPagamento(false);
+  };
 
   const [filtroMes, setFiltroMes] = useState("");
   const [filtroDe, setFiltroDe] = useState("");
@@ -1435,12 +1471,14 @@ function ProtocoloBradescoModulo() {
           <Field label="Data de emissão"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={dataEmissao} onChange={(e) => setDataEmissao(e.target.value)} /></Field>
           <Field label="Data de envio do lote"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={dataEnvio} onChange={(e) => setDataEnvio(e.target.value)} /></Field>
         </div>
-        <p className="text-[11px] font-semibold uppercase mb-2" style={{ color: T.muted, letterSpacing: "0.06em" }}>Adicionar guia ao lote (quantas tiver)</p>
+        <p className="text-[11px] font-semibold uppercase mb-2" style={{ color: T.muted, letterSpacing: "0.06em" }}>Adicionar guias ao lote — por quantidade e valor unitário</p>
         <div className="flex flex-wrap gap-3 items-end mb-4">
-          <Field label="Nº da guia (opcional)"><input className="rounded-lg px-3 py-2 text-sm outline-none w-40" style={inputStyle} value={numeroGuiaAtual} onChange={(e) => setNumeroGuiaAtual(e.target.value)} /></Field>
-          <Field label="Valor da guia (R$)"><input type="number" step="0.01" className="rounded-lg px-3 py-2 text-sm outline-none w-36" style={inputStyle} value={valorGuiaAtual} onChange={(e) => setValorGuiaAtual(e.target.value)} /></Field>
-          <Btn small tone="teal" icon={Plus} onClick={adicionarGuiaAoCarrinho}>Adicionar guia</Btn>
+          <Field label="Prefixo do nº da guia (opcional)"><input className="rounded-lg px-3 py-2 text-sm outline-none w-44" style={inputStyle} placeholder="ex: 123456" value={prefixoGuiaAtual} onChange={(e) => setPrefixoGuiaAtual(e.target.value)} /></Field>
+          <Field label="Quantidade de guias"><input type="number" min="1" className="rounded-lg px-3 py-2 text-sm outline-none w-32" style={inputStyle} value={quantidadeGuiasAtual} onChange={(e) => setQuantidadeGuiasAtual(e.target.value)} /></Field>
+          <Field label="Valor unitário de cada guia (R$)"><input type="number" step="0.01" className="rounded-lg px-3 py-2 text-sm outline-none w-40" style={inputStyle} value={valorUnitarioAtual} onChange={(e) => setValorUnitarioAtual(e.target.value)} /></Field>
+          <Btn small tone="teal" icon={Plus} onClick={adicionarGuiasAoCarrinho}>Adicionar</Btn>
         </div>
+        {Number(quantidadeGuiasAtual) > 1 && valorUnitarioAtual && <p className="text-xs mb-3" style={{ color: T.muted }}>{quantidadeGuiasAtual} guias × {fmtBRL(Number(valorUnitarioAtual))} = <b>{fmtBRL(Number(quantidadeGuiasAtual) * Number(valorUnitarioAtual))}</b></p>}
         {carrinhoGuias.length > 0 && (
           <div className="mb-4">
             <table className="w-full text-sm">
@@ -1451,6 +1489,23 @@ function ProtocoloBradescoModulo() {
           </div>
         )}
         <Btn disabled={busy || carrinhoGuias.length === 0 || !numeroLote} onClick={fecharLote}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Fechar lote</Btn>
+      </Card>
+
+      <Card className="mb-5">
+        <p className="text-[11px] font-semibold uppercase mb-1" style={{ color: T.muted, letterSpacing: "0.06em" }}>Registrar entrada (pagamento Bradesco)</p>
+        <p className="text-xs mb-3" style={{ color: T.muted }}>Escolha o lote e o valor que caiu na conta — o sistema marca sozinho quantas guias esse valor cobre, começando pelas mais antigas.</p>
+        <div className="flex flex-wrap gap-3 items-end">
+          <Field label="Lote"><select className="rounded-lg px-3 py-2 text-sm outline-none w-56" style={inputStyle} value={loteDoPagamento} onChange={(e) => setLoteDoPagamento(e.target.value)}><option value="">Selecione…</option>{protocolos.map((p) => <option key={p.id} value={p.id}>{p.numeroLote}</option>)}</select></Field>
+          <Field label="Valor recebido (R$)"><input type="number" step="0.01" className="rounded-lg px-3 py-2 text-sm outline-none w-40" style={inputStyle} value={valorDoPagamento} onChange={(e) => setValorDoPagamento(e.target.value)} /></Field>
+          <Field label="Data do pagamento"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={dataDoPagamento} onChange={(e) => setDataDoPagamento(e.target.value)} /></Field>
+          <Btn disabled={busyPagamento || !loteDoPagamento || !valorDoPagamento} onClick={registrarPagamentoBradesco}>{busyPagamento ? <Loader2 size={14} className="animate-spin" /> : null} Registrar pagamento</Btn>
+        </div>
+        {resultadoPagamento && (
+          <p className="text-sm mt-3" style={{ color: T.green }}>
+            {resultadoPagamento.quantasPagas} guia(s) marcada(s) como paga(s).
+            {resultadoPagamento.saldoNaoAplicado > 0.01 && <span style={{ color: T.amber }}> Sobraram {fmtBRL(resultadoPagamento.saldoNaoAplicado)} que não fecharam com nenhuma guia pendente desse lote — confira se está certo.</span>}
+          </p>
+        )}
       </Card>
 
       {guiasOrfas.length > 0 && (
@@ -1483,14 +1538,18 @@ function ProtocoloBradescoModulo() {
             {protocolosFiltrados.map((lote) => {
               const guiasDesteLote = guiasDoLote.filter((g) => g.protocoloBradescoId === lote.id);
               const totalLote = guiasDesteLote.reduce((s, g) => s + Number(g.valor), 0);
+              const pagoLote = guiasDesteLote.filter((g) => statusDaGuiaFaturamento(g.faturamentoGuiaId) === "Paga").reduce((s, g) => s + Number(g.valor), 0);
+              const pendenteLote = totalLote - pagoLote;
               return (
                 <div key={lote.id} className="rounded-xl px-4 py-3" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}>
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-1">
                     <span className="font-semibold text-sm" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{lote.numeroLote} <span className="text-xs font-normal" style={{ color: T.muted }}>— envio {fmtDate(lote.dataEnvio)} — {guiasDesteLote.length} guia(s)</span></span>
-                    <div className="flex items-center gap-3">
-                      <span style={{ color: T.text, fontWeight: 700 }}>{fmtBRL(totalLote)}</span>
-                      <button onClick={() => { if (confirm("Remover este lote e todas as suas guias?")) removeLote(lote.id); }}><Trash2 size={13} style={{ color: T.red }} /></button>
-                    </div>
+                    <button onClick={() => { if (confirm("Remover este lote e todas as suas guias?")) removeLote(lote.id); }}><Trash2 size={13} style={{ color: T.red }} /></button>
+                  </div>
+                  <div className="flex items-center gap-4 mb-2 text-xs">
+                    <span style={{ color: T.muted }}>Valor do lote: <b style={{ color: T.text }}>{fmtBRL(totalLote)}</b></span>
+                    <span style={{ color: T.muted }}>Já pago: <b style={{ color: T.green }}>{fmtBRL(pagoLote)}</b></span>
+                    <span style={{ color: T.muted }}>Pendente: <b style={{ color: pendenteLote > 0 ? T.amber : T.green }}>{fmtBRL(pendenteLote)}</b></span>
                   </div>
                   <table className="w-full text-sm">
                     <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>
