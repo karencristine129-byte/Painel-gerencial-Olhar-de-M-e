@@ -190,8 +190,8 @@ const MODULES = {
     toDb: (r) => ({ papel: r.papel, aprovado: r.aprovado }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, cargo: r.cargo, papel: r.papel, aprovado: r.aprovado }) },
   procedimentos: { table: "procedimentos_especiais", order: "data.desc",
-    toDb: (r) => ({ tipo: r.tipo, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor }),
-    fromDb: (r) => ({ id: r.id, tipo: r.tipo, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor }) },
+    toDb: (r) => ({ tipo: r.tipo, tipo_teste: r.tipoTeste || null, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor, realizado_por_id: r.realizadoPorId || null, realizado_por_nome: r.realizadoPorNome || null }),
+    fromDb: (r) => ({ id: r.id, tipo: r.tipo, tipoTeste: r.tipo_teste, paciente: r.paciente, data: r.data, status: r.status, valor: r.valor, realizadoPorId: r.realizado_por_id, realizadoPorNome: r.realizado_por_nome }) },
   faturamento: { table: "faturamento_guias", order: "data_protocolo.desc",
     toDb: (r) => ({ convenio: r.convenio, numero_guia: r.numeroGuia, tipo: r.tipo, data_protocolo: r.dataProtocolo, valor: r.valor, status: r.status, data_pagamento: r.dataPagamento || null, banco_id: r.bancoId || null, tipo_pagamento: r.tipoPagamento || null }),
     fromDb: (r) => ({ id: r.id, convenio: r.convenio, numeroGuia: r.numero_guia, tipo: r.tipo, dataProtocolo: r.data_protocolo, valor: r.valor, status: r.status, dataPagamento: r.data_pagamento, bancoId: r.banco_id, tipoPagamento: r.tipo_pagamento }) },
@@ -2729,22 +2729,29 @@ function MarketingModulo() {
 function ProcedimentosModulo() {
   const { data, add, bulkAdd, update, remove, loading, erro } = useRecords("procedimentos");
   const { data: testesCat } = useRecords("cadTestesGeneticos");
+  const { data: colaboradoresUnidade } = usePerfisDaUnidade();
   const nomesTestes = testesCat.map((t) => t.nome);
+  const nomesColaboradores = colaboradoresUnidade.map((c) => c.nome);
   const fields = [
     { key: "tipo", label: "Tipo de procedimento", type: "select", options: ["Teste Genético", "Fototerapia"] },
     { key: "tipoTeste", label: "Qual teste (preenche o valor sozinho)", type: "select", options: nomesTestes.length ? nomesTestes : ["Cadastre em Cadastros → Testes Genéticos"], required: false, showIf: (f) => f.tipo === "Teste Genético" },
     { key: "paciente", label: "Paciente (iniciais/idade)", type: "text" },
     { key: "data", label: "Data", type: "date", default: todayISO() },
     { key: "status", label: "Status", type: "select", options: ["Solicitado", "Em Andamento", "Concluído", "Cancelado"] },
-    { key: "valor", label: "Valor (R$)", type: "currency" },
+    { key: "valor", label: "Valor (R$)", type: "currency", autoFill: (f) => { if (f.tipo === "Teste Genético" && f.tipoTeste) { const t = testesCat.find((x) => x.nome === f.tipoTeste); if (t) return t.valorTeste; } return undefined; } },
+    { key: "realizadoPorNome", label: "Quem realizou o teste", type: "select", options: nomesColaboradores.length ? nomesColaboradores : ["Cadastre colaboradores primeiro"], required: false, showIf: (f) => f.tipo === "Teste Genético" },
+    { key: "realizadoPorNome", label: "Quem acompanhou a fototerapia", type: "select", options: nomesColaboradores.length ? nomesColaboradores : ["Cadastre colaboradores primeiro"], required: false, showIf: (f) => f.tipo === "Fototerapia" },
   ];
   const computarValor = (record) => {
-    if (record.tipo === "Teste Genético" && record.tipoTeste) { const t = testesCat.find((x) => x.nome === record.tipoTeste); if (t) return { valor: t.valorTeste }; }
-    return {};
+    const extra = {};
+    if (record.tipo === "Teste Genético" && record.tipoTeste) { const t = testesCat.find((x) => x.nome === record.tipoTeste); if (t) extra.valor = t.valorTeste; }
+    const colab = colaboradoresUnidade.find((c) => c.nome === record.realizadoPorNome);
+    extra.realizadoPorId = colab ? colab.id : null;
+    return extra;
   };
   const onAddComputado = (record) => add({ ...record, ...computarValor(record) });
   const onUpdateComputado = (id, record) => update(id, { ...record, ...computarValor(record) });
-  const columns = [{ key: "tipo", label: "Tipo", render: (r) => <Badge tone={r.tipo === "Teste Genético" ? "purple" : "teal"}>{r.tipo}</Badge> }, { key: "paciente", label: "Paciente" }, { key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "status", label: "Status", render: (r) => { const tone = { Solicitado: "muted", "Em Andamento": "amber", "Concluído": "green", Cancelado: "red" }[r.status]; return <Badge tone={tone}>{r.status}</Badge>; } }, { key: "valor", label: "Valor", render: (r) => fmtBRL(r.valor) }];
+  const columns = [{ key: "tipo", label: "Tipo", render: (r) => <Badge tone={r.tipo === "Teste Genético" ? "purple" : "teal"}>{r.tipo}</Badge> }, { key: "tipoTeste", label: "Qual teste", render: (r) => r.tipoTeste || "—" }, { key: "paciente", label: "Paciente" }, { key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "status", label: "Status", render: (r) => { const tone = { Solicitado: "muted", "Em Andamento": "amber", "Concluído": "green", Cancelado: "red" }[r.status]; return <Badge tone={tone}>{r.status}</Badge>; } }, { key: "valor", label: "Valor", render: (r) => fmtBRL(r.valor) }, { key: "realizadoPorNome", label: "Realizado/acompanhado por", render: (r) => r.realizadoPorNome || "—" }];
   const porTipo = useMemo(() => { const map = {}; data.forEach((r) => { if (!map[r.tipo]) map[r.tipo] = { tipo: r.tipo, total: 0, receita: 0 }; map[r.tipo].total += 1; map[r.tipo].receita += r.valor; }); return Object.values(map); }, [data]);
   const concluidos = data.filter((r) => r.status === "Concluído"), pendentes = data.filter((r) => r.status === "Solicitado" || r.status === "Em Andamento"); const receitaTotal = concluidos.reduce((s, r) => s + r.valor, 0);
   return (
