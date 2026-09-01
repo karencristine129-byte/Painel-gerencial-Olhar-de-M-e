@@ -210,6 +210,9 @@ const MODULES = {
   cadProfissionais: { table: "cadastro_profissionais", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcao_sublocacao: r.direcaoSublocacao || null, tipo_sublocacao: r.tipoSublocacao || null, percentual_sublocacao: r.percentualSublocacao || 0, valor_fixo_sublocacao: r.valorFixoSublocacao || 0, valor_abatimento: r.valorAbatimento || 0, valor_plantao_fixo: r.valorPlantaoFixo || 0, valor_repasse_atendimento_plantao: r.valorRepasseAtendimentoPlantao || 0, valor_consulta_particular: r.valorConsultaParticular || 0, convenios_atendidos: r.conveniosAtendidos || [], cpf: r.cpf, dias_atendimento: r.diasAtendimento, contrato_feito: r.contratoFeito, contrato_assinado: r.contratoAssinado, valor_sublocacao_atual: r.valorSublocacaoAtual, percentual_repasse_convenio: r.percentualRepasseConvenio, regra_repasse: r.regraRepasse, abatimento_repasse: r.abatimentoRepasse, plantao_sobreaviso_detalhe: r.plantaoSobreavisoDetalhe, valor_marketing: r.valorMarketing, valor_reajustado_2025: r.valorReajustado2025, valor_reajustado_2026: r.valorReajustado2026, condicao_especial: r.condicaoEspecial, observacoes_contrato: r.observacoesContrato }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcaoSublocacao: r.direcao_sublocacao, tipoSublocacao: r.tipo_sublocacao, percentualSublocacao: r.percentual_sublocacao, valorFixoSublocacao: r.valor_fixo_sublocacao, valorAbatimento: r.valor_abatimento, valorPlantaoFixo: r.valor_plantao_fixo, valorRepasseAtendimentoPlantao: r.valor_repasse_atendimento_plantao, valorConsultaParticular: r.valor_consulta_particular, conveniosAtendidos: r.convenios_atendidos || [], cpf: r.cpf, diasAtendimento: r.dias_atendimento, contratoFeito: r.contrato_feito, contratoAssinado: r.contrato_assinado, valorSublocacaoAtual: r.valor_sublocacao_atual, percentualRepasseConvenio: r.percentual_repasse_convenio, regraRepasse: r.regra_repasse, abatimentoRepasse: r.abatimento_repasse, plantaoSobreavisoDetalhe: r.plantao_sobreaviso_detalhe, valorMarketing: r.valor_marketing, valorReajustado2025: r.valor_reajustado_2025, valorReajustado2026: r.valor_reajustado_2026, condicaoEspecial: r.condicao_especial, observacoesContrato: r.observacoes_contrato }) },
+  analisesGeradas: { table: "analises_financeiras_geradas", order: "criado_em.desc",
+    toDb: (r) => ({ data_inicio: r.dataInicio, data_fim: r.dataFim, gerado_por_nome: r.geradoPorNome, insights: r.insights || [], totais: r.totais || {} }),
+    fromDb: (r) => ({ id: r.id, dataInicio: r.data_inicio, dataFim: r.data_fim, geradoPorNome: r.gerado_por_nome, insights: r.insights || [], totais: r.totais || {}, criadoEm: r.criado_em }) },
   cadTestesGeneticos: { table: "cadastro_testes_geneticos", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, laboratorio: r.laboratorio, custo_processamento: r.custoProcessamento, valor_teste: r.valorTeste, valor_parcelado: r.valorParcelado, valor_apos_impostos: r.valorAposImpostos, ganho_bruto: r.ganhoBruto, valor_apos_custos_operacionais: r.valorAposCustosOperacionais, valor_repasse_clinica: r.valorRepasseClinica }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, laboratorio: r.laboratorio, custoProcessamento: r.custo_processamento, valorTeste: r.valor_teste, valorParcelado: r.valor_parcelado, valorAposImpostos: r.valor_apos_impostos, ganhoBruto: r.ganho_bruto, valorAposCustosOperacionais: r.valor_apos_custos_operacionais, valorRepasseClinica: r.valor_repasse_clinica }) },
@@ -4948,7 +4951,7 @@ function AnaliseProfissionalModulo() {
 }
 
 function AnaliseFinanceiraModulo() {
-  const { session } = useAuth();
+  const { session, perfil } = useAuth();
   const { unidadeId } = useUnidade();
   const financeiro = useRecords("financeiro");
   const contas = useRecords("contas");
@@ -4959,24 +4962,29 @@ function AnaliseFinanceiraModulo() {
   const vendasPacotes = useRecords("vendasVacinasPacotes");
   const producaoMedica = useRecords("producao");
   const profissionaisCad = useRecords("cadProfissionais");
+  const { data: historico, add: addHistorico, remove: removeHistorico, loading: loadingHistorico, reload: reloadHistorico } = useRecords("analisesGeradas");
 
   const [colaboradores, setColaboradores] = useState([]);
   const [cadastros, setCadastros] = useState([]);
   const [horas, setHoras] = useState([]);
   const [atestados, setAtestados] = useState([]);
+  const [producaoDiaria, setProducaoDiaria] = useState([]);
+  const [agendamentosRh, setAgendamentosRh] = useState([]);
   const [loadingRh, setLoadingRh] = useState(true);
 
   useEffect(() => {
     (async () => {
       setLoadingRh(true);
       try {
-        const [cs, cad, hr, at] = await Promise.all([
+        const [cs, cad, hr, at, pd, ag] = await Promise.all([
           sbRest(`perfis?unidade_id=eq.${unidadeId}&select=id,nome,papel`, { token: session.access_token }),
           sbRest(`cadastro_colaboradores?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
           sbRest(`rh_horas?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
           sbRest(`rh_atestados?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
+          sbRest(`producao_diaria_colaborador?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
+          sbRest(`agendamentos_pacientes?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
         ]);
-        setColaboradores(cs || []); setCadastros(cad || []); setHoras(hr || []); setAtestados(at || []);
+        setColaboradores(cs || []); setCadastros(cad || []); setHoras(hr || []); setAtestados(at || []); setProducaoDiaria(pd || []); setAgendamentosRh(ag || []);
       } catch (e) { /* segue com o que tiver */ }
       setLoadingRh(false);
     })();
@@ -4984,46 +4992,57 @@ function AnaliseFinanceiraModulo() {
 
   const loading = financeiro.loading || contas.loading || faturamento.loading || loadingRh || vacinas.loading || insumos.loading || vendasVacinas.loading || vendasPacotes.loading || producaoMedica.loading || profissionaisCad.loading;
 
-  const [mesSelecionado, setMesSelecionado] = useState(todayISO().slice(0, 7));
+  // --- período customizável (De/Até), com atalhos de mês ---
   const hoje = todayISO();
-  const mesAtualKey = mesSelecionado;
-  const dataMesAnterior = new Date(mesAtualKey + "-01T00:00:00"); dataMesAnterior.setMonth(dataMesAnterior.getMonth() - 1);
-  const mesAnteriorKey = dataMesAnterior.toISOString().slice(0, 7);
-  const ehMesAtualDeVerdade = mesAtualKey === hoje.slice(0, 7);
-  const diaDoMes = ehMesAtualDeVerdade ? Number(hoje.slice(8, 10)) : new Date(Number(mesAtualKey.slice(0, 4)), Number(mesAtualKey.slice(5, 7)), 0).getDate();
-  const diasNoMes = new Date(Number(mesAtualKey.slice(0, 4)), Number(mesAtualKey.slice(5, 7)), 0).getDate();
-  const labelMes = new Date(mesAtualKey + "-02T00:00:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const [dataInicio, setDataInicio] = useState(hoje.slice(0, 7) + "-01");
+  const [dataFim, setDataFim] = useState(hoje);
+  const atalhoMes = (offset) => {
+    const d = new Date(hoje + "T00:00:00"); d.setDate(1); d.setMonth(d.getMonth() + offset);
+    const inicio = d.toISOString().slice(0, 10);
+    const fimD = new Date(d); fimD.setMonth(fimD.getMonth() + 1); fimD.setDate(0);
+    const fim = offset === 0 ? hoje : fimD.toISOString().slice(0, 10);
+    setDataInicio(inicio); setDataFim(fim);
+  };
+  const labelPeriodo = `${fmtDate(dataInicio)} a ${fmtDate(dataFim)}`;
+  const noPeriodo = (data) => data && data >= dataInicio && data <= dataFim;
 
-  const somaPeriodo = (tipo, mesKey) => financeiro.data.filter((r) => r.tipo === tipo && monthKey(r.data) === mesKey).reduce((s, r) => s + Number(r.valor), 0);
-  const entradasMes = somaPeriodo("entrada", mesAtualKey), saidasMes = somaPeriodo("saida", mesAtualKey);
-  const entradasMesAnterior = somaPeriodo("entrada", mesAnteriorKey), saidasMesAnterior = somaPeriodo("saida", mesAnteriorKey);
+  // período anterior de mesmo tamanho, pra comparação
+  const duracaoDias = Math.max(Math.round((new Date(dataFim) - new Date(dataInicio)) / 86400000) + 1, 1);
+  const inicioAnteriorDt = new Date(dataInicio + "T00:00:00"); inicioAnteriorDt.setDate(inicioAnteriorDt.getDate() - duracaoDias);
+  const fimAnteriorDt = new Date(dataInicio + "T00:00:00"); fimAnteriorDt.setDate(fimAnteriorDt.getDate() - 1);
+  const dataInicioAnterior = inicioAnteriorDt.toISOString().slice(0, 10), dataFimAnterior = fimAnteriorDt.toISOString().slice(0, 10);
+  const noPeriodoAnterior = (data) => data && data >= dataInicioAnterior && data <= dataFimAnterior;
+
+  const somaPeriodo = (tipo, filtro) => financeiro.data.filter((r) => r.tipo === tipo && filtro(r.data)).reduce((s, r) => s + Number(r.valor), 0);
+  const entradasMes = somaPeriodo("entrada", noPeriodo), saidasMes = somaPeriodo("saida", noPeriodo);
+  const entradasMesAnterior = somaPeriodo("entrada", noPeriodoAnterior), saidasMesAnterior = somaPeriodo("saida", noPeriodoAnterior);
   const margemMes = entradasMes ? ((entradasMes - saidasMes) / entradasMes) * 100 : null;
 
-  const porLinhaReceita = (mesKey) => { const map = {}; financeiro.data.filter((r) => r.tipo === "entrada" && monthKey(r.data) === mesKey).forEach((r) => { map[r.linha] = (map[r.linha] || 0) + Number(r.valor); }); return map; };
-  const receitaAtual = porLinhaReceita(mesAtualKey), receitaAnterior = porLinhaReceita(mesAnteriorKey);
-  const porLinhaDespesa = (mesKey) => { const map = {}; financeiro.data.filter((r) => r.tipo === "saida" && monthKey(r.data) === mesKey).forEach((r) => { map[r.linha] = (map[r.linha] || 0) + Number(r.valor); }); return map; };
-  const despesaAtual = porLinhaDespesa(mesAtualKey);
+  const porLinhaReceita = (filtro) => { const map = {}; financeiro.data.filter((r) => r.tipo === "entrada" && filtro(r.data)).forEach((r) => { map[r.linha] = (map[r.linha] || 0) + Number(r.valor); }); return map; };
+  const receitaAtual = porLinhaReceita(noPeriodo), receitaAnterior = porLinhaReceita(noPeriodoAnterior);
+  const porLinhaDespesa = (filtro) => { const map = {}; financeiro.data.filter((r) => r.tipo === "saida" && filtro(r.data)).forEach((r) => { map[r.linha] = (map[r.linha] || 0) + Number(r.valor); }); return map; };
+  const despesaAtual = porLinhaDespesa(noPeriodo);
   const maiorDespesa = Object.entries(despesaAtual).sort((a, b) => b[1] - a[1])[0];
 
   const insights = [];
 
   // --- Financeiro ---
   if (entradasMes > 0) {
-    if (margemMes !== null && margemMes < 10) insights.push({ area: "Financeiro", tone: "red", texto: `Margem líquida de ${fmtPct(margemMes)} em ${labelMes} — as despesas estão consumindo quase toda a receita. Vale revisar custos ou reforçar o preço/volume de atendimento.` });
-    else if (margemMes !== null && margemMes < 20) insights.push({ area: "Financeiro", tone: "amber", texto: `Margem líquida de ${fmtPct(margemMes)} em ${labelMes} — dá pra melhorar, mas não é crítico.` });
-    else if (margemMes !== null) insights.push({ area: "Financeiro", tone: "green", texto: `Margem líquida saudável em ${labelMes}: ${fmtPct(margemMes)}.` });
+    if (margemMes !== null && margemMes < 10) insights.push({ area: "Financeiro", tone: "red", texto: `Margem líquida de ${fmtPct(margemMes)} em ${labelPeriodo} — as despesas estão consumindo quase toda a receita. Vale revisar custos ou reforçar o preço/volume de atendimento.` });
+    else if (margemMes !== null && margemMes < 20) insights.push({ area: "Financeiro", tone: "amber", texto: `Margem líquida de ${fmtPct(margemMes)} em ${labelPeriodo} — dá pra melhorar, mas não é crítico.` });
+    else if (margemMes !== null) insights.push({ area: "Financeiro", tone: "green", texto: `Margem líquida saudável em ${labelPeriodo}: ${fmtPct(margemMes)}.` });
   }
   if (entradasMesAnterior > 0) {
     const variacao = ((entradasMes - entradasMesAnterior) / entradasMesAnterior) * 100;
-    if (variacao <= -10) insights.push({ area: "Financeiro", tone: "red", texto: `A receita caiu ${fmtPct(Math.abs(variacao))} em relação ao mês anterior (${fmtBRL(entradasMesAnterior)} → ${fmtBRL(entradasMes)}).` });
-    else if (variacao >= 10) insights.push({ area: "Financeiro", tone: "green", texto: `A receita cresceu ${fmtPct(variacao)} em relação ao mês anterior.` });
+    if (variacao <= -10) insights.push({ area: "Financeiro", tone: "red", texto: `A receita caiu ${fmtPct(Math.abs(variacao))} em relação ao período anterior de mesmo tamanho (${fmtBRL(entradasMesAnterior)} → ${fmtBRL(entradasMes)}).` });
+    else if (variacao >= 10) insights.push({ area: "Financeiro", tone: "green", texto: `A receita cresceu ${fmtPct(variacao)} em relação ao período anterior de mesmo tamanho.` });
   }
-  if (maiorDespesa && saidasMes > 0) insights.push({ area: "Financeiro", tone: "amber", texto: `A maior despesa de ${labelMes} é "${maiorDespesa[0]}", representando ${fmtPct((maiorDespesa[1] / saidasMes) * 100)} de tudo que saiu.` });
+  if (maiorDespesa && saidasMes > 0) insights.push({ area: "Financeiro", tone: "amber", texto: `A maior despesa de ${labelPeriodo} é "${maiorDespesa[0]}", representando ${fmtPct((maiorDespesa[1] / saidasMes) * 100)} de tudo que saiu.` });
 
   // --- Onde aumentar o fluxo de entradas ---
   const linhasReceita = ["Receita de Convênios", "Receita Particular", "Receita de Vacinas", "Outras Receitas"];
   const quedas = linhasReceita.map((linha) => { const atual = receitaAtual[linha] || 0; const anterior = receitaAnterior[linha] || 0; const variacao = anterior ? ((atual - anterior) / anterior) * 100 : null; return { linha, atual, anterior, variacao }; }).filter((x) => x.variacao !== null).sort((a, b) => a.variacao - b.variacao);
-  if (quedas.length && quedas[0].variacao < -10) insights.push({ area: "Onde aumentar entradas", tone: "red", texto: `"${quedas[0].linha}" caiu ${fmtPct(Math.abs(quedas[0].variacao))} em relação ao mês anterior (${fmtBRL(quedas[0].anterior)} → ${fmtBRL(quedas[0].atual)}) — é aí que mais precisa de atenção pra recuperar volume.` });
+  if (quedas.length && quedas[0].variacao < -10) insights.push({ area: "Onde aumentar entradas", tone: "red", texto: `"${quedas[0].linha}" caiu ${fmtPct(Math.abs(quedas[0].variacao))} em relação ao período anterior (${fmtBRL(quedas[0].anterior)} → ${fmtBRL(quedas[0].atual)}) — é aí que mais precisa de atenção pra recuperar volume.` });
   const crescimentos = [...quedas].sort((a, b) => b.variacao - a.variacao);
   if (crescimentos.length && crescimentos[0].variacao > 10) insights.push({ area: "Onde aumentar entradas", tone: "green", texto: `"${crescimentos[0].linha}" está indo bem — cresceu ${fmtPct(crescimentos[0].variacao)}. Vale reforçar o que está funcionando aí.` });
 
@@ -5038,7 +5057,7 @@ function AnaliseFinanceiraModulo() {
   const valorEstoqueInsumos = insumos.data.reduce((s, i) => s + Number(i.qtd || 0) * Number(i.valorUnitario || 0), 0);
   insights.push({ area: "Estoque", tone: "amber", texto: `Você tem ${fmtBRL(valorEstoqueVacinas + valorEstoqueInsumos)} parados em estoque (${fmtBRL(valorEstoqueVacinas)} em vacinas + ${fmtBRL(valorEstoqueInsumos)} em insumos) — dinheiro que só volta quando vender ou usar.` });
   const vacinasEncalhadas = vacinas.data.filter((v) => Number(v.qtdEstoque) > 0 && Number(v.qtdVendidaMes || 0) === 0).sort((a, b) => (Number(b.qtdEstoque) * Number(b.valorCompra || 0)) - (Number(a.qtdEstoque) * Number(a.valorCompra || 0)));
-  if (vacinasEncalhadas.length) { const top = vacinasEncalhadas[0]; insights.push({ area: "Estoque", tone: "red", texto: `"${top.nome}" está com ${top.qtdEstoque} unidade(s) em estoque e nenhuma venda este mês (${fmtBRL(Number(top.qtdEstoque) * Number(top.valorCompra || 0))} parados) — considere reduzir a próxima compra ou criar uma ação pra girar esse produto.` }); }
+  if (vacinasEncalhadas.length) { const top = vacinasEncalhadas[0]; insights.push({ area: "Estoque", tone: "red", texto: `"${top.nome}" está com ${top.qtdEstoque} unidade(s) em estoque e nenhuma venda recente (${fmtBRL(Number(top.qtdEstoque) * Number(top.valorCompra || 0))} parados) — considere reduzir a próxima compra ou criar uma ação pra girar esse produto.` }); }
   const insumosExcesso = insumos.data.filter((i) => Number(i.qtdMinima) > 0 && Number(i.qtd) > Number(i.qtdMinima) * 3).sort((a, b) => (Number(b.qtd) * Number(b.valorUnitario || 0)) - (Number(a.qtd) * Number(a.valorUnitario || 0)));
   if (insumosExcesso.length) { const top = insumosExcesso[0]; insights.push({ area: "Estoque", tone: "amber", texto: `"${top.nome}" está com ${top.qtd} em estoque — bem acima do mínimo de ${top.qtdMinima}. Pode segurar a próxima compra desse item.` }); }
 
@@ -5046,60 +5065,99 @@ function AnaliseFinanceiraModulo() {
   const vacinasComMargem = vacinas.data.filter((v) => Number(v.valorVenda) > 0).map((v) => ({ ...v, margem: ((Number(v.valorVenda) - Number(v.valorCompra || 0)) / Number(v.valorVenda)) * 100 }));
   const vacinasComEstoque = vacinasComMargem.filter((v) => Number(v.qtdEstoque) > 0);
   const menosVendida = [...vacinasComEstoque].sort((a, b) => Number(a.qtdVendidaMes || 0) - Number(b.qtdVendidaMes || 0))[0];
-  if (menosVendida) insights.push({ area: "Vacinas", tone: "amber", texto: `"${menosVendida.nome}" é a que menos saiu este mês (${menosVendida.qtdVendidaMes || 0} venda(s), com ${menosVendida.qtdEstoque} em estoque) — precisa de mais divulgação ou indicação pelos profissionais.` });
+  if (menosVendida) insights.push({ area: "Vacinas", tone: "amber", texto: `"${menosVendida.nome}" é a que menos saiu recentemente (${menosVendida.qtdVendidaMes || 0} venda(s), com ${menosVendida.qtdEstoque} em estoque) — precisa de mais divulgação ou indicação pelos profissionais.` });
   const maisLucrativa = [...vacinasComMargem].sort((a, b) => b.margem - a.margem)[0];
   if (maisLucrativa) insights.push({ area: "Vacinas", tone: "green", texto: `"${maisLucrativa.nome}" é a mais lucrativa: margem de ${fmtPct(maisLucrativa.margem)} (compra ${fmtBRL(maisLucrativa.valorCompra)} → venda ${fmtBRL(maisLucrativa.valorVenda)}).` });
   const menorMargem = [...vacinasComMargem].sort((a, b) => a.margem - b.margem)[0];
   if (menorMargem && menorMargem.nome !== (maisLucrativa && maisLucrativa.nome)) insights.push({ area: "Vacinas", tone: menorMargem.margem < 15 ? "red" : "amber", texto: `"${menorMargem.nome}" tem a menor margem: ${fmtPct(menorMargem.margem)} — vale revisar o preço de venda ou negociar melhor o custo de compra.` });
 
-  // --- Pacote personalizado mais rentável do mês ---
-  const pacotesDoMes = vendasPacotes.data.filter((p) => monthKey(p.data) === mesAtualKey);
-  const pacotesComLucro = pacotesDoMes.map((p) => {
+  // --- Pacote personalizado mais rentável do período ---
+  const pacotesDoPeriodo = vendasPacotes.data.filter((p) => noPeriodo(p.data));
+  const pacotesComLucro = pacotesDoPeriodo.map((p) => {
     const custo = (p.itens || []).reduce((s, item) => { const vac = vacinas.data.find((v) => v.id === item.vacinaId); return s + (vac ? Number(item.quantidade) * Number(vac.valorCompra || 0) : 0); }, 0);
     const lucro = Number(p.valorTotal) - custo;
     return { ...p, custo, lucro, margem: p.valorTotal ? (lucro / Number(p.valorTotal)) * 100 : 0 };
   });
-  if (pacotesComLucro.length) { const top = [...pacotesComLucro].sort((a, b) => b.lucro - a.lucro)[0]; insights.push({ area: "Pacotes de Vacina", tone: "green", texto: `O pacote mais rentável de ${labelMes} foi o de "${top.paciente}" — lucro de ${fmtBRL(top.lucro)} (${fmtPct(top.margem)} de margem, sobre ${fmtBRL(top.valorTotal)}).` }); }
+  if (pacotesComLucro.length) { const top = [...pacotesComLucro].sort((a, b) => b.lucro - a.lucro)[0]; insights.push({ area: "Pacotes de Vacina", tone: "green", texto: `O pacote mais rentável do período foi o de "${top.paciente}" — lucro de ${fmtBRL(top.lucro)} (${fmtPct(top.margem)} de margem, sobre ${fmtBRL(top.valorTotal)}).` }); }
 
   // --- Médicos: quem não lançou atendimento / quem lançou mais ---
-  const producaoDoMes = producaoMedica.data.filter((p) => monthKey(p.data) === mesAtualKey);
+  const producaoDoPeriodo = producaoMedica.data.filter((p) => noPeriodo(p.data));
   const atendimentosPorProfissional = {};
-  producaoDoMes.forEach((p) => { atendimentosPorProfissional[p.profissional] = (atendimentosPorProfissional[p.profissional] || 0) + (Number(p.atendimentos) || 0); });
+  producaoDoPeriodo.forEach((p) => { atendimentosPorProfissional[p.profissional] = (atendimentosPorProfissional[p.profissional] || 0) + (Number(p.atendimentos) || 0); });
   const nomesProfissionaisCadastrados = profissionaisCad.data.map((p) => p.nome);
   const semLancamento = nomesProfissionaisCadastrados.filter((nome) => !atendimentosPorProfissional[nome]);
-  if (semLancamento.length) insights.push({ area: "Médicos", tone: "red", texto: `${semLancamento.length} profissional(is) sem nenhum atendimento lançado em ${labelMes}: ${semLancamento.join(", ")}. Confirme se é falta de lançamento ou de fato sem agenda.` });
+  if (semLancamento.length) insights.push({ area: "Médicos", tone: "red", texto: `${semLancamento.length} profissional(is) sem nenhum atendimento lançado em ${labelPeriodo}: ${semLancamento.join(", ")}. Confirme se é falta de lançamento ou de fato sem agenda.` });
   const rankingProfissionais = Object.entries(atendimentosPorProfissional).sort((a, b) => b[1] - a[1]);
-  if (rankingProfissionais.length) insights.push({ area: "Médicos", tone: "green", texto: `Quem mais atendeu em ${labelMes}: ${rankingProfissionais[0][0]}, com ${rankingProfissionais[0][1]} atendimento(s).` });
+  if (rankingProfissionais.length) insights.push({ area: "Médicos", tone: "green", texto: `Quem mais atendeu em ${labelPeriodo}: ${rankingProfissionais[0][0]}, com ${rankingProfissionais[0][1]} atendimento(s).` });
 
-  // --- Departamento Pessoal ---
-  const atestadosMes = atestados.filter((a) => a.data && a.data.slice(0, 7) === mesAtualKey);
-  if (atestadosMes.length >= 3) insights.push({ area: "Departamento Pessoal", tone: "amber", texto: `${atestadosMes.length} atestado(s) registrado(s) em ${labelMes} — vale acompanhar de perto se é algo pontual ou um padrão.` });
-  colaboradores.forEach((c) => {
+  // --- Departamento Pessoal (atestados, horas e produtividade) ---
+  const NOMES_FORA_DA_ANALISE = ["karen", "mary", "danielly"];
+  const colaboradoresConsiderados = colaboradores.filter((c) => !NOMES_FORA_DA_ANALISE.some((n) => normalizarTexto(c.nome).includes(n)));
+  const atestadosPeriodo = atestados.filter((a) => noPeriodo(a.data));
+  if (atestadosPeriodo.length >= 3) insights.push({ area: "Departamento Pessoal", tone: "amber", texto: `${atestadosPeriodo.length} atestado(s) registrado(s) em ${labelPeriodo} — vale acompanhar de perto se é algo pontual ou um padrão.` });
+
+  const produtividadePorColaborador = colaboradoresConsiderados.map((c) => {
+    const pdPeriodo = producaoDiaria.filter((p) => p.colaborador_id === c.id && noPeriodo(p.data));
+    const agPeriodo = agendamentosRh.filter((a) => a.colaborador_id === c.id && noPeriodo(a.data_agendamento));
+    const ligacoes = pdPeriodo.reduce((s, p) => s + (Number(p.ligacoes) || 0), 0);
+    const mensagens = pdPeriodo.reduce((s, p) => s + (Number(p.mensagens) || 0), 0);
+    const agendados = pdPeriodo.reduce((s, p) => s + (Number(p.agendados) || 0), 0) + agPeriodo.length;
+    const contatos = ligacoes + mensagens;
+    const taxa = contatos ? (agendados / contatos) * 100 : null;
+
+    const cadastro = cadastros.find((cd) => normalizarTexto(cd.nome) === normalizarTexto(c.nome));
+    const horasPeriodo = horas.filter((h) => h.colaborador_id === c.id && noPeriodo(h.data)).reduce((s, h) => s + (Number(h.horas_total) || 0), 0);
+
+    return { nome: c.nome, contatos, taxa, horasPeriodo, cargaHorariaMensal: cadastro ? Number(cadastro.cargaHorariaMensal) : null };
+  }).filter((c) => c.contatos >= 5); // só considera quem teve volume mínimo de contatos no período, pra não julgar quem quase não trabalhou com isso
+
+  const piorProdutividade = [...produtividadePorColaborador].filter((c) => c.taxa !== null).sort((a, b) => a.taxa - b.taxa)[0];
+  if (piorProdutividade && piorProdutividade.taxa < 20) insights.push({ area: "Departamento Pessoal", tone: "red", texto: `${piorProdutividade.nome} está com a menor taxa de produtividade em ${labelPeriodo}: ${fmtPct(piorProdutividade.taxa)} (${piorProdutividade.contatos} contatos, poucos viraram agendamento) — vale conversar e entender o que está travando.` });
+  const melhorProdutividade = [...produtividadePorColaborador].filter((c) => c.taxa !== null).sort((a, b) => b.taxa - a.taxa)[0];
+  if (melhorProdutividade && melhorProdutividade.taxa >= 40) insights.push({ area: "Departamento Pessoal", tone: "green", texto: `${melhorProdutividade.nome} está com a melhor taxa de produtividade em ${labelPeriodo}: ${fmtPct(melhorProdutividade.taxa)}.` });
+
+  colaboradoresConsiderados.forEach((c) => {
     const cadastro = cadastros.find((cd) => normalizarTexto(cd.nome) === normalizarTexto(c.nome));
     if (!cadastro || !cadastro.cargaHorariaMensal) return;
-    const horasMes = horas.filter((h) => h.colaborador_id === c.id && h.data && h.data.slice(0, 7) === mesAtualKey).reduce((s, h) => s + (Number(h.horas_total) || 0), 0);
-    const esperadoAteAgora = ehMesAtualDeVerdade ? Number(cadastro.cargaHorariaMensal) * (diaDoMes / diasNoMes) : Number(cadastro.cargaHorariaMensal);
-    if (esperadoAteAgora > 10 && horasMes < esperadoAteAgora * 0.6) insights.push({ area: "Departamento Pessoal", tone: "amber", texto: `${c.nome} está com poucas horas lançadas em ${labelMes} (${horasMes.toFixed(1)}h de ~${esperadoAteAgora.toFixed(0)}h esperadas) — confira se é falta de lançamento ou de fato menos horas trabalhadas.` });
+    const horasPeriodo = horas.filter((h) => h.colaborador_id === c.id && noPeriodo(h.data)).reduce((s, h) => s + (Number(h.horas_total) || 0), 0);
+    const cargaEsperadaProporcional = Number(cadastro.cargaHorariaMensal) * (duracaoDias / 30);
+    if (cargaEsperadaProporcional > 10 && horasPeriodo < cargaEsperadaProporcional * 0.6) insights.push({ area: "Departamento Pessoal", tone: "amber", texto: `${c.nome} está com poucas horas lançadas em ${labelPeriodo} (${horasPeriodo.toFixed(1)}h de ~${cargaEsperadaProporcional.toFixed(0)}h esperadas no período) — confira se é falta de lançamento ou de fato menos horas trabalhadas.` });
   });
 
   const ordem = { red: 0, amber: 1, green: 2 };
   insights.sort((a, b) => ordem[a.tone] - ordem[b.tone]);
-  const porArea = useMemo(() => { const map = {}; insights.forEach((i) => { if (!map[i.area]) map[i.area] = []; map[i.area].push(i); }); return map; }, [insights.length, mesAtualKey]);
+  const porArea = useMemo(() => { const map = {}; insights.forEach((i) => { if (!map[i.area]) map[i.area] = []; map[i.area].push(i); }); return map; }, [insights.length, dataInicio, dataFim]);
 
-  const linhasExport = insights.map((i) => ({ area: i.area, severidade: i.tone === "red" ? "Crítico" : i.tone === "amber" ? "Atenção" : "Positivo", diagnostico: i.texto }));
+  const totaisResumo = { entradas: entradasMes, saidas: saidasMes, margem: margemMes, criticos: insights.filter((i) => i.tone === "red").length, atencao: insights.filter((i) => i.tone === "amber").length, positivos: insights.filter((i) => i.tone === "green").length };
+
   const camposExport = [{ key: "area", label: "Área" }, { key: "severidade", label: "Severidade" }, { key: "diagnostico", label: "Diagnóstico" }];
-  const nomeArquivo = `analise-financeira-${mesAtualKey}`;
+  const paraExport = (lista) => lista.map((i) => ({ area: i.area, severidade: i.tone === "red" ? "Crítico" : i.tone === "amber" ? "Atenção" : "Positivo", diagnostico: i.texto }));
+  const nomeArquivo = `analise-financeira-${dataInicio}-a-${dataFim}`;
+
+  const [gerando, setGerando] = useState(false);
+  const gerarEsSalvar = async () => {
+    setGerando(true);
+    await addHistorico({ dataInicio, dataFim, geradoPorNome: perfil.nome, insights, totais: totaisResumo });
+    setGerando(false);
+  };
+
+  const [historicoAberto, setHistoricoAberto] = useState(null);
 
   return (
     <div>
-      <SectionHeader icon={Activity} title="Análise Financeira Inteligente" subtitle={`Diagnóstico automático de ${labelMes}, pensando como um gerente financeiro — com base nos dados já lançados no sistema`} tone="coral" />
+      <SectionHeader icon={Activity} title="Análise Financeira Inteligente" subtitle="Diagnóstico automático, pensando como um gerente financeiro — com base nos dados já lançados no sistema" tone="coral" />
       <Card className="mb-5">
-        <div className="flex flex-wrap gap-3 items-end justify-between">
-          <Field label="Mês da análise"><input type="month" className="rounded-lg px-3 py-2 text-sm outline-none w-44" style={inputStyle} value={mesSelecionado} onChange={(e) => setMesSelecionado(e.target.value)} /></Field>
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Escolha o período — de qual data a qual data</p>
+        <div className="flex flex-wrap gap-3 items-end mb-3">
+          <Field label="De"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} /></Field>
+          <Field label="Até"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={dataFim} onChange={(e) => setDataFim(e.target.value)} /></Field>
+          <Btn small variant="ghost" onClick={() => atalhoMes(0)}>Este mês</Btn>
+          <Btn small variant="ghost" onClick={() => atalhoMes(-1)}>Mês passado</Btn>
+        </div>
+        <div className="flex flex-wrap gap-2 items-center justify-between">
+          <p className="text-xs" style={{ color: T.muted }}>Essa análise é recalculada na hora, sempre que você muda o período — nada fica salvo até você clicar em "Gerar e salvar".</p>
           <div className="flex gap-2">
-            <Btn small variant="ghost" icon={Download} onClick={() => exportToCSV(camposExport, linhasExport, nomeArquivo)}>CSV</Btn>
-            <Btn small tone="teal" icon={Download} onClick={() => exportToExcel(camposExport, linhasExport, nomeArquivo)}>Excel</Btn>
-            <Btn small variant="ghost" icon={Printer} onClick={() => exportToPDF(camposExport, linhasExport, nomeArquivo)}>PDF</Btn>
+            <Btn disabled={gerando} onClick={gerarEsSalvar}>{gerando ? <Loader2 size={14} className="animate-spin" /> : null} Gerar e salvar no histórico</Btn>
           </div>
         </div>
       </Card>
@@ -5109,10 +5167,10 @@ function AnaliseFinanceiraModulo() {
             <KpiCard label="Pontos críticos" value={insights.filter((i) => i.tone === "red").length} tone={insights.some((i) => i.tone === "red") ? "red" : "green"} />
             <KpiCard label="Pontos de atenção" value={insights.filter((i) => i.tone === "amber").length} tone="amber" />
             <KpiCard label="Pontos positivos" value={insights.filter((i) => i.tone === "green").length} tone="green" />
-            <KpiCard label="Margem líquida do mês" value={margemMes !== null ? fmtPct(margemMes) : "—"} tone={margemMes !== null && margemMes < 10 ? "red" : margemMes !== null && margemMes < 20 ? "amber" : "green"} />
+            <KpiCard label="Margem líquida do período" value={margemMes !== null ? fmtPct(margemMes) : "—"} tone={margemMes !== null && margemMes < 10 ? "red" : margemMes !== null && margemMes < 20 ? "amber" : "green"} />
           </div>
           {insights.length === 0 ? (
-            <Card><div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhum ponto de atenção encontrado com os dados lançados em {labelMes}.</div></Card>
+            <Card><div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhum ponto de atenção encontrado com os dados lançados em {labelPeriodo}.</div></Card>
           ) : (
             Object.entries(porArea).map(([area, itens]) => (
               <Card key={area} className="mb-4">
@@ -5128,13 +5186,48 @@ function AnaliseFinanceiraModulo() {
               </Card>
             ))
           )}
-          <Card style={{ borderColor: `${T.muted}30` }}><p className="text-xs" style={{ color: T.muted }}>Esse diagnóstico é gerado por regras automáticas em cima dos seus dados reais (não é uma opinião externa) — quanto mais completo estiver o lançamento do mês escolhido, mais precisa fica a análise.</p></Card>
         </>
       )}
+
+      <Card className="mt-2">
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Histórico de análises geradas ({historico.length})</p>
+        {loadingHistorico ? <div className="text-center py-8 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> :
+          historico.length === 0 ? <div className="text-center py-8 text-sm" style={{ color: T.muted }}>Nenhuma análise salva ainda — escolha um período acima e clique em "Gerar e salvar no histórico".</div> : (
+          <div className="flex flex-col gap-2">
+            {historico.map((h) => (
+              <div key={h.id} className="rounded-xl px-4 py-3" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <span className="font-semibold text-sm" style={{ color: T.text }}>{fmtDate(h.dataInicio)} a {fmtDate(h.dataFim)}</span>
+                    <span className="block text-xs" style={{ color: T.muted }}>Gerada em {fmtDate(h.criadoEm ? h.criadoEm.slice(0, 10) : todayISO())} por {h.geradoPorNome || "—"} — {(h.insights || []).length} ponto(s)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Btn small variant="ghost" onClick={() => setHistoricoAberto(historicoAberto === h.id ? null : h.id)}>{historicoAberto === h.id ? "Fechar" : "Ver"}</Btn>
+                    <Btn small variant="ghost" icon={Download} onClick={() => exportToCSV(camposExport, paraExport(h.insights || []), `analise-financeira-${h.dataInicio}-a-${h.dataFim}`)}>CSV</Btn>
+                    <Btn small tone="teal" icon={Download} onClick={() => exportToExcel(camposExport, paraExport(h.insights || []), `analise-financeira-${h.dataInicio}-a-${h.dataFim}`)}>Excel</Btn>
+                    <Btn small variant="ghost" icon={Printer} onClick={() => exportToPDF(camposExport, paraExport(h.insights || []), `analise-financeira-${h.dataInicio}-a-${h.dataFim}`)}>PDF</Btn>
+                    <button onClick={() => { if (confirm("Remover essa análise do histórico?")) removeHistorico(h.id); }}><Trash2 size={13} style={{ color: T.red }} /></button>
+                  </div>
+                </div>
+                {historicoAberto === h.id && (
+                  <div className="mt-3 flex flex-col gap-1.5 pt-3" style={{ borderTop: `1px solid ${T.border}` }}>
+                    {(h.insights || []).map((i, idx) => (
+                      <div key={idx} className="flex items-start gap-2.5">
+                        <span className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: i.tone === "red" ? T.red : i.tone === "amber" ? T.amber : T.green }} />
+                        <span className="text-sm" style={{ color: T.text }}><b>{i.area}:</b> {i.texto}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+      <Card className="mt-5" style={{ borderColor: `${T.muted}30` }}><p className="text-xs" style={{ color: T.muted }}>Esse diagnóstico é gerado por regras automáticas em cima dos seus dados reais (não é uma opinião externa) — quanto mais completo estiver o lançamento do período escolhido, mais precisa fica a análise.</p></Card>
     </div>
   );
 }
-
 
 function EquipeModulo() {
   const { session } = useAuth();
