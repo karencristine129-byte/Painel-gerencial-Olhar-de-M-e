@@ -2115,7 +2115,11 @@ function ProducaoConvenioModulo({ convenioFixo, titulo, subtitulo, icon }) {
     const descontoValor = Number(r.descontoValor || 0);
     const desconto = descontoTipo === "Reais" ? descontoValor : descontoTipo === "Percentual" ? valorBruto * (descontoValor / 100) : 0;
     const receita = Math.max(valorBruto - desconto, 0);
-    return { convenio, receita, descontoTipo, descontoValor };
+    // custo = quanto dessa receita vai para o profissional, segundo o cadastro dele
+    const prof = profissionais.find((p) => p.nome === r.profissional);
+    let custo = 0, tipoRepasse = "Fixo", percentualRepasse = 0;
+    if (prof && prof.tipoSublocacao === "Percentual" && prof.percentualSublocacao) { custo = receita * (Number(prof.percentualSublocacao) / 100); tipoRepasse = "Percentual"; percentualRepasse = Number(prof.percentualSublocacao); }
+    return { convenio, receita, custo, tipoRepasse, percentualRepasse, descontoTipo, descontoValor };
   };
   const onAddComputado = (record) => add({ ...record, ...computar(record) });
   const onUpdateComputado = (id, record) => update(id, { ...record, ...computar(record) });
@@ -2128,17 +2132,20 @@ function ProducaoConvenioModulo({ convenioFixo, titulo, subtitulo, icon }) {
     { key: "atendimentos", label: "Atendimentos" },
     { key: "desconto", label: "Desconto", render: (r) => r.descontoTipo && r.descontoTipo !== "Nenhum" ? <span className="text-xs" style={{ color: T.muted }}>{r.descontoTipo === "Reais" ? fmtBRL(r.descontoValor) : fmtPct(r.descontoValor)}</span> : <span style={{ color: T.muted }}>—</span> },
     { key: "receita", label: "Receita (automática)", render: (r) => <span style={{ color: T.green, fontWeight: 600 }}>{fmtBRL(r.receita)}</span> },
+    { key: "custo", label: "Repasse ao profissional", render: (r) => r.custo ? <span style={{ color: T.amber }}>{fmtBRL(r.custo)}{r.percentualRepasse ? ` (${r.percentualRepasse}%)` : ""}</span> : <span className="text-xs" style={{ color: T.muted }}>{tipoRepasseDe(r.profissional) === "—" ? "cadastro sem % configurado" : "sem repasse por %"}</span> },
+    { key: "liquidoClinica", label: "Líquido p/ clínica", render: (r) => <span style={{ color: T.text, fontWeight: 700 }}>{fmtBRL(r.receita - (r.custo || 0))}</span> },
   ];
 
   // Resumo por profissional — junta automaticamente vários lançamentos do mesmo profissional
   const resumoPorProfissional = useMemo(() => {
     const map = {};
     data.forEach((r) => {
-      if (!map[r.profissional]) map[r.profissional] = { profissional: r.profissional, atendimentos: 0, receita: 0 };
+      if (!map[r.profissional]) map[r.profissional] = { profissional: r.profissional, atendimentos: 0, receita: 0, custo: 0 };
       map[r.profissional].atendimentos += Number(r.atendimentos);
       map[r.profissional].receita += Number(r.receita);
+      map[r.profissional].custo += Number(r.custo || 0);
     });
-    return Object.values(map).sort((a, b) => b.receita - a.receita);
+    return Object.values(map).map((r) => ({ ...r, liquido: r.receita - r.custo })).sort((a, b) => b.receita - a.receita);
   }, [data]);
 
   const totalReceita = data.reduce((s, r) => s + Number(r.receita), 0);
@@ -2160,9 +2167,9 @@ function ProducaoConvenioModulo({ convenioFixo, titulo, subtitulo, icon }) {
             <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Resumo por profissional (lançamentos do mesmo dia já somados)</p>
             <div className="overflow-x-auto -mx-5 px-5">
               <table className="w-full text-sm">
-                <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Profissional</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Atendimentos</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Receita</th></tr></thead>
-                <tbody>{resumoPorProfissional.map((c) => (<tr key={c.profissional} style={{ borderBottom: `1px solid ${T.border}` }}><td className="py-2 px-2 font-medium" style={{ color: T.text }}>{c.profissional}</td><td className="py-2 px-2">{fmtNum(c.atendimentos)}</td><td className="py-2 px-2" style={{ color: T.green, fontWeight: 600 }}>{fmtBRL(c.receita)}</td></tr>))}</tbody>
-                <tfoot><tr><td className="py-2 px-2 font-bold" style={{ color: T.text }}>Total</td><td className="py-2 px-2 font-bold">{fmtNum(totalAtendimentos)}</td><td className="py-2 px-2 font-bold" style={{ color: T.green }}>{fmtBRL(totalReceita)}</td></tr></tfoot>
+                <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Profissional</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Atendimentos</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Receita</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Repasse</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Líquido p/ clínica</th></tr></thead>
+                <tbody>{resumoPorProfissional.map((c) => (<tr key={c.profissional} style={{ borderBottom: `1px solid ${T.border}` }}><td className="py-2 px-2 font-medium" style={{ color: T.text }}>{c.profissional}</td><td className="py-2 px-2">{fmtNum(c.atendimentos)}</td><td className="py-2 px-2" style={{ color: T.green, fontWeight: 600 }}>{fmtBRL(c.receita)}</td><td className="py-2 px-2" style={{ color: T.amber }}>{fmtBRL(c.custo)}</td><td className="py-2 px-2 font-semibold" style={{ color: T.text }}>{fmtBRL(c.liquido)}</td></tr>))}</tbody>
+                <tfoot><tr><td className="py-2 px-2 font-bold" style={{ color: T.text }}>Total</td><td className="py-2 px-2 font-bold">{fmtNum(totalAtendimentos)}</td><td className="py-2 px-2 font-bold" style={{ color: T.green }}>{fmtBRL(totalReceita)}</td><td className="py-2 px-2 font-bold" style={{ color: T.amber }}>{fmtBRL(resumoPorProfissional.reduce((s, r) => s + r.custo, 0))}</td><td className="py-2 px-2 font-bold">{fmtBRL(resumoPorProfissional.reduce((s, r) => s + r.liquido, 0))}</td></tr></tfoot>
               </table>
             </div>
           </Card>
@@ -4843,6 +4850,103 @@ function AprovarContasModulo() {
 
 /* ============================== ANÁLISE FINANCEIRA INTELIGENTE ============================== */
 /* ============================== ANÁLISE FINANCEIRA INTELIGENTE ============================== */
+/* ============================== ANÁLISE DE REPASSE POR PROFISSIONAL ============================== */
+function AnaliseProfissionalModulo() {
+  const producaoMedica = useRecords("producao");
+  const profissionaisCad = useRecords("cadProfissionais");
+  const loading = producaoMedica.loading || profissionaisCad.loading;
+  const [mesSelecionado, setMesSelecionado] = useState(todayISO().slice(0, 7));
+  const labelMes = new Date(mesSelecionado + "-02T00:00:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+
+  const linhas = profissionaisCad.data.map((prof) => {
+    const producaoDoMes = producaoMedica.data.filter((p) => p.profissional === prof.nome && monthKey(p.data) === mesSelecionado);
+    const receitaGerada = producaoDoMes.reduce((s, p) => s + Number(p.receita || 0), 0);
+    const atendimentos = producaoDoMes.reduce((s, p) => s + Number(p.atendimentos || 0), 0);
+
+    let modelo = "Não configurado", repasseMedico = 0, liquidoClinica = 0, explicacao = "Cadastre a sublocação desse profissional (Cadastros → Profissionais) para calcular automaticamente.";
+
+    if (prof.tipoSublocacao === "Percentual" && prof.percentualSublocacao) {
+      modelo = "Percentual (recebemos %)";
+      repasseMedico = receitaGerada * (Number(prof.percentualSublocacao) / 100);
+      liquidoClinica = receitaGerada - repasseMedico;
+      explicacao = `Gerou ${fmtBRL(receitaGerada)} em ${atendimentos} atendimento(s). Repassamos ${prof.percentualSublocacao}% (${fmtBRL(repasseMedico)}) ao profissional — ficou ${fmtBRL(liquidoClinica)} líquido para a clínica.`;
+    } else if (prof.tipoSublocacao === "Valor fixo sem abatimento" || prof.tipoSublocacao === "Valor fixo com abatimento") {
+      const valorFixo = Number(prof.valorFixoSublocacao || prof.valorSublocacaoAtual || 0);
+      const abatimento = prof.tipoSublocacao === "Valor fixo com abatimento" ? Number(prof.valorAbatimento || 0) : 0;
+      modelo = prof.tipoSublocacao === "Valor fixo com abatimento" ? "Valor fixo com abatimento" : "Valor fixo (sublocação)";
+      liquidoClinica = valorFixo - abatimento;
+      repasseMedico = receitaGerada - liquidoClinica; // o que sobrou pro profissional depois de pagar a sublocação
+      explicacao = `Paga ${fmtBRL(valorFixo)} fixo de sublocação${abatimento ? ` (com abatimento de ${fmtBRL(abatimento)})` : ""}. Gerou ${fmtBRL(receitaGerada)} em ${atendimentos} atendimento(s) — ficou ${fmtBRL(liquidoClinica)} líquido para a clínica${repasseMedico > 0 ? ` e ${fmtBRL(repasseMedico)} para o profissional` : ""}.`;
+    } else if (receitaGerada > 0) {
+      explicacao = `Gerou ${fmtBRL(receitaGerada)} em ${atendimentos} atendimento(s), mas o cadastro não tem sublocação configurada — não dá pra calcular o repasse automaticamente ainda.`;
+    }
+
+    return { id: prof.id, nome: prof.nome, especialidade: prof.especialidade, modelo, receitaGerada, atendimentos, repasseMedico, liquidoClinica, explicacao, configurado: modelo !== "Não configurado" };
+  });
+
+  const comMovimento = linhas.filter((l) => l.atendimentos > 0);
+  const semConfiguracao = comMovimento.filter((l) => !l.configurado);
+  const totalReceita = comMovimento.reduce((s, l) => s + l.receitaGerada, 0);
+  const totalLiquidoClinica = comMovimento.reduce((s, l) => s + l.liquidoClinica, 0);
+  const totalRepasse = comMovimento.reduce((s, l) => s + l.repasseMedico, 0);
+  const maisRentavel = [...comMovimento].sort((a, b) => b.liquidoClinica - a.liquidoClinica)[0];
+
+  const camposExport = [
+    { key: "nome", label: "Profissional" }, { key: "especialidade", label: "Especialidade" }, { key: "modelo", label: "Modelo de sublocação" },
+    { key: "atendimentos", label: "Atendimentos" }, { key: "receitaGerada", label: "Receita gerada" }, { key: "repasseMedico", label: "Repasse ao profissional" }, { key: "liquidoClinica", label: "Líquido para a clínica" },
+  ];
+  const nomeArquivo = `repasse-por-profissional-${mesSelecionado}`;
+
+  return (
+    <div>
+      <SectionHeader icon={Stethoscope} title="Análise de Repasse por Profissional" subtitle={`${labelMes} — quanto cada médico(a) gerou, quanto ficou para ele(a) e quanto ficou líquido para a clínica`} tone="coral" />
+      <Card className="mb-5">
+        <div className="flex flex-wrap gap-3 items-end justify-between">
+          <Field label="Mês da análise"><input type="month" className="rounded-lg px-3 py-2 text-sm outline-none w-44" style={inputStyle} value={mesSelecionado} onChange={(e) => setMesSelecionado(e.target.value)} /></Field>
+          <div className="flex gap-2">
+            <Btn small variant="ghost" icon={Download} onClick={() => exportToCSV(camposExport, comMovimento, nomeArquivo)}>CSV</Btn>
+            <Btn small tone="teal" icon={Download} onClick={() => exportToExcel(camposExport, comMovimento, nomeArquivo)}>Excel</Btn>
+            <Btn small variant="ghost" icon={Printer} onClick={() => exportToPDF(camposExport, comMovimento, nomeArquivo)}>PDF</Btn>
+          </div>
+        </div>
+      </Card>
+      {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> : (
+        <>
+          <div className="grid gap-3 mb-6" style={{ gridTemplateColumns: "repeat(4, minmax(0,1fr))" }}>
+            <KpiCard label="Receita total gerada" value={fmtBRL(totalReceita)} tone="green" />
+            <KpiCard label="Repassado aos profissionais" value={fmtBRL(totalRepasse)} tone="amber" />
+            <KpiCard label="Líquido para a clínica" value={fmtBRL(totalLiquidoClinica)} tone="coral" />
+            <KpiCard label="Mais rentável p/ clínica" value={maisRentavel ? maisRentavel.nome : "—"} />
+          </div>
+          {semConfiguracao.length > 0 && (
+            <Card className="mb-5" style={{ borderColor: `${T.amber}55`, background: `${T.amber}10` }}>
+              <div className="flex items-center gap-2 mb-2"><AlertTriangle size={15} style={{ color: T.amber }} /><span className="font-semibold text-sm" style={{ color: T.text }}>{semConfiguracao.length} profissional(is) com atendimento lançado mas sem sublocação configurada</span></div>
+              <p className="text-xs" style={{ color: T.muted }}>{semConfiguracao.map((l) => l.nome).join(", ")} — edite o cadastro deles em Cadastros → Profissionais (campos "Sublocação") pra essa análise calcular certo.</p>
+            </Card>
+          )}
+          <Card>
+            <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Detalhamento por profissional</p>
+            {comMovimento.length === 0 ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhum atendimento lançado em {labelMes}.</div> : (
+              <div className="flex flex-col gap-3">
+                {[...comMovimento].sort((a, b) => b.receitaGerada - a.receitaGerada).map((l) => (
+                  <div key={l.id} className="rounded-xl px-4 py-3" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}>
+                    <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+                      <span className="font-semibold text-sm" style={{ color: T.text }}>{l.nome} <span className="text-xs font-normal" style={{ color: T.muted }}>— {l.especialidade || "sem especialidade"}</span></span>
+                      <Badge tone={l.configurado ? "teal" : "amber"}>{l.modelo}</Badge>
+                    </div>
+                    <p className="text-sm mb-1" style={{ color: T.text }}>{l.explicacao}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+          <Card className="mt-5" style={{ borderColor: `${T.muted}30` }}><p className="text-xs" style={{ color: T.muted }}>O cálculo usa a configuração de "Sublocação" do cadastro de cada profissional. Modelo "Percentual" = a clínica repassa X% da receita gerada ao profissional. Modelo "Valor fixo" = o profissional paga um valor fixo de sublocação, independente do volume atendido.</p></Card>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AnaliseFinanceiraModulo() {
   const { session } = useAuth();
   const { unidadeId } = useUnidade();
@@ -5368,7 +5472,7 @@ function RelatoriosModulo() {
 
 const ALL_MENU = [
   { group: "Visão", items: [{ key: "visao", label: "Dashboard", icon: LayoutDashboard, tone: "coral" }, { key: "painelCritico", label: "Painel Crítico", icon: AlertTriangle, tone: "coral" }, { key: "analiseFinanceira", label: "Análise Financeira Inteligente", icon: Activity, tone: "coral" }] },
-  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "relatorioCaixa", label: "Relatório de Caixa", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "protocoloGuias", label: "Protocolo de Guias", icon: ClipboardList, tone: "coral" }, { key: "protocoloBradesco", label: "Protocolo Bradesco", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }, { key: "sublocacao", label: "Receita de Sublocação", icon: Building2, tone: "coral" }, { key: "importarOfx", label: "Importar Extrato (OFX)", icon: Upload, tone: "coral" }] },
+  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "relatorioCaixa", label: "Relatório de Caixa", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "protocoloGuias", label: "Protocolo de Guias", icon: ClipboardList, tone: "coral" }, { key: "protocoloBradesco", label: "Protocolo Bradesco", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }, { key: "analiseProfissional", label: "Análise de Repasse por Profissional", icon: Stethoscope, tone: "coral" }, { key: "sublocacao", label: "Receita de Sublocação", icon: Building2, tone: "coral" }, { key: "importarOfx", label: "Importar Extrato (OFX)", icon: Upload, tone: "coral" }] },
   { group: "Atendimento", items: [{ key: "producaoParticulares", label: "Produção — Particulares", icon: Stethoscope, tone: "teal" }, { key: "producaoConveniosGeral", label: "Produção — Convênios", icon: Stethoscope, tone: "teal" }, { key: "producaoBradescoClinica", label: "Produção — Bradesco Clínica", icon: Stethoscope, tone: "teal" }, { key: "producaoAuroraSaude", label: "Produção — Aurora Saúde", icon: Stethoscope, tone: "teal" }, { key: "producaoIpsm", label: "Produção — IPSM", icon: Stethoscope, tone: "teal" }, { key: "producaoResumoGeral", label: "Produção — Valores Gerais", icon: Stethoscope, tone: "coral" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
   { group: "Setor de Vacinas", items: [{ key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "entradaEstoqueVacinas", label: "Entrada de Estoque", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "pacoteVacinas", label: "Pacote Personalizado", icon: Syringe, tone: "coral" }] },
   { group: "Estoque", items: [{ key: "insumos", label: "Insumos", icon: Package, tone: "teal" }, { key: "entradaEstoqueInsumos", label: "Entrada de Insumos", icon: Package, tone: "teal" }] },
@@ -5380,7 +5484,7 @@ const ALL_MENU = [
   { group: "Documentos & Chat", items: [{ key: "bancoDocumentos", label: "Banco de Documentos", icon: FileText, tone: "coral" }, { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas (E-mail/WhatsApp)", icon: Bell, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "aprovarContas", "agendamentosAdmin", "avaliacaoColaborador", "analiseFinanceira", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadContatos", "cadTestesGeneticos", "cadBancos", "investimentos", "cadCategorias", "cadTiposPagamento", "cadSaldoCaixa", "plantaoValores", "plantaoResumo", "producaoParticulares", "producaoConveniosGeral", "producaoBradescoClinica", "producaoAuroraSaude", "producaoIpsm", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
+const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "analiseProfissional", "sublocacao", "equipe", "aprovarContas", "agendamentosAdmin", "avaliacaoColaborador", "analiseFinanceira", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadContatos", "cadTestesGeneticos", "cadBancos", "investimentos", "cadCategorias", "cadTiposPagamento", "cadSaldoCaixa", "plantaoValores", "plantaoResumo", "producaoParticulares", "producaoConveniosGeral", "producaoBradescoClinica", "producaoAuroraSaude", "producaoIpsm", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
 const ADMIN_ONLY_TABS = ["avaliacaoColaborador", "aprovarContas", "analiseFinanceira"];
 const PRODUCAO_TABS = ["producaoParticulares", "producaoConveniosGeral", "producaoBradescoClinica", "producaoAuroraSaude", "producaoIpsm"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
@@ -5506,6 +5610,7 @@ function AppInner() {
       case "protocoloGuias": return <ProtocoloGuiasModulo />;
       case "protocoloBradesco": return <ProtocoloBradescoModulo />;
       case "repasse": return <RepasseMedicoModulo />;
+      case "analiseProfissional": return <AnaliseProfissionalModulo />;
       case "sublocacao": return <SublocacaoModulo />;
       case "importarOfx": return <ImportarOFXModulo />;
       case "equipe": return <EquipeModulo />;
