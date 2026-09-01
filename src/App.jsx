@@ -2496,6 +2496,15 @@ function FaturamentoModulo() {
   const totalFaturado = dataFiltrada.filter((r) => r.status === "Faturada").reduce((s, r) => s + r.valor, 0);
   const porConvenio = useMemo(() => { const map = {}; dataFiltrada.forEach((r) => { map[r.convenio] = (map[r.convenio] || 0) + r.valor; }); return Object.entries(map).map(([convenio, valor]) => ({ convenio, valor })).sort((a, b) => b.valor - a.valor); }, [dataFiltrada]);
 
+  const hoje = todayISO();
+  const em7 = new Date(); em7.setDate(em7.getDate() + 7); const em7ISO = em7.toISOString().slice(0, 10);
+  const fimDoMes = hoje.slice(0, 7) + "-31";
+  const aReceberHoje = pendentes.filter((r) => r.dataProtocolo === hoje);
+  const aReceberAtrasadas = pendentes.filter((r) => r.dataProtocolo < hoje);
+  const aReceberEm7Dias = pendentes.filter((r) => r.dataProtocolo > hoje && r.dataProtocolo <= em7ISO);
+  const aReceberNoMes = pendentes.filter((r) => r.dataProtocolo > em7ISO && r.dataProtocolo <= fimDoMes);
+  const somaVal = (arr) => arr.reduce((s, r) => s + Number(r.valor), 0);
+
   return (
     <>
       <Card className="mb-5">
@@ -2505,6 +2514,16 @@ function FaturamentoModulo() {
           <Field label="De"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={filtroDe} onChange={(e) => { setFiltroDe(e.target.value); setFiltroMes(""); }} /></Field>
           <Field label="Até"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={filtroAte} onChange={(e) => { setFiltroAte(e.target.value); setFiltroMes(""); }} /></Field>
           {(filtroMes || filtroDe || filtroAte) && <Btn small variant="ghost" onClick={() => { setFiltroMes(""); setFiltroDe(""); setFiltroAte(""); }}>Limpar filtro</Btn>}
+        </div>
+      </Card>
+      <Card className="mb-5">
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>A Receber — por prazo</p>
+        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(5, minmax(0,1fr))" }}>
+          <div className="rounded-xl px-3 py-2.5" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}><div className="text-[10px] uppercase" style={{ color: T.muted }}>Hoje</div><div className="font-bold" style={{ color: T.text }}>{aReceberHoje.length} — {fmtBRL(somaVal(aReceberHoje))}</div></div>
+          <div className="rounded-xl px-3 py-2.5" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}><div className="text-[10px] uppercase" style={{ color: T.muted }}>Atrasadas</div><div className="font-bold" style={{ color: aReceberAtrasadas.length ? T.red : T.text }}>{aReceberAtrasadas.length} — {fmtBRL(somaVal(aReceberAtrasadas))}</div></div>
+          <div className="rounded-xl px-3 py-2.5" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}><div className="text-[10px] uppercase" style={{ color: T.muted }}>Em 7 dias</div><div className="font-bold" style={{ color: T.text }}>{aReceberEm7Dias.length} — {fmtBRL(somaVal(aReceberEm7Dias))}</div></div>
+          <div className="rounded-xl px-3 py-2.5" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}><div className="text-[10px] uppercase" style={{ color: T.muted }}>No mês</div><div className="font-bold" style={{ color: T.text }}>{aReceberNoMes.length} — {fmtBRL(somaVal(aReceberNoMes))}</div></div>
+          <div className="rounded-xl px-3 py-2.5" style={{ background: T.ink }}><div className="text-[10px] uppercase" style={{ color: "#ccc" }}>Total</div><div className="font-bold" style={{ color: "#fff" }}>{pendentes.length} — {fmtBRL(somaVal(pendentes))}</div></div>
         </div>
       </Card>
     <ModuleShell icon={ClipboardList} title="Contas a Receber" subtitle="Mostrando só o que ainda falta receber — as pagas ficam completas em Protocolo Bradesco" tone="coral" loading={loading} erro={erro}
