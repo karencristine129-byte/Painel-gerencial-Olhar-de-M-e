@@ -5869,7 +5869,7 @@ function AppInner() {
           <div className="hidden md:flex items-center justify-between px-8 py-4" style={{ background: T.card, borderBottom: `1px solid ${T.border}` }}>
             <h1 className="text-lg font-bold" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{activeMeta.label}</h1>
             <div className="flex items-center gap-4">
-              {(isAdmin || (customKeys && customKeys.includes("producaoConveniosGeral"))) && <Btn tone="coral" icon={Plus} onClick={() => setTab("producaoConveniosGeral")}>Novo Atendimento</Btn>}
+              <Btn tone="coral" icon={FileText} onClick={() => setTab("meurh")}>Meu RH</Btn>
               <div className="flex items-center gap-3 pl-2" style={{ borderLeft: `1px solid ${T.border}` }}>
                 <NotificationsMenu setTab={setTab} />
                 <button title="Configurações" onClick={() => setTab("unidades")}><Settings size={18} style={{ color: T.muted }} /></button>
