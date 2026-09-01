@@ -3472,7 +3472,7 @@ function MeusHorarios() {
   };
   const hoje = todayISO();
   const registroHoje = data.find((r) => r.data === hoje);
-  const proximaAcao = !registroHoje ? "entrada" : !registroHoje.hora_saida_almoco ? "saida_almoco" : !registroHoje.hora_volta_almoco ? "volta_almoco" : !registroHoje.hora_saida ? "saida" : "completo";
+  const proximaAcao = !registroHoje ? "entrada" : registroHoje.hora_saida ? "completo" : !registroHoje.hora_saida_almoco ? "saida_almoco" : !registroHoje.hora_volta_almoco ? "volta_almoco" : "saida";
   const LABEL_ACAO = { entrada: "Bater Entrada", saida_almoco: "Bater Saída (Almoço)", volta_almoco: "Bater Volta do Almoço", saida: "Bater Saída", completo: "Ponto do dia completo ✓" };
   const baterPonto = async () => {
     setBusyPonto(true);
@@ -3481,6 +3481,13 @@ function MeusHorarios() {
     else if (proximaAcao === "saida_almoco") await update(registroHoje.id, { hora_saida_almoco: agora });
     else if (proximaAcao === "volta_almoco") await update(registroHoje.id, { hora_volta_almoco: agora });
     else if (proximaAcao === "saida") { const horas = calcHoras(registroHoje.hora_entrada, agora, registroHoje.hora_saida_almoco, registroHoje.hora_volta_almoco); await update(registroHoje.id, { hora_saida: agora, horas_total: horas }); }
+    setBusyPonto(false);
+  };
+  const baterPontoSemAlmoco = async () => {
+    setBusyPonto(true);
+    const agora = new Date().toTimeString().slice(0, 5);
+    const horas = calcHoras(registroHoje.hora_entrada, agora);
+    await update(registroHoje.id, { hora_saida: agora, horas_total: horas });
     setBusyPonto(false);
   };
   const mesAtual = todayISO().slice(0, 7);
@@ -3502,6 +3509,11 @@ function MeusHorarios() {
         <button disabled={busyPonto || proximaAcao === "completo"} onClick={baterPonto} className="px-6 py-3 rounded-xl font-bold text-sm transition-transform hover:-translate-y-0.5" style={{ background: proximaAcao === "completo" ? "#FFFFFF30" : "#fff", color: proximaAcao === "completo" ? "#fff" : T.tealDeep, opacity: busyPonto ? 0.7 : 1 }}>
           {busyPonto ? "Registrando…" : LABEL_ACAO[proximaAcao]}
         </button>
+        {proximaAcao === "saida_almoco" && (
+          <button disabled={busyPonto} onClick={baterPontoSemAlmoco} className="ml-3 px-6 py-3 rounded-xl font-semibold text-sm" style={{ background: "#FFFFFF25", color: "#fff", border: "1px solid #FFFFFF55", opacity: busyPonto ? 0.7 : 1 }}>
+            Bater Saída (sem almoço — fim do dia)
+          </button>
+        )}
       </Card>
       <Card className="mb-5">
       <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Corrigir ou lançar um dia manualmente</p>
