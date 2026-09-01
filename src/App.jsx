@@ -5378,7 +5378,7 @@ function AppInner() {
   const customKeys = perfil && Array.isArray(perfil.menu_customizado) && perfil.menu_customizado.length > 0 ? perfil.menu_customizado : null;
   const papelRestrito = perfil && RESTRICTED_MENUS[perfil.papel];
   const isRestrito = customKeys || papelRestrito;
-  const [tab, setTab] = useState(customKeys ? customKeys[0] : (papelRestrito ? "meurh" : "visao"));
+  const [tab, setTab] = useState(customKeys ? customKeys[0] : "meurh");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const canFinance = perfil && perfil.papel !== "operacional";
   const isAdmin = perfil && perfil.papel === "admin";
