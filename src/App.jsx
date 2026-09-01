@@ -5149,7 +5149,12 @@ function EquipeModulo() {
   const [agendamentos, setAgendamentos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(null);
-  const mesAtual = todayISO().slice(0, 7);
+  const [mesSelecionado, setMesSelecionado] = useState(todayISO().slice(0, 7));
+  const mesAtual = mesSelecionado;
+  const dataMesAnterior = new Date(mesAtual + "-01T00:00:00"); dataMesAnterior.setMonth(dataMesAnterior.getMonth() - 1);
+  const mesAnterior = dataMesAnterior.toISOString().slice(0, 7);
+  const labelMes = new Date(mesAtual + "-02T00:00:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const labelMesAnterior = new Date(mesAnterior + "-02T00:00:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
 
   useEffect(() => {
     (async () => {
@@ -5174,59 +5179,113 @@ function EquipeModulo() {
   const NOMES_FORA_DO_PAINEL = ["karen", "mary", "danielly"];
   const colaboradoresVisiveis = colaboradores.filter((c) => !NOMES_FORA_DO_PAINEL.some((n) => normalizarTexto(c.nome).includes(n)));
 
-  const linhas = colaboradoresVisiveis.map((c) => {
-    const pdMes = prod.filter((p) => p.colaborador_id === c.id && p.data.slice(0, 7) === mesAtual);
-    const hrMes = horas.filter((h) => h.colaborador_id === c.id && h.data.slice(0, 7) === mesAtual);
-    const atMes = atestados.filter((a) => a.colaborador_id === c.id && a.data.slice(0, 7) === mesAtual);
-    const pvMes = posVendaLig.filter((p) => p.colaborador_id === c.id && p.data.slice(0, 7) === mesAtual);
-    const pvpMes = posVendaPonto.filter((p) => p.colaborador_id === c.id && p.data.slice(0, 7) === mesAtual);
-    const agMes = agendamentos.filter((a) => a.colaborador_id === c.id && a.data_agendamento && a.data_agendamento.slice(0, 7) === mesAtual);
-    const agendamentosPlantao = agMes.filter((a) => a.plantao).length;
-    const agendamentosOutros = agMes.filter((a) => !a.plantao).length;
-    const pvLigacoes = pvMes.length, pvConvertidas = pvMes.filter((p) => p.convertida).length, pvAtendidas = pvMes.filter((p) => p.agendamento_feito).length;
-    const pvTaxaProdutividade = pvLigacoes ? (((pvConvertidas / pvLigacoes) + (pvAtendidas / pvLigacoes)) / 2) * 100 : null;
-    const ligacoesMes = pdMes.reduce((s, p) => s + p.ligacoes, 0);
-    const mensagensMes = pdMes.reduce((s, p) => s + p.mensagens, 0);
-    const agendadosMes = pdMes.reduce((s, p) => s + p.agendados, 0);
-    const contatosMes = ligacoesMes + mensagensMes;
-    const totalAgendamentos = agendadosMes + agendamentosPlantao + agendamentosOutros;
-    const taxaProdutividadeGeral = contatosMes ? (totalAgendamentos / contatosMes) * 100 : null;
-    // dias em que a pessoa preencheu tanto produtividade quanto o ponto do dia — mede constância/completude
-    const diasComProducao = new Set(pdMes.map((p) => p.data));
-    const diasComPonto = new Set(hrMes.filter((h) => h.horas_total).map((h) => h.data));
-    const diasCompletos = [...diasComProducao].filter((d) => diasComPonto.has(d)).length;
-    return {
-      ...c,
-      ligacoes: ligacoesMes,
-      mensagens: mensagensMes,
-      agendados: agendadosMes,
-      agendamentosPlantao, agendamentosOutros,
-      taxaProdutividadeGeral,
-      diasCompletos,
-      agendadosVacinas: pdMes.reduce((s, p) => s + (Number(p.pacientes_agendados_vacinas) || 0), 0),
-      avaliacoesGoogle: pdMes.reduce((s, p) => s + (Number(p.avaliacoes_google) || 0), 0),
-      novosRecepcao: pdMes.reduce((s, p) => s + (Number(p.novos_pacientes_recepcao) || 0), 0),
-      novosVacinas: pdMes.reduce((s, p) => s + (Number(p.novos_pacientes_vacinas) || 0), 0),
-      horasTotal: hrMes.reduce((s, h) => s + (Number(h.horas_total) || 0), 0),
-      atestados: atMes.length,
-      pvLigacoes, pvConvertidas, pvAtendidas, pvTaxaProdutividade,
-      pvHoras: pvpMes.reduce((s, p) => s + (Number(p.horas_total) || 0), 0),
-    };
-  });
+  const calcularLinhasDoMes = (mesRef) => {
+    // dias esperados = qualquer dia em que ALGUÉM da equipe lançou produtividade ou ponto nesse mês
+    const diasEsperadosGeral = new Set([
+      ...prod.filter((p) => p.data.slice(0, 7) === mesRef).map((p) => p.data),
+      ...horas.filter((h) => h.data.slice(0, 7) === mesRef && h.horas_total).map((h) => h.data),
+    ]);
+    return colaboradoresVisiveis.map((c) => {
+      const pdMes = prod.filter((p) => p.colaborador_id === c.id && p.data.slice(0, 7) === mesRef);
+      const hrMes = horas.filter((h) => h.colaborador_id === c.id && h.data.slice(0, 7) === mesRef);
+      const atMes = atestados.filter((a) => a.colaborador_id === c.id && a.data.slice(0, 7) === mesRef);
+      const pvMes = posVendaLig.filter((p) => p.colaborador_id === c.id && p.data.slice(0, 7) === mesRef);
+      const pvpMes = posVendaPonto.filter((p) => p.colaborador_id === c.id && p.data.slice(0, 7) === mesRef);
+      const agMes = agendamentos.filter((a) => a.colaborador_id === c.id && a.data_agendamento && a.data_agendamento.slice(0, 7) === mesRef);
+      const agendamentosPlantao = agMes.filter((a) => a.plantao).length;
+      const agendamentosOutros = agMes.filter((a) => !a.plantao).length;
+      const pvLigacoes = pvMes.length, pvConvertidas = pvMes.filter((p) => p.convertida).length, pvAtendidas = pvMes.filter((p) => p.agendamento_feito).length;
+      const pvTaxaProdutividade = pvLigacoes ? (((pvConvertidas / pvLigacoes) + (pvAtendidas / pvLigacoes)) / 2) * 100 : null;
+      const ligacoesMes = pdMes.reduce((s, p) => s + p.ligacoes, 0);
+      const mensagensMes = pdMes.reduce((s, p) => s + p.mensagens, 0);
+      const agendadosMes = pdMes.reduce((s, p) => s + p.agendados, 0);
+      const contatosMes = ligacoesMes + mensagensMes;
+      const totalAgendamentos = agendadosMes + agendamentosPlantao + agendamentosOutros;
+      const taxaProdutividadeGeral = contatosMes ? (totalAgendamentos / contatosMes) * 100 : null;
+      // dias em que a pessoa preencheu tanto produtividade quanto o ponto do dia — mede constância/completude
+      const diasComProducao = new Set(pdMes.map((p) => p.data));
+      const diasComPonto = new Set(hrMes.filter((h) => h.horas_total).map((h) => h.data));
+      const diasCompletos = [...diasComProducao].filter((d) => diasComPonto.has(d)).length;
+      // dias esperados dessa pessoa = dias esperados da equipe, menos os dias em que ela tinha atestado (não conta contra ela)
+      const diasComAtestado = new Set(atMes.map((a) => a.data));
+      const diasEsperadosPessoa = [...diasEsperadosGeral].filter((d) => !diasComAtestado.has(d)).length;
+      const preencheuTudo = diasEsperadosPessoa > 0 && diasCompletos === diasEsperadosPessoa;
+      return {
+        ...c,
+        ligacoes: ligacoesMes,
+        mensagens: mensagensMes,
+        agendados: agendadosMes,
+        agendamentosPlantao, agendamentosOutros,
+        taxaProdutividadeGeral,
+        diasCompletos, diasEsperadosPessoa, preencheuTudo,
+        agendadosVacinas: pdMes.reduce((s, p) => s + (Number(p.pacientes_agendados_vacinas) || 0), 0),
+        avaliacoesGoogle: pdMes.reduce((s, p) => s + (Number(p.avaliacoes_google) || 0), 0),
+        novosRecepcao: pdMes.reduce((s, p) => s + (Number(p.novos_pacientes_recepcao) || 0), 0),
+        novosVacinas: pdMes.reduce((s, p) => s + (Number(p.novos_pacientes_vacinas) || 0), 0),
+        horasTotal: hrMes.reduce((s, h) => s + (Number(h.horas_total) || 0), 0),
+        atestados: atMes.length,
+        pvLigacoes, pvConvertidas, pvAtendidas, pvTaxaProdutividade,
+        pvHoras: pvpMes.reduce((s, p) => s + (Number(p.horas_total) || 0), 0),
+      };
+    });
+  };
 
-  const destaque = [...linhas].sort((a, b) => b.diasCompletos - a.diasCompletos)[0];
+  const linhas = useMemo(() => calcularLinhasDoMes(mesAtual), [colaboradoresVisiveis.length, prod.length, horas.length, atestados.length, posVendaLig.length, posVendaPonto.length, agendamentos.length, mesAtual]);
+  const linhasMesAnterior = useMemo(() => calcularLinhasDoMes(mesAnterior), [colaboradoresVisiveis.length, prod.length, horas.length, atestados.length, posVendaLig.length, posVendaPonto.length, agendamentos.length, mesAnterior]);
+
+  // destaque: só entre quem preencheu 100% do que era esperado (sem falhar nenhum dia) —
+  // se ninguém preencheu tudo, ninguém ganha o posto
+  const candidatosDestaque = linhas.filter((l) => l.preencheuTudo);
+  const destaque = candidatosDestaque.length ? [...candidatosDestaque].sort((a, b) => b.diasCompletos - a.diasCompletos || (b.taxaProdutividadeGeral || 0) - (a.taxaProdutividadeGeral || 0))[0] : null;
+
+  const somaTime = (arr, campo) => arr.reduce((s, r) => s + (Number(r[campo]) || 0), 0);
+  const comparativo = [
+    { label: "Ligações", atual: somaTime(linhas, "ligacoes"), anterior: somaTime(linhasMesAnterior, "ligacoes") },
+    { label: "Mensagens", atual: somaTime(linhas, "mensagens"), anterior: somaTime(linhasMesAnterior, "mensagens") },
+    { label: "Agendamentos (todos)", atual: linhas.reduce((s, r) => s + r.agendados + r.agendamentosPlantao + r.agendamentosOutros, 0), anterior: linhasMesAnterior.reduce((s, r) => s + r.agendados + r.agendamentosPlantao + r.agendamentosOutros, 0) },
+    { label: "Horas trabalhadas", atual: somaTime(linhas, "horasTotal"), anterior: somaTime(linhasMesAnterior, "horasTotal") },
+    { label: "Atestados", atual: somaTime(linhas, "atestados"), anterior: somaTime(linhasMesAnterior, "atestados") },
+  ];
 
   return (
     <div>
       <SectionHeader icon={Users} title="Painel da Equipe" subtitle="Colaboradores com agendamento/atendimento — produtividade e horas do mês" tone="purple" />
       {erro && <Card className="mb-5" style={{ borderColor: `${T.red}55` }}><span className="text-sm" style={{ color: T.red }}>Erro ao carregar: {erro}. Confirme se o script de RH foi executado no Supabase.</span></Card>}
-      {destaque && destaque.diasCompletos > 0 && (
+      <Card className="mb-5">
+        <Field label="Competência"><input type="month" className="rounded-lg px-3 py-2 text-sm outline-none w-44" style={inputStyle} value={mesSelecionado} onChange={(e) => setMesSelecionado(e.target.value)} /></Field>
+      </Card>
+      {destaque ? (
         <Card className="mb-5" style={{ background: `linear-gradient(135deg, ${T.tealDeep}, ${T.teal})` }}>
-          <p className="text-[11px] font-semibold uppercase mb-1" style={{ color: "#D7F2F4", letterSpacing: "0.06em" }}>⭐ Destaque do mês — preenchimento completo</p>
+          <p className="text-[11px] font-semibold uppercase mb-1" style={{ color: "#D7F2F4", letterSpacing: "0.06em" }}>⭐ Destaque de {labelMes} — preenchimento 100% completo</p>
           <p className="text-lg font-bold" style={{ color: "#fff", fontFamily: "'Roboto', sans-serif" }}>{destaque.nome}</p>
-          <p className="text-sm" style={{ color: "#D7F2F4" }}>Preencheu produtividade e bateu ponto em {destaque.diasCompletos} dia(s) este mês — o mais constante da equipe.</p>
+          <p className="text-sm" style={{ color: "#D7F2F4" }}>Preencheu produtividade e bateu ponto em todos os {destaque.diasCompletos} dia(s) esperados este mês — sem deixar passar nenhum.</p>
+        </Card>
+      ) : (
+        <Card className="mb-5" style={{ borderColor: `${T.muted}30` }}>
+          <p className="text-sm" style={{ color: T.muted }}>Ninguém completou 100% do preenchimento em {labelMes} ainda — assim que alguém bater produtividade + ponto em todos os dias esperados (sem falhar nenhum), o destaque aparece aqui.</p>
         </Card>
       )}
+      <Card className="mb-5">
+        <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Comparativo — {labelMes} x {labelMesAnterior}</p>
+        <div className="overflow-x-auto -mx-5 px-5">
+          <table className="w-full text-sm">
+            <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Indicador</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>{labelMesAnterior}</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>{labelMes}</th>
+              <th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Variação</th>
+            </tr></thead>
+            <tbody>{comparativo.map((c) => { const variacao = c.anterior ? ((c.atual - c.anterior) / c.anterior) * 100 : null; return (
+              <tr key={c.label} style={{ borderBottom: `1px solid ${T.border}` }}>
+                <td className="py-2 px-2 font-medium" style={{ color: T.text }}>{c.label}</td>
+                <td className="py-2 px-2">{c.label === "Horas trabalhadas" ? `${c.anterior.toFixed(0)}h` : fmtNum(c.anterior)}</td>
+                <td className="py-2 px-2 font-semibold">{c.label === "Horas trabalhadas" ? `${c.atual.toFixed(0)}h` : fmtNum(c.atual)}</td>
+                <td className="py-2 px-2">{variacao === null ? <span style={{ color: T.muted }}>—</span> : <span style={{ color: variacao >= 0 ? T.green : T.red, fontWeight: 600 }}>{variacao >= 0 ? "▲" : "▼"} {fmtPct(Math.abs(variacao))}</span>}</td>
+              </tr>
+            ); })}</tbody>
+          </table>
+        </div>
+      </Card>
       <div className="grid gap-3 mb-6 md:grid-cols-4">
         <KpiCard label="Colaboradores" value={colaboradoresVisiveis.length} tone="purple" />
         <KpiCard label="Ligações no mês (equipe)" value={fmtNum(linhas.reduce((s, r) => s + r.ligacoes, 0))} tone="coral" />
