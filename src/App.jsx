@@ -5185,6 +5185,11 @@ function EquipeModulo() {
       ...prod.filter((p) => p.data.slice(0, 7) === mesRef).map((p) => p.data),
       ...horas.filter((h) => h.data.slice(0, 7) === mesRef && h.horas_total).map((h) => h.data),
     ]);
+    // só considera até ontem (hoje pode ainda estar incompleto) — se for mês passado, considera o mês inteiro
+    const ontem = new Date(todayISO() + "T00:00:00"); ontem.setDate(ontem.getDate() - 1);
+    const limiteData = mesRef === todayISO().slice(0, 7) ? ontem.toISOString().slice(0, 10) : `${mesRef}-31`;
+    const diasEsperadosOrdenados = [...diasEsperadosGeral].filter((d) => d <= limiteData).sort();
+
     return colaboradoresVisiveis.map((c) => {
       const pdMes = prod.filter((p) => p.colaborador_id === c.id && p.data.slice(0, 7) === mesRef);
       const hrMes = horas.filter((h) => h.colaborador_id === c.id && h.data.slice(0, 7) === mesRef);
@@ -5206,10 +5211,16 @@ function EquipeModulo() {
       const diasComProducao = new Set(pdMes.map((p) => p.data));
       const diasComPonto = new Set(hrMes.filter((h) => h.horas_total).map((h) => h.data));
       const diasCompletos = [...diasComProducao].filter((d) => diasComPonto.has(d)).length;
-      // dias esperados dessa pessoa = dias esperados da equipe, menos os dias em que ela tinha atestado (não conta contra ela)
       const diasComAtestado = new Set(atMes.map((a) => a.data));
-      const diasEsperadosPessoa = [...diasEsperadosGeral].filter((d) => !diasComAtestado.has(d)).length;
-      const preencheuTudo = diasEsperadosPessoa > 0 && diasCompletos === diasEsperadosPessoa;
+      // sequência atual de dias seguidos completos, contando de trás pra frente a partir do último dia esperado —
+      // um dia com atestado é pulado (não quebra a sequência); qualquer outro dia sem preenchimento quebra
+      let sequenciaAtual = 0;
+      for (let i = diasEsperadosOrdenados.length - 1; i >= 0; i--) {
+        const d = diasEsperadosOrdenados[i];
+        if (diasComAtestado.has(d)) continue;
+        if (diasComProducao.has(d) && diasComPonto.has(d)) sequenciaAtual++;
+        else break;
+      }
       return {
         ...c,
         ligacoes: ligacoesMes,
@@ -5217,7 +5228,7 @@ function EquipeModulo() {
         agendados: agendadosMes,
         agendamentosPlantao, agendamentosOutros,
         taxaProdutividadeGeral,
-        diasCompletos, diasEsperadosPessoa, preencheuTudo,
+        diasCompletos, sequenciaAtual,
         agendadosVacinas: pdMes.reduce((s, p) => s + (Number(p.pacientes_agendados_vacinas) || 0), 0),
         avaliacoesGoogle: pdMes.reduce((s, p) => s + (Number(p.avaliacoes_google) || 0), 0),
         novosRecepcao: pdMes.reduce((s, p) => s + (Number(p.novos_pacientes_recepcao) || 0), 0),
@@ -5235,8 +5246,8 @@ function EquipeModulo() {
 
   // destaque: só entre quem preencheu 100% do que era esperado (sem falhar nenhum dia) —
   // se ninguém preencheu tudo, ninguém ganha o posto
-  const candidatosDestaque = linhas.filter((l) => l.preencheuTudo);
-  const destaque = candidatosDestaque.length ? [...candidatosDestaque].sort((a, b) => b.diasCompletos - a.diasCompletos || (b.taxaProdutividadeGeral || 0) - (a.taxaProdutividadeGeral || 0))[0] : null;
+  const candidatosDestaque = linhas.filter((l) => l.sequenciaAtual > 0);
+  const destaque = candidatosDestaque.length ? [...candidatosDestaque].sort((a, b) => b.sequenciaAtual - a.sequenciaAtual || (b.taxaProdutividadeGeral || 0) - (a.taxaProdutividadeGeral || 0))[0] : null;
 
   const somaTime = (arr, campo) => arr.reduce((s, r) => s + (Number(r[campo]) || 0), 0);
   const comparativo = [
@@ -5256,13 +5267,13 @@ function EquipeModulo() {
       </Card>
       {destaque ? (
         <Card className="mb-5" style={{ background: `linear-gradient(135deg, ${T.tealDeep}, ${T.teal})` }}>
-          <p className="text-[11px] font-semibold uppercase mb-1" style={{ color: "#D7F2F4", letterSpacing: "0.06em" }}>⭐ Destaque de {labelMes} — preenchimento 100% completo</p>
+          <p className="text-[11px] font-semibold uppercase mb-1" style={{ color: "#D7F2F4", letterSpacing: "0.06em" }}>⭐ Destaque de {labelMes} — sequência atual de dias completos</p>
           <p className="text-lg font-bold" style={{ color: "#fff", fontFamily: "'Roboto', sans-serif" }}>{destaque.nome}</p>
-          <p className="text-sm" style={{ color: "#D7F2F4" }}>Preencheu produtividade e bateu ponto em todos os {destaque.diasCompletos} dia(s) esperados este mês — sem deixar passar nenhum.</p>
+          <p className="text-sm" style={{ color: "#D7F2F4" }}>Está há {destaque.sequenciaAtual} dia(s) seguido(s) preenchendo produtividade e ponto certinho, sem falhar. Atualiza todo dia — se falhar um dia, a sequência zera e passa pra quem estiver na frente.</p>
         </Card>
       ) : (
         <Card className="mb-5" style={{ borderColor: `${T.muted}30` }}>
-          <p className="text-sm" style={{ color: T.muted }}>Ninguém completou 100% do preenchimento em {labelMes} ainda — assim que alguém bater produtividade + ponto em todos os dias esperados (sem falhar nenhum), o destaque aparece aqui.</p>
+          <p className="text-sm" style={{ color: T.muted }}>Ninguém está numa sequência de dias completos em {labelMes} ainda — assim que alguém preencher produtividade + ponto num dia, o destaque aparece aqui.</p>
         </Card>
       )}
       <Card className="mb-5">
