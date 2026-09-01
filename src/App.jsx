@@ -867,9 +867,58 @@ function exportToPDF(fields, rows, filename) {
   setTimeout(() => win.print(), 300);
 }
 
+function exportToOFX(rows, filename) {
+  const agora = new Date();
+  const dtserver = agora.toISOString().replace(/[-:]/g, "").slice(0, 14);
+  const transacoes = rows.map((r, i) => {
+    const dt = String(r.data || r.dataEnvio || r.vencimento || todayISO()).replace(/-/g, "");
+    const valor = (r.tipo === "saida" ? -Math.abs(Number(r.valor)) : Math.abs(Number(r.valor))).toFixed(2);
+    const tipoTrn = r.tipo === "saida" ? "DEBIT" : "CREDIT";
+    const memo = (r.descricao || r.linha || r.categoria || "Lançamento").toString().replace(/[<>&]/g, "").slice(0, 200);
+    const fitid = `${dt}${i}${Math.abs(Number(r.valor) * 100).toFixed(0)}`;
+    return `<STMTTRN><TRNTYPE>${tipoTrn}<DTPOSTED>${dt}<TRNAMT>${valor}<FITID>${fitid}<MEMO>${memo}</STMTTRN>`;
+  }).join("\n");
+  const conteudo = `OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+SECURITY:NONE
+ENCODING:UTF-8
+CHARSET:NONE
+COMPRESSION:NONE
+OLDFILEUID:NONE
+NEWFILEUID:NONE
+
+<OFX>
+<SIGNONMSGSRSV1>
+<SONRS>
+<STATUS><CODE>0<SEVERITY>INFO</STATUS>
+<DTSERVER>${dtserver}
+<LANGUAGE>POR
+</SONRS>
+</SIGNONMSGSRSV1>
+<BANKMSGSRSV1>
+<STMTTRNRS>
+<TRNUID>1
+<STATUS><CODE>0<SEVERITY>INFO</STATUS>
+<STMTRS>
+<CURDEF>BRL
+<BANKACCTFROM><BANKID>0000<ACCTID>0000<ACCTTYPE>CHECKING</BANKACCTFROM>
+<BANKTRANLIST>
+${transacoes}
+</BANKTRANLIST>
+</STMTRS>
+</STMTTRNRS>
+</BANKMSGSRSV1>
+</OFX>`;
+  const blob = new Blob([conteudo], { type: "application/x-ofx;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = `${filename}.ofx`; a.click(); URL.revokeObjectURL(url);
+}
+
 function ExportarPeriodoModal({ campoData, fields, rows, filename, onClose }) {
   const [de, setDe] = useState(""); const [ate, setAte] = useState("");
   const linhasNoPeriodo = campoData ? rows.filter((r) => { const v = r[campoData.key]; if (!v) return true; if (de && v < de) return false; if (ate && v > ate) return false; return true; }) : rows;
+  const podeExportarOfx = fields.some((f) => f.key === "tipo") && fields.some((f) => f.key === "valor");
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "#13203099" }} onClick={onClose}>
       <div className="rounded-2xl w-full max-w-sm" style={{ background: T.card }} onClick={(e) => e.stopPropagation()}>
@@ -886,10 +935,11 @@ function ExportarPeriodoModal({ campoData, fields, rows, filename, onClose }) {
               <p className="text-xs" style={{ color: T.muted }}>{linhasNoPeriodo.length} registro(s) no período selecionado.</p>
             </>
           ) : <p className="text-sm" style={{ color: T.muted }}>{linhasNoPeriodo.length} registro(s) no total.</p>}
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Btn onClick={() => { exportToCSV(fields, linhasNoPeriodo, filename); onClose(); }}>CSV</Btn>
             <Btn tone="teal" onClick={() => { exportToExcel(fields, linhasNoPeriodo, filename); onClose(); }}>Excel (.xlsx)</Btn>
             <Btn variant="ghost" onClick={() => { exportToPDF(fields, linhasNoPeriodo, filename); onClose(); }}>PDF</Btn>
+            {podeExportarOfx && <Btn variant="ghost" onClick={() => { exportToOFX(linhasNoPeriodo, filename); onClose(); }}>OFX</Btn>}
           </div>
         </div>
       </div>
