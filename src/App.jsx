@@ -5003,6 +5003,12 @@ function AnaliseFinanceiraModulo() {
     const fim = offset === 0 ? hoje : fimD.toISOString().slice(0, 10);
     setDataInicio(inicio); setDataFim(fim);
   };
+  const atalhoHoje = () => { setDataInicio(hoje); setDataFim(hoje); };
+  const atalhoSemana = () => {
+    const d = new Date(hoje + "T00:00:00"); const diaDaSemana = d.getDay(); // 0=domingo
+    const inicioSemana = new Date(d); inicioSemana.setDate(d.getDate() - diaDaSemana);
+    setDataInicio(inicioSemana.toISOString().slice(0, 10)); setDataFim(hoje);
+  };
   const labelPeriodo = `${fmtDate(dataInicio)} a ${fmtDate(dataFim)}`;
   const noPeriodo = (data) => data && data >= dataInicio && data <= dataFim;
 
@@ -5151,6 +5157,8 @@ function AnaliseFinanceiraModulo() {
         <div className="flex flex-wrap gap-3 items-end mb-3">
           <Field label="De"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} /></Field>
           <Field label="Até"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={dataFim} onChange={(e) => setDataFim(e.target.value)} /></Field>
+          <Btn small variant="ghost" onClick={atalhoHoje}>Hoje</Btn>
+          <Btn small variant="ghost" onClick={atalhoSemana}>Esta semana</Btn>
           <Btn small variant="ghost" onClick={() => atalhoMes(0)}>Este mês</Btn>
           <Btn small variant="ghost" onClick={() => atalhoMes(-1)}>Mês passado</Btn>
         </div>
