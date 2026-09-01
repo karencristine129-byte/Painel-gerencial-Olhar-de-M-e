@@ -5171,7 +5171,10 @@ function EquipeModulo() {
     })();
   }, [unidadeId]);
 
-  const linhas = colaboradores.map((c) => {
+  const NOMES_FORA_DO_PAINEL = ["karen", "mary", "danielly"];
+  const colaboradoresVisiveis = colaboradores.filter((c) => !NOMES_FORA_DO_PAINEL.some((n) => normalizarTexto(c.nome).includes(n)));
+
+  const linhas = colaboradoresVisiveis.map((c) => {
     const pdMes = prod.filter((p) => p.colaborador_id === c.id && p.data.slice(0, 7) === mesAtual);
     const hrMes = horas.filter((h) => h.colaborador_id === c.id && h.data.slice(0, 7) === mesAtual);
     const atMes = atestados.filter((a) => a.colaborador_id === c.id && a.data.slice(0, 7) === mesAtual);
@@ -5188,6 +5191,10 @@ function EquipeModulo() {
     const contatosMes = ligacoesMes + mensagensMes;
     const totalAgendamentos = agendadosMes + agendamentosPlantao + agendamentosOutros;
     const taxaProdutividadeGeral = contatosMes ? (totalAgendamentos / contatosMes) * 100 : null;
+    // dias em que a pessoa preencheu tanto produtividade quanto o ponto do dia — mede constância/completude
+    const diasComProducao = new Set(pdMes.map((p) => p.data));
+    const diasComPonto = new Set(hrMes.filter((h) => h.horas_total).map((h) => h.data));
+    const diasCompletos = [...diasComProducao].filter((d) => diasComPonto.has(d)).length;
     return {
       ...c,
       ligacoes: ligacoesMes,
@@ -5195,6 +5202,7 @@ function EquipeModulo() {
       agendados: agendadosMes,
       agendamentosPlantao, agendamentosOutros,
       taxaProdutividadeGeral,
+      diasCompletos,
       agendadosVacinas: pdMes.reduce((s, p) => s + (Number(p.pacientes_agendados_vacinas) || 0), 0),
       avaliacoesGoogle: pdMes.reduce((s, p) => s + (Number(p.avaliacoes_google) || 0), 0),
       novosRecepcao: pdMes.reduce((s, p) => s + (Number(p.novos_pacientes_recepcao) || 0), 0),
@@ -5206,12 +5214,21 @@ function EquipeModulo() {
     };
   });
 
+  const destaque = [...linhas].sort((a, b) => b.diasCompletos - a.diasCompletos)[0];
+
   return (
     <div>
-      <SectionHeader icon={Users} title="Painel da Equipe" subtitle="Todos os colaboradores cadastrados, com produtividade e horas do mês" tone="purple" />
+      <SectionHeader icon={Users} title="Painel da Equipe" subtitle="Colaboradores com agendamento/atendimento — produtividade e horas do mês" tone="purple" />
       {erro && <Card className="mb-5" style={{ borderColor: `${T.red}55` }}><span className="text-sm" style={{ color: T.red }}>Erro ao carregar: {erro}. Confirme se o script de RH foi executado no Supabase.</span></Card>}
+      {destaque && destaque.diasCompletos > 0 && (
+        <Card className="mb-5" style={{ background: `linear-gradient(135deg, ${T.tealDeep}, ${T.teal})` }}>
+          <p className="text-[11px] font-semibold uppercase mb-1" style={{ color: "#D7F2F4", letterSpacing: "0.06em" }}>⭐ Destaque do mês — preenchimento completo</p>
+          <p className="text-lg font-bold" style={{ color: "#fff", fontFamily: "'Roboto', sans-serif" }}>{destaque.nome}</p>
+          <p className="text-sm" style={{ color: "#D7F2F4" }}>Preencheu produtividade e bateu ponto em {destaque.diasCompletos} dia(s) este mês — o mais constante da equipe.</p>
+        </Card>
+      )}
       <div className="grid gap-3 mb-6 md:grid-cols-4">
-        <KpiCard label="Colaboradores" value={colaboradores.length} tone="purple" />
+        <KpiCard label="Colaboradores" value={colaboradoresVisiveis.length} tone="purple" />
         <KpiCard label="Ligações no mês (equipe)" value={fmtNum(linhas.reduce((s, r) => s + r.ligacoes, 0))} tone="coral" />
         <KpiCard label="Horas no mês (equipe)" value={`${linhas.reduce((s, r) => s + r.horasTotal, 0).toFixed(0)} h`} tone="teal" />
         <KpiCard label="Atestados no mês" value={linhas.reduce((s, r) => s + r.atestados, 0)} tone="amber" />
