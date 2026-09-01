@@ -208,8 +208,8 @@ const MODULES = {
     toDb: (r) => ({ nome: r.nome, cargo: r.cargo, tipo: r.tipo || "Interno", telefone: r.telefone, observacoes: r.observacoes, carga_horaria_mensal: r.cargaHorariaMensal || 0, admissao: r.admissao || null, horario_entrada_padrao: r.horarioEntradaPadrao || null, horario_saida_almoco_padrao: r.horarioSaidaAlmocoPadrao || null, horario_volta_almoco_padrao: r.horarioVoltaAlmocoPadrao || null, horario_saida_padrao: r.horarioSaidaPadrao || null }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, cargo: r.cargo, tipo: r.tipo, telefone: r.telefone, observacoes: r.observacoes, cargaHorariaMensal: r.carga_horaria_mensal, admissao: r.admissao, horarioEntradaPadrao: r.horario_entrada_padrao, horarioSaidaAlmocoPadrao: r.horario_saida_almoco_padrao, horarioVoltaAlmocoPadrao: r.horario_volta_almoco_padrao, horarioSaidaPadrao: r.horario_saida_padrao }) },
   cadProfissionais: { table: "cadastro_profissionais", order: "nome.asc",
-    toDb: (r) => ({ nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcao_sublocacao: r.direcaoSublocacao || null, tipo_sublocacao: r.tipoSublocacao || null, percentual_sublocacao: r.percentualSublocacao || 0, valor_fixo_sublocacao: r.valorFixoSublocacao || 0, valor_abatimento: r.valorAbatimento || 0, valor_plantao_fixo: r.valorPlantaoFixo || 0, valor_repasse_atendimento_plantao: r.valorRepasseAtendimentoPlantao || 0, valor_consulta_particular: r.valorConsultaParticular || 0, convenios_atendidos: r.conveniosAtendidos || [] }),
-    fromDb: (r) => ({ id: r.id, nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcaoSublocacao: r.direcao_sublocacao, tipoSublocacao: r.tipo_sublocacao, percentualSublocacao: r.percentual_sublocacao, valorFixoSublocacao: r.valor_fixo_sublocacao, valorAbatimento: r.valor_abatimento, valorPlantaoFixo: r.valor_plantao_fixo, valorRepasseAtendimentoPlantao: r.valor_repasse_atendimento_plantao, valorConsultaParticular: r.valor_consulta_particular, conveniosAtendidos: r.convenios_atendidos || [] }) },
+    toDb: (r) => ({ nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcao_sublocacao: r.direcaoSublocacao || null, tipo_sublocacao: r.tipoSublocacao || null, percentual_sublocacao: r.percentualSublocacao || 0, valor_fixo_sublocacao: r.valorFixoSublocacao || 0, valor_abatimento: r.valorAbatimento || 0, valor_plantao_fixo: r.valorPlantaoFixo || 0, valor_repasse_atendimento_plantao: r.valorRepasseAtendimentoPlantao || 0, valor_consulta_particular: r.valorConsultaParticular || 0, convenios_atendidos: r.conveniosAtendidos || [], cpf: r.cpf, dias_atendimento: r.diasAtendimento, contrato_feito: r.contratoFeito, contrato_assinado: r.contratoAssinado, valor_sublocacao_atual: r.valorSublocacaoAtual, percentual_repasse_convenio: r.percentualRepasseConvenio, regra_repasse: r.regraRepasse, abatimento_repasse: r.abatimentoRepasse, plantao_sobreaviso_detalhe: r.plantaoSobreavisoDetalhe, valor_marketing: r.valorMarketing, valor_reajustado_2025: r.valorReajustado2025, valor_reajustado_2026: r.valorReajustado2026, condicao_especial: r.condicaoEspecial, observacoes_contrato: r.observacoesContrato }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, especialidade: r.especialidade, crm: r.crm, telefone: r.telefone, email: r.email, direcaoSublocacao: r.direcao_sublocacao, tipoSublocacao: r.tipo_sublocacao, percentualSublocacao: r.percentual_sublocacao, valorFixoSublocacao: r.valor_fixo_sublocacao, valorAbatimento: r.valor_abatimento, valorPlantaoFixo: r.valor_plantao_fixo, valorRepasseAtendimentoPlantao: r.valor_repasse_atendimento_plantao, valorConsultaParticular: r.valor_consulta_particular, conveniosAtendidos: r.convenios_atendidos || [], cpf: r.cpf, diasAtendimento: r.dias_atendimento, contratoFeito: r.contrato_feito, contratoAssinado: r.contrato_assinado, valorSublocacaoAtual: r.valor_sublocacao_atual, percentualRepasseConvenio: r.percentual_repasse_convenio, regraRepasse: r.regra_repasse, abatimentoRepasse: r.abatimento_repasse, plantaoSobreavisoDetalhe: r.plantao_sobreaviso_detalhe, valorMarketing: r.valor_marketing, valorReajustado2025: r.valor_reajustado_2025, valorReajustado2026: r.valor_reajustado_2026, condicaoEspecial: r.condicao_especial, observacoesContrato: r.observacoes_contrato }) },
   cadTestesGeneticos: { table: "cadastro_testes_geneticos", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, laboratorio: r.laboratorio, custo_processamento: r.custoProcessamento, valor_teste: r.valorTeste, valor_parcelado: r.valorParcelado, valor_apos_impostos: r.valorAposImpostos, ganho_bruto: r.ganhoBruto, valor_apos_custos_operacionais: r.valorAposCustosOperacionais, valor_repasse_clinica: r.valorRepasseClinica }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, laboratorio: r.laboratorio, custoProcessamento: r.custo_processamento, valorTeste: r.valor_teste, valorParcelado: r.valor_parcelado, valorAposImpostos: r.valor_apos_impostos, ganhoBruto: r.ganho_bruto, valorAposCustosOperacionais: r.valor_apos_custos_operacionais, valorRepasseClinica: r.valor_repasse_clinica }) },
@@ -3853,11 +3853,25 @@ function CadastroProfissionaisModulo() {
   const fields = [
     { key: "nome", label: "Nome do(a) profissional", type: "text" },
     { key: "especialidade", label: "Especialidade", type: "text", required: false },
+    { key: "cpf", label: "CPF", type: "text", required: false },
     { key: "crm", label: "CRM", type: "text", required: false },
     { key: "telefone", label: "Telefone", type: "text", required: false },
     { key: "email", label: "E-mail", type: "text", required: false },
     { key: "valorConsultaParticular", label: "Valor da consulta particular (R$)", type: "currency", required: false },
     { key: "conveniosAtendidos", label: "Convênios que atende (aparece na tela de produção de cada um)", type: "multiselect", options: nomesConveniosCadastro, required: false, default: [] },
+    { key: "diasAtendimento", label: "Dias de atendimento", type: "text", required: false },
+    { key: "contratoFeito", label: "Contrato feito?", type: "select", options: ["Sim", "Não"], required: false },
+    { key: "contratoAssinado", label: "Contrato assinado?", type: "select", options: ["Sim", "Não"], required: false },
+    { key: "valorSublocacaoAtual", label: "Valor da sublocação (atual) (R$)", type: "currency", required: false },
+    { key: "percentualRepasseConvenio", label: "% repasse convênio", type: "number", required: false },
+    { key: "regraRepasse", label: "Regra de repasse ao profissional", type: "text", required: false },
+    { key: "abatimentoRepasse", label: "Abatimento no repasse", type: "text", required: false },
+    { key: "plantaoSobreavisoDetalhe", label: "Plantão / sobreaviso — detalhe", type: "text", required: false },
+    { key: "valorMarketing", label: "Marketing (R$)", type: "currency", required: false },
+    { key: "valorReajustado2025", label: "Valor reajustado 2025 (R$)", type: "currency", required: false },
+    { key: "valorReajustado2026", label: "Valor reajustado 2026 (R$)", type: "currency", required: false },
+    { key: "condicaoEspecial", label: "Condição especial", type: "text", required: false },
+    { key: "observacoesContrato", label: "Observações do contrato", type: "textarea", required: false },
     { key: "direcaoSublocacao", label: "Sublocação — direção do pagamento", type: "select", options: ["Clínica paga ao profissional", "Profissional paga à clínica"], required: false },
     { key: "tipoSublocacao", label: "Sublocação — forma de cálculo", type: "select", options: ["Percentual", "Valor fixo sem abatimento", "Valor fixo com abatimento"], required: false, showIf: (f) => !!f.direcaoSublocacao },
     { key: "percentualSublocacao", label: "Percentual (%)", type: "number", required: false, showIf: (f) => f.tipoSublocacao === "Percentual" },
@@ -3868,13 +3882,16 @@ function CadastroProfissionaisModulo() {
   ];
   const columns = [
     { key: "nome", label: "Nome" }, { key: "especialidade", label: "Especialidade" }, { key: "telefone", label: "Telefone" },
+    { key: "diasAtendimento", label: "Dias de atendimento", render: (r) => r.diasAtendimento || "—" },
     { key: "valorConsultaParticular", label: "Consulta particular", render: (r) => r.valorConsultaParticular ? fmtBRL(r.valorConsultaParticular) : "—" },
     { key: "conveniosAtendidos", label: "Convênios", render: (r) => Array.isArray(r.conveniosAtendidos) && r.conveniosAtendidos.length ? <span className="text-xs" style={{ color: T.muted }}>{r.conveniosAtendidos.join(", ")}</span> : <span style={{ color: T.muted }}>—</span> },
-    { key: "sublocacao", label: "Sublocação", render: (r) => r.direcaoSublocacao ? <Badge tone={r.direcaoSublocacao.startsWith("Profissional") ? "green" : "amber"}>{r.tipoSublocacao === "Percentual" ? `${r.percentualSublocacao}%` : fmtBRL(r.valorFixoSublocacao)} — {r.direcaoSublocacao.startsWith("Profissional") ? "recebemos" : "pagamos"}</Badge> : <span style={{ color: T.muted }}>—</span> },
+    { key: "valorSublocacaoAtual", label: "Sublocação (contrato)", render: (r) => r.valorSublocacaoAtual ? fmtBRL(r.valorSublocacaoAtual) : "—" },
+    { key: "sublocacao", label: "Sublocação (sistema)", render: (r) => r.direcaoSublocacao ? <Badge tone={r.direcaoSublocacao.startsWith("Profissional") ? "green" : "amber"}>{r.tipoSublocacao === "Percentual" ? `${r.percentualSublocacao}%` : fmtBRL(r.valorFixoSublocacao)} — {r.direcaoSublocacao.startsWith("Profissional") ? "recebemos" : "pagamos"}</Badge> : <span style={{ color: T.muted }}>—</span> },
     { key: "plantao", label: "Plantão", render: (r) => (r.valorPlantaoFixo || r.valorRepasseAtendimentoPlantao) ? <span className="text-xs" style={{ color: T.muted }}>{fmtBRL(r.valorPlantaoFixo)}/dia + {fmtBRL(r.valorRepasseAtendimentoPlantao)}/atend.</span> : <span style={{ color: T.muted }}>—</span> },
+    { key: "contratoAssinado", label: "Contrato assinado?", render: (r) => r.contratoAssinado ? <Badge tone={r.contratoAssinado === "Sim" ? "green" : "red"}>{r.contratoAssinado}</Badge> : "—" },
   ];
   return (
-    <ModuleShell icon={Stethoscope} title="Cadastro de Profissionais" subtitle="Médicos e demais profissionais — inclui consulta particular, convênios atendidos e sublocação" tone="coral" loading={loading} erro={erro}
+    <ModuleShell icon={Stethoscope} title="Cadastro de Profissionais" subtitle="Médicos e demais profissionais — consulta particular, convênios atendidos, sublocação e dados de contrato" tone="coral" loading={loading} erro={erro}
       dailyFields={fields} dailyCta="Cadastrar profissional" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
   );
 }
