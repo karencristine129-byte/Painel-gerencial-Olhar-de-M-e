@@ -4824,6 +4824,134 @@ function AprovarContasModulo() {
   );
 }
 
+/* ============================== ANÁLISE FINANCEIRA INTELIGENTE ============================== */
+function AnaliseFinanceiraModulo() {
+  const { session } = useAuth();
+  const { unidadeId } = useUnidade();
+  const financeiro = useRecords("financeiro");
+  const contas = useRecords("contas");
+  const faturamento = useRecords("faturamento");
+
+  const [colaboradores, setColaboradores] = useState([]);
+  const [cadastros, setCadastros] = useState([]);
+  const [horas, setHoras] = useState([]);
+  const [atestados, setAtestados] = useState([]);
+  const [loadingRh, setLoadingRh] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoadingRh(true);
+      try {
+        const [cs, cad, hr, at] = await Promise.all([
+          sbRest(`perfis?unidade_id=eq.${unidadeId}&select=id,nome,papel`, { token: session.access_token }),
+          sbRest(`cadastro_colaboradores?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
+          sbRest(`rh_horas?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
+          sbRest(`rh_atestados?unidade_id=eq.${unidadeId}&select=*`, { token: session.access_token }),
+        ]);
+        setColaboradores(cs || []); setCadastros(cad || []); setHoras(hr || []); setAtestados(at || []);
+      } catch (e) { /* segue com o que tiver */ }
+      setLoadingRh(false);
+    })();
+  }, [unidadeId]);
+
+  const loading = financeiro.loading || contas.loading || faturamento.loading || loadingRh;
+
+  const hoje = todayISO();
+  const mesAtualKey = hoje.slice(0, 7);
+  const dataMesAnterior = new Date(hoje); dataMesAnterior.setMonth(dataMesAnterior.getMonth() - 1);
+  const mesAnteriorKey = dataMesAnterior.toISOString().slice(0, 7);
+  const diaDoMes = Number(hoje.slice(8, 10));
+  const diasNoMes = new Date(Number(hoje.slice(0, 4)), Number(hoje.slice(5, 7)), 0).getDate();
+
+  const somaPeriodo = (tipo, mesKey) => financeiro.data.filter((r) => r.tipo === tipo && monthKey(r.data) === mesKey).reduce((s, r) => s + Number(r.valor), 0);
+  const entradasMes = somaPeriodo("entrada", mesAtualKey), saidasMes = somaPeriodo("saida", mesAtualKey);
+  const entradasMesAnterior = somaPeriodo("entrada", mesAnteriorKey), saidasMesAnterior = somaPeriodo("saida", mesAnteriorKey);
+  const margemMes = entradasMes ? ((entradasMes - saidasMes) / entradasMes) * 100 : null;
+
+  const porLinhaReceita = (mesKey) => { const map = {}; financeiro.data.filter((r) => r.tipo === "entrada" && monthKey(r.data) === mesKey).forEach((r) => { map[r.linha] = (map[r.linha] || 0) + Number(r.valor); }); return map; };
+  const receitaAtual = porLinhaReceita(mesAtualKey), receitaAnterior = porLinhaReceita(mesAnteriorKey);
+  const porLinhaDespesa = (mesKey) => { const map = {}; financeiro.data.filter((r) => r.tipo === "saida" && monthKey(r.data) === mesKey).forEach((r) => { map[r.linha] = (map[r.linha] || 0) + Number(r.valor); }); return map; };
+  const despesaAtual = porLinhaDespesa(mesAtualKey);
+  const maiorDespesa = Object.entries(despesaAtual).sort((a, b) => b[1] - a[1])[0];
+
+  const insights = [];
+
+  // --- Financeiro ---
+  if (entradasMes > 0) {
+    if (margemMes !== null && margemMes < 10) insights.push({ area: "Financeiro", tone: "red", texto: `Margem líquida de ${fmtPct(margemMes)} este mês — as despesas estão consumindo quase toda a receita. Vale revisar custos ou reforçar o preço/volume de atendimento.` });
+    else if (margemMes !== null && margemMes < 20) insights.push({ area: "Financeiro", tone: "amber", texto: `Margem líquida de ${fmtPct(margemMes)} este mês — dá pra melhorar, mas não é crítico.` });
+    else if (margemMes !== null) insights.push({ area: "Financeiro", tone: "green", texto: `Margem líquida saudável este mês: ${fmtPct(margemMes)}.` });
+  }
+  if (entradasMesAnterior > 0) {
+    const variacao = ((entradasMes - entradasMesAnterior) / entradasMesAnterior) * 100;
+    if (variacao <= -10) insights.push({ area: "Financeiro", tone: "red", texto: `A receita caiu ${fmtPct(Math.abs(variacao))} em relação ao mês passado (${fmtBRL(entradasMesAnterior)} → ${fmtBRL(entradasMes)}).` });
+    else if (variacao >= 10) insights.push({ area: "Financeiro", tone: "green", texto: `A receita cresceu ${fmtPct(variacao)} em relação ao mês passado.` });
+  }
+  if (maiorDespesa && saidasMes > 0) insights.push({ area: "Financeiro", tone: "amber", texto: `Sua maior despesa este mês é "${maiorDespesa[0]}", representando ${fmtPct((maiorDespesa[1] / saidasMes) * 100)} de tudo que saiu.` });
+
+  // --- Onde aumentar o fluxo de entradas ---
+  const linhasReceita = ["Receita de Convênios", "Receita Particular", "Receita de Vacinas", "Outras Receitas"];
+  const quedas = linhasReceita.map((linha) => { const atual = receitaAtual[linha] || 0; const anterior = receitaAnterior[linha] || 0; const variacao = anterior ? ((atual - anterior) / anterior) * 100 : null; return { linha, atual, anterior, variacao }; }).filter((x) => x.variacao !== null).sort((a, b) => a.variacao - b.variacao);
+  if (quedas.length && quedas[0].variacao < -10) insights.push({ area: "Onde aumentar entradas", tone: "red", texto: `"${quedas[0].linha}" caiu ${fmtPct(Math.abs(quedas[0].variacao))} em relação ao mês passado (${fmtBRL(quedas[0].anterior)} → ${fmtBRL(quedas[0].atual)}) — é aí que mais precisa de atenção pra recuperar volume.` });
+  const crescimentos = [...quedas].sort((a, b) => b.variacao - a.variacao);
+  if (crescimentos.length && crescimentos[0].variacao > 10) insights.push({ area: "Onde aumentar entradas", tone: "green", texto: `"${crescimentos[0].linha}" está indo bem — cresceu ${fmtPct(crescimentos[0].variacao)}. Vale reforçar o que está funcionando aí.` });
+
+  // --- Contas a Pagar / Receber ---
+  const pagarAtrasadas = contas.data.filter((c) => c.status !== "Pago" && c.vencimento < hoje);
+  if (pagarAtrasadas.length) insights.push({ area: "Contas a Pagar", tone: "red", texto: `${pagarAtrasadas.length} conta(s) atrasada(s), somando ${fmtBRL(pagarAtrasadas.reduce((s, c) => s + Number(c.valor), 0))} — priorize esses pagamentos pra evitar juros/multa.` });
+  const receberAtrasadas = faturamento.data.filter((f) => f.status !== "Paga" && f.dataProtocolo < hoje);
+  if (receberAtrasadas.length) insights.push({ area: "Contas a Receber", tone: "amber", texto: `${fmtBRL(receberAtrasadas.reduce((s, f) => s + Number(f.valor), 0))} parados em recebimentos atrasados (${receberAtrasadas.length} guia(s)) — esse dinheiro já era pra estar no caixa.` });
+
+  // --- Departamento Pessoal ---
+  const atestadosMes = atestados.filter((a) => a.data && a.data.slice(0, 7) === mesAtualKey);
+  if (atestadosMes.length >= 3) insights.push({ area: "Departamento Pessoal", tone: "amber", texto: `${atestadosMes.length} atestado(s) registrado(s) este mês — vale acompanhar de perto se é algo pontual ou um padrão.` });
+  colaboradores.forEach((c) => {
+    const cadastro = cadastros.find((cd) => normalizarTexto(cd.nome) === normalizarTexto(c.nome));
+    if (!cadastro || !cadastro.cargaHorariaMensal) return;
+    const horasMes = horas.filter((h) => h.colaborador_id === c.id && h.data && h.data.slice(0, 7) === mesAtualKey).reduce((s, h) => s + (Number(h.horas_total) || 0), 0);
+    const esperadoAteAgora = Number(cadastro.cargaHorariaMensal) * (diaDoMes / diasNoMes);
+    if (esperadoAteAgora > 10 && horasMes < esperadoAteAgora * 0.6) insights.push({ area: "Departamento Pessoal", tone: "amber", texto: `${c.nome} está com poucas horas lançadas este mês (${horasMes.toFixed(1)}h de ~${esperadoAteAgora.toFixed(0)}h esperadas até hoje) — confira se é falta de lançamento ou de fato menos horas trabalhadas.` });
+  });
+
+  const ordem = { red: 0, amber: 1, green: 2 };
+  insights.sort((a, b) => ordem[a.tone] - ordem[b.tone]);
+  const porArea = useMemo(() => { const map = {}; insights.forEach((i) => { if (!map[i.area]) map[i.area] = []; map[i.area].push(i); }); return map; }, [insights.length, mesAtualKey]);
+
+  return (
+    <div>
+      <SectionHeader icon={Activity} title="Análise Financeira Inteligente" subtitle={`Diagnóstico automático de ${mesAtualKey} com base nos dados já lançados no sistema`} tone="coral" />
+      {loading ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}><Loader2 size={16} className="animate-spin inline mr-2" />Carregando…</div> : (
+        <>
+          <div className="grid gap-3 mb-6" style={{ gridTemplateColumns: "repeat(4, minmax(0,1fr))" }}>
+            <KpiCard label="Pontos críticos" value={insights.filter((i) => i.tone === "red").length} tone={insights.some((i) => i.tone === "red") ? "red" : "green"} />
+            <KpiCard label="Pontos de atenção" value={insights.filter((i) => i.tone === "amber").length} tone="amber" />
+            <KpiCard label="Pontos positivos" value={insights.filter((i) => i.tone === "green").length} tone="green" />
+            <KpiCard label="Margem líquida do mês" value={margemMes !== null ? fmtPct(margemMes) : "—"} tone={margemMes !== null && margemMes < 10 ? "red" : margemMes !== null && margemMes < 20 ? "amber" : "green"} />
+          </div>
+          {insights.length === 0 ? (
+            <Card><div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhum ponto de atenção encontrado com os dados lançados até agora.</div></Card>
+          ) : (
+            Object.entries(porArea).map(([area, itens]) => (
+              <Card key={area} className="mb-4">
+                <p className="font-bold mb-3" style={{ color: T.text, fontFamily: "'Roboto', sans-serif" }}>{area}</p>
+                <div className="flex flex-col gap-2.5">
+                  {itens.map((i, idx) => (
+                    <div key={idx} className="flex items-start gap-2.5">
+                      <span className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: i.tone === "red" ? T.red : i.tone === "amber" ? T.amber : T.green }} />
+                      <span className="text-sm" style={{ color: T.text }}>{i.texto}</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            ))
+          )}
+          <Card style={{ borderColor: `${T.muted}30` }}><p className="text-xs" style={{ color: T.muted }}>Esse diagnóstico é gerado por regras automáticas em cima dos seus dados reais (não é uma opinião externa) — quanto mais completo estiver o lançamento do mês, mais precisa fica a análise.</p></Card>
+        </>
+      )}
+    </div>
+  );
+}
+
 function EquipeModulo() {
   const { session } = useAuth();
   const { unidadeId } = useUnidade();
@@ -5159,7 +5287,7 @@ function RelatoriosModulo() {
 
 
 const ALL_MENU = [
-  { group: "Visão", items: [{ key: "visao", label: "Dashboard", icon: LayoutDashboard, tone: "coral" }, { key: "painelCritico", label: "Painel Crítico", icon: AlertTriangle, tone: "coral" }] },
+  { group: "Visão", items: [{ key: "visao", label: "Dashboard", icon: LayoutDashboard, tone: "coral" }, { key: "painelCritico", label: "Painel Crítico", icon: AlertTriangle, tone: "coral" }, { key: "analiseFinanceira", label: "Análise Financeira Inteligente", icon: Activity, tone: "coral" }] },
   { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "relatorioCaixa", label: "Relatório de Caixa", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "protocoloGuias", label: "Protocolo de Guias", icon: ClipboardList, tone: "coral" }, { key: "protocoloBradesco", label: "Protocolo Bradesco", icon: ClipboardList, tone: "coral" }, { key: "repasse", label: "Repasse Médico", icon: Stethoscope, tone: "coral" }, { key: "sublocacao", label: "Receita de Sublocação", icon: Building2, tone: "coral" }, { key: "importarOfx", label: "Importar Extrato (OFX)", icon: Upload, tone: "coral" }] },
   { group: "Atendimento", items: [{ key: "producaoParticulares", label: "Produção — Particulares", icon: Stethoscope, tone: "teal" }, { key: "producaoConveniosGeral", label: "Produção — Convênios", icon: Stethoscope, tone: "teal" }, { key: "producaoBradescoClinica", label: "Produção — Bradesco Clínica", icon: Stethoscope, tone: "teal" }, { key: "producaoAuroraSaude", label: "Produção — Aurora Saúde", icon: Stethoscope, tone: "teal" }, { key: "producaoIpsm", label: "Produção — IPSM", icon: Stethoscope, tone: "teal" }, { key: "producaoResumoGeral", label: "Produção — Valores Gerais", icon: Stethoscope, tone: "coral" }, { key: "procedimentos", label: "Testes e Fototerapia", icon: FlaskConical, tone: "teal" }] },
   { group: "Setor de Vacinas", items: [{ key: "vacinas", label: "Estoque de Vacinas", icon: Syringe, tone: "teal" }, { key: "entradaEstoqueVacinas", label: "Entrada de Estoque", icon: Syringe, tone: "teal" }, { key: "vendasVacinas", label: "Vendas de Vacinas", icon: Syringe, tone: "teal" }, { key: "pacoteVacinas", label: "Pacote Personalizado", icon: Syringe, tone: "coral" }] },
@@ -5172,8 +5300,8 @@ const ALL_MENU = [
   { group: "Documentos & Chat", items: [{ key: "bancoDocumentos", label: "Banco de Documentos", icon: FileText, tone: "coral" }, { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas (E-mail/WhatsApp)", icon: Bell, tone: "ink" }] },
 ];
-const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "aprovarContas", "agendamentosAdmin", "avaliacaoColaborador", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadContatos", "cadTestesGeneticos", "cadBancos", "investimentos", "cadCategorias", "cadTiposPagamento", "cadSaldoCaixa", "plantaoValores", "plantaoResumo", "producaoParticulares", "producaoConveniosGeral", "producaoBradescoClinica", "producaoAuroraSaude", "producaoIpsm", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
-const ADMIN_ONLY_TABS = ["avaliacaoColaborador", "aprovarContas"];
+const FINANCE_TABS = ["financeiro", "relatorioCaixa", "contas", "faturamento", "protocoloGuias", "protocoloBradesco", "repasse", "sublocacao", "equipe", "aprovarContas", "agendamentosAdmin", "avaliacaoColaborador", "analiseFinanceira", "metas", "metasColaborador", "metasEquipe", "cadConvenios", "cadColaboradores", "cadProfissionais", "cadFornecedores", "cadContatos", "cadTestesGeneticos", "cadBancos", "investimentos", "cadCategorias", "cadTiposPagamento", "cadSaldoCaixa", "plantaoValores", "plantaoResumo", "producaoParticulares", "producaoConveniosGeral", "producaoBradescoClinica", "producaoAuroraSaude", "producaoIpsm", "producaoResumoGeral", "painelCritico", "importarOfx", "relatorioColaborador", "bancoDocumentos"];
+const ADMIN_ONLY_TABS = ["avaliacaoColaborador", "aprovarContas", "analiseFinanceira"];
 const PRODUCAO_TABS = ["producaoParticulares", "producaoConveniosGeral", "producaoBradescoClinica", "producaoAuroraSaude", "producaoIpsm"];
 /* Perfis com acesso restrito a só uma parte da rotina — menu totalmente customizado */
 const RESTRICTED_MENUS = {
@@ -5267,6 +5395,7 @@ function AppInner() {
     switch (tab) {
       case "visao": return <VisaoGeral />;
       case "painelCritico": return <PainelCriticoModulo />;
+      case "analiseFinanceira": return <AnaliseFinanceiraModulo />;
       case "financeiro": return <FinanceiroModulo />;
       case "relatorioCaixa": return <RelatorioCaixaModulo />;
       case "convenios": return <ConveniosModulo />;
