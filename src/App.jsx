@@ -3721,11 +3721,11 @@ function MeuRHModulo() {
   return (
     <div>
       <SectionHeader icon={Users} title="Meu RH" subtitle="Produtividade, documentos, atestados e horários — só você vê seus dados" tone="purple" />
+      <MeusHorarios />
       <ProdutividadeDiaria />
       <AgendamentosPacientes />
       <MeusDocumentos />
       <EnviarAtestado />
-      <MeusHorarios />
       <TermoUsoImagem />
     </div>
   );
