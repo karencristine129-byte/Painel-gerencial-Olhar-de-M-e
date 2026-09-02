@@ -5791,21 +5791,35 @@ const RESTRICTED_MENUS = {
 };
 
 /* ============================== APP INTERNO (autenticado) ============================== */
+const ALL_MENU_OUTRO_NEGOCIO = [
+  { group: "Visão", items: [{ key: "visao", label: "Dashboard", icon: LayoutDashboard, tone: "coral" }] },
+  { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "importarOfx", label: "Importar Extrato (OFX)", icon: Upload, tone: "coral" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "coral" }] },
+  { group: "Cadastros", items: [{ key: "cadContatos", label: "Contatos", icon: Users, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadBancos", label: "Bancos", icon: Wallet, tone: "ink" }, { key: "cadCategorias", label: "Categorias", icon: ClipboardList, tone: "ink" }, { key: "cadTiposPagamento", label: "Tipos de Pagamento", icon: Wallet, tone: "ink" }] },
+  { group: "Pessoas", items: [{ key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" }, { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" }, { key: "bancoDocumentos", label: "Banco de Documentos", icon: FileText, tone: "purple" }] },
+  { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas", icon: Bell, tone: "ink" }] },
+];
+
 function AppInner() {
   const { logout, perfil } = useAuth();
-  const ALL_ITEMS = useMemo(() => ALL_MENU.flatMap((g) => g.items), []);
+  const { unidade } = useUnidade();
+  const ehUnidadeClinica = !unidade || unidade.tipo === "clinica" || !unidade.tipo;
+  const ALL_ITEMS = useMemo(() => (ehUnidadeClinica ? ALL_MENU : ALL_MENU_OUTRO_NEGOCIO).flatMap((g) => g.items), [ehUnidadeClinica]);
   const customKeys = perfil && Array.isArray(perfil.menu_customizado) && perfil.menu_customizado.length > 0 ? perfil.menu_customizado : null;
   const papelRestrito = perfil && RESTRICTED_MENUS[perfil.papel];
   const isRestrito = customKeys || papelRestrito;
   const [tab, setTab] = useState(customKeys ? customKeys[0] : "meurh");
+  useEffect(() => {
+    if (!customKeys) setTab(ehUnidadeClinica ? "meurh" : "visao");
+  }, [ehUnidadeClinica]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const canFinance = perfil && perfil.papel !== "operacional";
   const isAdmin = perfil && perfil.papel === "admin";
+  const menuBase = ehUnidadeClinica ? ALL_MENU : ALL_MENU_OUTRO_NEGOCIO;
   const MENU = customKeys
     ? [{ group: "Minha área", items: ALL_ITEMS.filter((i) => customKeys.includes(i.key) && (isAdmin || !ADMIN_ONLY_TABS.includes(i.key))) }]
     : (papelRestrito ? [papelRestrito] : (canFinance
-        ? ALL_MENU.map((g) => ({ ...g, items: g.items.filter((i) => (isAdmin || !ADMIN_ONLY_TABS.includes(i.key)) && (isAdmin || !PRODUCAO_TABS.includes(i.key))) })).filter((g) => g.items.length > 0)
-        : ALL_MENU.map((g) => ({ ...g, items: g.items.filter((i) => !FINANCE_TABS.includes(i.key)) })).filter((g) => g.items.length > 0)));
+        ? menuBase.map((g) => ({ ...g, items: g.items.filter((i) => (isAdmin || !ADMIN_ONLY_TABS.includes(i.key)) && (isAdmin || !PRODUCAO_TABS.includes(i.key))) })).filter((g) => g.items.length > 0)
+        : menuBase.map((g) => ({ ...g, items: g.items.filter((i) => !FINANCE_TABS.includes(i.key)) })).filter((g) => g.items.length > 0)));
   const activeMeta = MENU.flatMap((g) => g.items).find((i) => i.key === tab) || MENU[0].items[0];
   const renderTab = () => {
     if (!canFinance && FINANCE_TABS.includes(tab)) return <VisaoGeral />;
