@@ -715,7 +715,7 @@ function RecordsTable({ columns, rows, onEdit, onDelete }) {
           {rows.map((row) => (
             <tr key={row.id} style={{ borderBottom: `1px solid ${T.border}` }} className="hover:bg-black/[0.02]">
               {columns.map((c) => <td key={c.key} className="py-2.5 px-2" style={{ color: T.text }}>{c.render ? c.render(row) : row[c.key]}</td>)}
-              <td className="py-2.5 px-2"><div className="flex items-center gap-2.5 justify-end"><button onClick={() => onEdit(row)}><Pencil size={13} style={{ color: T.muted }} /></button><button onClick={() => onDelete(row)}><Trash2 size={13} style={{ color: T.red }} /></button></div></td>
+              <td className="py-2.5 px-2"><div className="flex items-center gap-3 justify-end"><button onClick={() => onEdit(row)} className="flex items-center gap-1 text-xs font-medium" style={{ color: T.coralDeep }}><Pencil size={13} /> Editar</button><button onClick={() => onDelete(row)}><Trash2 size={13} style={{ color: T.red }} /></button></div></td>
             </tr>
           ))}
         </tbody>
@@ -1789,11 +1789,68 @@ function CadastroCampanhasIndicacaoModulo() {
   );
 }
 
+function IndicacaoLinha({ r, nomeCampanha, campanhas, nomesConvenios, CANAIS, onSalvar, onRemover }) {
+  const [editando, setEditando] = useState(false);
+  const [form, setForm] = useState({ nomeIndicador: r.nomeIndicador, telefoneIndicador: r.telefoneIndicador || "", convenio: r.convenio || "", canalContato: r.canalContato || "", campanhaId: r.campanhaId || "", data: r.data });
+  const [indicadosEdit, setIndicadosEdit] = useState(r.indicados || []);
+  const [novoNome, setNovoNome] = useState(""); const [novoTel, setNovoTel] = useState(""); const [novoIg, setNovoIg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const adicionar = () => { if (!novoNome) return; setIndicadosEdit((p) => [...p, { nome: novoNome, telefone: novoTel, instagram: novoIg }]); setNovoNome(""); setNovoTel(""); setNovoIg(""); };
+  const remover = (idx) => setIndicadosEdit((p) => p.filter((_, i) => i !== idx));
+  const salvar = async () => { setBusy(true); await onSalvar({ ...form, indicados: indicadosEdit }); setBusy(false); setEditando(false); };
+
+  if (!editando) {
+    return (
+      <div className="rounded-xl px-4 py-3" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}>
+        <div className="flex items-center justify-between mb-1">
+          <span className="font-semibold text-sm" style={{ color: T.text }}>{r.nomeIndicador} <span className="text-xs font-normal" style={{ color: T.muted }}>({r.telefoneIndicador || "sem telefone"})</span></span>
+          <div className="flex items-center gap-3">
+            {r.campanhaId && <Badge tone="rose">{nomeCampanha(r.campanhaId)}</Badge>}
+            <span style={{ color: T.muted }}>{fmtDate(r.data)}</span>
+            <button onClick={() => setEditando(true)} className="flex items-center gap-1 text-xs font-medium" style={{ color: T.coralDeep }}><Pencil size={13} /> Editar</button>
+            <button onClick={onRemover}><Trash2 size={13} style={{ color: T.red }} /></button>
+          </div>
+        </div>
+        <p className="text-xs" style={{ color: T.muted }}>{(r.indicados || []).length} indicado(s): {(r.indicados || []).map((i) => i.nome).join(", ")}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-xl px-4 py-3" style={{ background: "#FFF", border: `1px solid ${T.coral}` }}>
+      <div className="grid md:grid-cols-3 gap-3 mb-3">
+        <Field label="Nome de quem indicou"><input className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.nomeIndicador} onChange={(e) => setForm((p) => ({ ...p, nomeIndicador: e.target.value }))} /></Field>
+        <Field label="Telefone"><input className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.telefoneIndicador} onChange={(e) => setForm((p) => ({ ...p, telefoneIndicador: e.target.value }))} /></Field>
+        <Field label="Data"><input type="date" className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} /></Field>
+        <Field label="Convênio"><select className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.convenio} onChange={(e) => setForm((p) => ({ ...p, convenio: e.target.value }))}><option value="">— não informar —</option>{nomesConvenios.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
+        <Field label="Canal"><select className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.canalContato} onChange={(e) => setForm((p) => ({ ...p, canalContato: e.target.value }))}><option value="">— não informar —</option>{CANAIS.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
+        <Field label="Campanha"><select className="rounded-lg px-3 py-2 text-sm outline-none w-full" style={inputStyle} value={form.campanhaId} onChange={(e) => setForm((p) => ({ ...p, campanhaId: e.target.value }))}><option value="">— nenhuma —</option>{campanhas.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></Field>
+      </div>
+      <p className="text-[11px] font-semibold uppercase mb-2" style={{ color: T.muted }}>Indicados</p>
+      {indicadosEdit.length > 0 && (
+        <table className="w-full text-sm mb-2">
+          <tbody>{indicadosEdit.map((ind, idx) => (<tr key={idx}><td className="py-1" style={{ color: T.text }}>{ind.nome}</td><td className="py-1" style={{ color: T.muted }}>{ind.telefone}</td><td className="py-1" style={{ color: T.muted }}>{ind.instagram}</td><td className="py-1 text-right"><button onClick={() => remover(idx)}><Trash2 size={12} style={{ color: T.red }} /></button></td></tr>))}</tbody>
+        </table>
+      )}
+      <div className="flex flex-wrap gap-2 items-end mb-3">
+        <Field label="Nome"><input className="rounded-lg px-3 py-2 text-sm outline-none w-36" style={inputStyle} value={novoNome} onChange={(e) => setNovoNome(e.target.value)} /></Field>
+        <Field label="Telefone"><input className="rounded-lg px-3 py-2 text-sm outline-none w-32" style={inputStyle} value={novoTel} onChange={(e) => setNovoTel(e.target.value)} /></Field>
+        <Field label="Instagram"><input className="rounded-lg px-3 py-2 text-sm outline-none w-32" style={inputStyle} value={novoIg} onChange={(e) => setNovoIg(e.target.value)} /></Field>
+        <Btn small tone="teal" icon={Plus} onClick={adicionar}>Adicionar</Btn>
+      </div>
+      <div className="flex gap-2">
+        <Btn disabled={busy} onClick={salvar}>{busy ? <Loader2 size={14} className="animate-spin" /> : null} Salvar alterações</Btn>
+        <Btn variant="ghost" onClick={() => setEditando(false)}>Cancelar</Btn>
+      </div>
+    </div>
+  );
+}
+
 function IndicacaoModulo() {
   const { perfil } = useAuth();
   const { data: campanhas } = useRecords("cadCampanhasIndicacao");
   const { data: conveniosCat } = useRecords("cadConvenios");
-  const { data: indicacoes, add, remove, loading, erro } = useRecords("indicacoes");
+  const { data: indicacoes, add, update, remove, loading, erro } = useRecords("indicacoes");
   const nomesConvenios = conveniosCat.length ? conveniosCat.map((c) => c.nome) : CONVENIOS;
   const CANAIS = ["WhatsApp", "Google", "TikTok", "Instagram", "Facebook", "Ligação", "Presencial", "Outro"];
 
@@ -1901,17 +1958,7 @@ function IndicacaoModulo() {
           indicacoesFiltradas.length === 0 ? <div className="text-center py-10 text-sm" style={{ color: T.muted }}>Nenhuma indicação no período/campanha selecionado.</div> : (
           <div className="flex flex-col gap-2">
             {indicacoesFiltradas.map((r) => (
-              <div key={r.id} className="rounded-xl px-4 py-3" style={{ background: "#FBFAF6", border: `1px solid ${T.border}` }}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-semibold text-sm" style={{ color: T.text }}>{r.nomeIndicador} <span className="text-xs font-normal" style={{ color: T.muted }}>({r.telefoneIndicador || "sem telefone"})</span></span>
-                  <div className="flex items-center gap-3">
-                    {r.campanhaId && <Badge tone="rose">{nomeCampanha(r.campanhaId)}</Badge>}
-                    <span style={{ color: T.muted }}>{fmtDate(r.data)}</span>
-                    <button onClick={() => { if (confirm("Remover esta indicação?")) remove(r.id); }}><Trash2 size={13} style={{ color: T.red }} /></button>
-                  </div>
-                </div>
-                <p className="text-xs" style={{ color: T.muted }}>{(r.indicados || []).length} indicado(s): {(r.indicados || []).map((i) => i.nome).join(", ")}</p>
-              </div>
+              <IndicacaoLinha key={r.id} r={r} nomeCampanha={nomeCampanha} campanhas={campanhas} nomesConvenios={nomesConvenios} CANAIS={CANAIS} onSalvar={(dados) => update(r.id, dados)} onRemover={() => { if (confirm("Remover esta indicação?")) remove(r.id); }} />
             ))}
           </div>
         )}
