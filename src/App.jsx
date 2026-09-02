@@ -213,6 +213,18 @@ const MODULES = {
   analisesGeradas: { table: "analises_financeiras_geradas", order: "criado_em.desc",
     toDb: (r) => ({ data_inicio: r.dataInicio, data_fim: r.dataFim, gerado_por_nome: r.geradoPorNome, insights: r.insights || [], totais: r.totais || {} }),
     fromDb: (r) => ({ id: r.id, dataInicio: r.data_inicio, dataFim: r.data_fim, geradoPorNome: r.gerado_por_nome, insights: r.insights || [], totais: r.totais || {}, criadoEm: r.criado_em }) },
+  clubePlanos: { table: "clube_planos", order: "valor_mensal.asc",
+    toDb: (r) => ({ nome: r.nome, valor_mensal: r.valorMensal, qtd_dependentes_inclusos: r.qtdDependentesInclusos || 4, descricao: r.descricao, ativo: r.ativo !== false }),
+    fromDb: (r) => ({ id: r.id, nome: r.nome, valorMensal: r.valor_mensal, qtdDependentesInclusos: r.qtd_dependentes_inclusos, descricao: r.descricao, ativo: r.ativo }) },
+  clubeEmpresas: { table: "clube_empresas", order: "nome_empresa.asc",
+    toDb: (r) => ({ nome_empresa: r.nomeEmpresa, cnpj: r.cnpj, contato: r.contato, telefone: r.telefone, data_adesao: r.dataAdesao || null, observacoes: r.observacoes }),
+    fromDb: (r) => ({ id: r.id, nomeEmpresa: r.nome_empresa, cnpj: r.cnpj, contato: r.contato, telefone: r.telefone, dataAdesao: r.data_adesao, observacoes: r.observacoes }) },
+  clubeMembros: { table: "clube_membros", order: "criado_em.desc",
+    toDb: (r) => ({ empresa_id: r.empresaId || null, nome_titular: r.nomeTitular, telefone: r.telefone, cpf: r.cpf, plano_id: r.planoId || null, valor_mensal_cobrado: r.valorMensalCobrado || 0, quantidade_dependentes: r.quantidadeDependentes || 0, data_adesao: r.dataAdesao || null, status: r.status || "Ativo", observacoes: r.observacoes }),
+    fromDb: (r) => ({ id: r.id, empresaId: r.empresa_id, nomeTitular: r.nome_titular, telefone: r.telefone, cpf: r.cpf, planoId: r.plano_id, valorMensalCobrado: r.valor_mensal_cobrado, quantidadeDependentes: r.quantidade_dependentes, dataAdesao: r.data_adesao, status: r.status, observacoes: r.observacoes }) },
+  clubeUtilizacoes: { table: "clube_utilizacoes", order: "data.desc",
+    toDb: (r) => ({ membro_id: r.membroId, data: r.data, servico_utilizado: r.servicoUtilizado, valor_cheio: r.valorCheio || 0, valor_desconto: r.valorDesconto || 0, observacoes: r.observacoes }),
+    fromDb: (r) => ({ id: r.id, membroId: r.membro_id, data: r.data, servicoUtilizado: r.servico_utilizado, valorCheio: r.valor_cheio, valorDesconto: r.valor_desconto, observacoes: r.observacoes }) },
   cadTestesGeneticos: { table: "cadastro_testes_geneticos", order: "nome.asc",
     toDb: (r) => ({ nome: r.nome, laboratorio: r.laboratorio, custo_processamento: r.custoProcessamento, valor_teste: r.valorTeste, valor_parcelado: r.valorParcelado, valor_apos_impostos: r.valorAposImpostos, ganho_bruto: r.ganhoBruto, valor_apos_custos_operacionais: r.valorAposCustosOperacionais, valor_repasse_clinica: r.valorRepasseClinica }),
     fromDb: (r) => ({ id: r.id, nome: r.nome, laboratorio: r.laboratorio, custoProcessamento: r.custo_processamento, valorTeste: r.valor_teste, valorParcelado: r.valor_parcelado, valorAposImpostos: r.valor_apos_impostos, ganhoBruto: r.ganho_bruto, valorAposCustosOperacionais: r.valor_apos_custos_operacionais, valorRepasseClinica: r.valor_repasse_clinica }) },
@@ -5791,9 +5803,208 @@ const RESTRICTED_MENUS = {
 };
 
 /* ============================== APP INTERNO (autenticado) ============================== */
+/* ============================== CLUBE DE BENEFÍCIOS (Olhar de Mãe Clube Card) ============================== */
+function CadastroPlanosClubeModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("clubePlanos");
+  const fields = [
+    { key: "nome", label: "Nome do plano", type: "text", placeholder: "ex: Básico, Premium, Master, PET" },
+    { key: "valorMensal", label: "Valor mensal (R$)", type: "currency" },
+    { key: "qtdDependentesInclusos", label: "Dependentes inclusos", type: "number", default: 4, required: false },
+    { key: "descricao", label: "O que inclui", type: "textarea", required: false },
+    { key: "ativo", label: "Plano ativo?", type: "select", options: ["Sim", "Não"], default: "Sim" },
+  ];
+  const columns = [
+    { key: "nome", label: "Plano" }, { key: "valorMensal", label: "Valor mensal", render: (r) => fmtBRL(r.valorMensal) },
+    { key: "qtdDependentesInclusos", label: "Dependentes inclusos" },
+    { key: "ativo", label: "Status", render: (r) => <Badge tone={r.ativo ? "green" : "muted"}>{r.ativo ? "Ativo" : "Inativo"}</Badge> },
+  ];
+  const onAddC = (r) => add({ ...r, ativo: r.ativo === "Sim" });
+  const onUpdateC = (id, r) => update(id, { ...r, ativo: r.ativo === "Sim" });
+  const rowsForm = data.map((r) => ({ ...r, ativo: r.ativo ? "Sim" : "Não" }));
+  return (
+    <ModuleShell icon={ClipboardList} title="Planos do Clube" subtitle="Básico, Premium, Master, PET — cada um com seu valor e benefícios" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Cadastrar plano" fields={fields} columns={columns} rows={rowsForm} onAdd={onAddC} onUpdate={onUpdateC} onDelete={remove} />
+  );
+}
+
+function CadastroEmpresasClubeModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("clubeEmpresas");
+  const { data: membros } = useRecords("clubeMembros");
+  const fields = [
+    { key: "nomeEmpresa", label: "Nome da empresa", type: "text" },
+    { key: "cnpj", label: "CNPJ", type: "text", required: false },
+    { key: "contato", label: "Pessoa de contato", type: "text", required: false },
+    { key: "telefone", label: "Telefone", type: "text", required: false },
+    { key: "dataAdesao", label: "Data de adesão", type: "date", required: false },
+    { key: "observacoes", label: "Observações", type: "textarea", required: false },
+  ];
+  const qtdFuncionarios = (empresaId) => membros.filter((m) => m.empresaId === empresaId && m.status === "Ativo").length;
+  const columns = [
+    { key: "nomeEmpresa", label: "Empresa" }, { key: "contato", label: "Contato" }, { key: "telefone", label: "Telefone" },
+    { key: "dataAdesao", label: "Adesão", render: (r) => r.dataAdesao ? fmtDate(r.dataAdesao) : "—" },
+    { key: "funcionarios", label: "Funcionários ativos", render: (r) => <Badge tone="teal">{qtdFuncionarios(r.id)}</Badge> },
+  ];
+  return (
+    <ModuleShell icon={Building2} title="Empresas Clientes" subtitle="Empresas que aderiram ao clube para os funcionários" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Cadastrar empresa" fields={fields} columns={columns} rows={data} onAdd={add} onUpdate={update} onDelete={remove} />
+  );
+}
+
+function MembrosClubeModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("clubeMembros");
+  const { data: planos } = useRecords("clubePlanos");
+  const { data: empresas } = useRecords("clubeEmpresas");
+  const nomesPlanos = planos.map((p) => p.nome);
+  const nomesEmpresas = empresas.map((e) => e.nomeEmpresa);
+  const fields = [
+    { key: "nomeTitular", label: "Nome do titular", type: "text" },
+    { key: "telefone", label: "Telefone", type: "text", required: false },
+    { key: "cpf", label: "CPF", type: "text", required: false },
+    { key: "empresaNome", label: "Empresa (se for via empresa)", type: "select", options: nomesEmpresas.length ? nomesEmpresas : ["— nenhuma cadastrada —"], required: false },
+    { key: "planoNome", label: "Plano", type: "select", options: nomesPlanos.length ? nomesPlanos : ["Cadastre um plano primeiro"] },
+    { key: "quantidadeDependentes", label: "Quantidade de dependentes", type: "number", default: 0, required: false },
+    { key: "dataAdesao", label: "Data de adesão", type: "date", default: todayISO() },
+    { key: "status", label: "Status", type: "select", options: ["Ativo", "Inadimplente", "Cancelado"], default: "Ativo" },
+    { key: "observacoes", label: "Observações", type: "textarea", required: false },
+  ];
+  const computar = (r) => {
+    const plano = planos.find((p) => p.nome === r.planoNome);
+    const empresa = empresas.find((e) => e.nomeEmpresa === r.empresaNome);
+    return { empresaId: empresa ? empresa.id : null, planoId: plano ? plano.id : null, valorMensalCobrado: plano ? Number(plano.valorMensal) : 0 };
+  };
+  const onAddC = (r) => add({ ...r, ...computar(r) });
+  const onUpdateC = (id, r) => update(id, { ...r, ...computar(r) });
+  const nomeDoPlano = (id) => (planos.find((p) => p.id === id) || {}).nome || "—";
+  const nomeDaEmpresa = (id) => (empresas.find((e) => e.id === id) || {}).nomeEmpresa || "Pessoa física";
+  const columns = [
+    { key: "nomeTitular", label: "Titular" }, { key: "empresaId", label: "Empresa", render: (r) => nomeDaEmpresa(r.empresaId) },
+    { key: "planoId", label: "Plano", render: (r) => nomeDoPlano(r.planoId) }, { key: "quantidadeDependentes", label: "Dependentes" },
+    { key: "valorMensalCobrado", label: "Valor mensal", render: (r) => fmtBRL(r.valorMensalCobrado) },
+    { key: "status", label: "Status", render: (r) => <Badge tone={r.status === "Ativo" ? "green" : r.status === "Inadimplente" ? "amber" : "red"}>{r.status}</Badge> },
+  ];
+  const rowsForm = data.map((r) => ({ ...r, empresaNome: nomeDaEmpresa(r.empresaId) === "Pessoa física" ? "" : nomeDaEmpresa(r.empresaId), planoNome: nomeDoPlano(r.planoId) }));
+  const ativos = data.filter((r) => r.status === "Ativo");
+  const receitaMensalRecorrente = ativos.reduce((s, r) => s + Number(r.valorMensalCobrado || 0), 0);
+  return (
+    <ModuleShell icon={Users} title="Membros do Clube" subtitle="Titulares — por empresa ou pessoa física, com plano e dependentes" tone="coral" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Cadastrar membro" fields={fields} columns={columns} rows={rowsForm} onAdd={onAddC} onUpdate={onUpdateC} onDelete={remove}
+      kpis={[{ label: "Membros ativos", value: ativos.length, tone: "green" }, { label: "Receita mensal recorrente", value: fmtBRL(receitaMensalRecorrente), tone: "coral" }, { label: "Inadimplentes", value: data.filter((r) => r.status === "Inadimplente").length, tone: "amber" }, { label: "Cancelados", value: data.filter((r) => r.status === "Cancelado").length }]} />
+  );
+}
+
+function UtilizacaoServicosClubeModulo() {
+  const { data, add, update, remove, loading, erro } = useRecords("clubeUtilizacoes");
+  const { data: membros } = useRecords("clubeMembros");
+  const nomesMembros = membros.map((m) => m.nomeTitular);
+  const fields = [
+    { key: "membroNome", label: "Membro (titular)", type: "select", options: nomesMembros.length ? nomesMembros : ["Cadastre um membro primeiro"] },
+    { key: "data", label: "Data", type: "date", default: todayISO() },
+    { key: "servicoUtilizado", label: "Serviço utilizado", type: "text", placeholder: "ex: Consulta pediátrica, Vacina X" },
+    { key: "valorCheio", label: "Valor cheio (R$)", type: "currency", required: false },
+    { key: "valorDesconto", label: "Valor do desconto (R$)", type: "currency", required: false },
+    { key: "observacoes", label: "Observações", type: "textarea", required: false },
+  ];
+  const onAddC = (r) => { const m = membros.find((x) => x.nomeTitular === r.membroNome); return add({ ...r, membroId: m ? m.id : null }); };
+  const onUpdateC = (id, r) => { const m = membros.find((x) => x.nomeTitular === r.membroNome); return update(id, { ...r, membroId: m ? m.id : null }); };
+  const nomeDoMembro = (id) => (membros.find((m) => m.id === id) || {}).nomeTitular || "—";
+  const columns = [
+    { key: "data", label: "Data", render: (r) => fmtDate(r.data) }, { key: "membroId", label: "Membro", render: (r) => nomeDoMembro(r.membroId) },
+    { key: "servicoUtilizado", label: "Serviço" }, { key: "valorCheio", label: "Valor cheio", render: (r) => r.valorCheio ? fmtBRL(r.valorCheio) : "—" },
+    { key: "valorDesconto", label: "Desconto dado", render: (r) => r.valorDesconto ? fmtBRL(r.valorDesconto) : "—" },
+  ];
+  const rowsForm = data.map((r) => ({ ...r, membroNome: nomeDoMembro(r.membroId) }));
+  return (
+    <ModuleShell icon={Stethoscope} title="Utilização de Serviços" subtitle="Cada vez que um membro usa um serviço com desconto na clínica" tone="teal" loading={loading} erro={erro}
+      dailyFields={fields} dailyCta="Registrar utilização" fields={fields} columns={columns} rows={rowsForm} onAdd={onAddC} onUpdate={onUpdateC} onDelete={remove}
+      kpis={[{ label: "Utilizações registradas", value: data.length }, { label: "Total em descontos concedidos", value: fmtBRL(data.reduce((s, r) => s + Number(r.valorDesconto || 0), 0)), tone: "amber" }]} />
+  );
+}
+
+function AnaliseClubeModulo() {
+  const { data: empresas } = useRecords("clubeEmpresas");
+  const { data: membros } = useRecords("clubeMembros");
+  const { data: planos } = useRecords("clubePlanos");
+  const { data: utilizacoes } = useRecords("clubeUtilizacoes");
+  const loading = false;
+
+  const membrosAtivos = membros.filter((m) => m.status === "Ativo");
+  const nomeDoPlano = (id) => (planos.find((p) => p.id === id) || {}).nome || "—";
+  const nomeDaEmpresa = (id) => (empresas.find((e) => e.id === id) || {}).nomeEmpresa || "Pessoa física";
+
+  // Quantas empresas, com quantos funcionários cada
+  const porEmpresa = empresas.map((e) => {
+    const membrosDaEmpresa = membrosAtivos.filter((m) => m.empresaId === e.id);
+    return { nome: e.nomeEmpresa, funcionarios: membrosDaEmpresa.length, receitaMensal: membrosDaEmpresa.reduce((s, m) => s + Number(m.valorMensalCobrado || 0), 0) };
+  }).sort((a, b) => b.funcionarios - a.funcionarios);
+  const pessoasFisicas = membrosAtivos.filter((m) => !m.empresaId);
+
+  // Quantos membros por plano
+  const porPlano = planos.map((p) => {
+    const membrosDoPlano = membrosAtivos.filter((m) => m.planoId === p.id);
+    return { nome: p.nome, membros: membrosDoPlano.length, receitaMensal: membrosDoPlano.reduce((s, m) => s + Number(m.valorMensalCobrado || 0), 0) };
+  }).filter((p) => p.membros > 0).sort((a, b) => b.membros - a.membros);
+
+  // Serviços utilizados por membro/empresa
+  const utilizacoesPorMembro = {};
+  utilizacoes.forEach((u) => { utilizacoesPorMembro[u.membroId] = (utilizacoesPorMembro[u.membroId] || 0) + 1; });
+  const porEmpresaComUso = empresas.map((e) => {
+    const membrosDaEmpresa = membrosAtivos.filter((m) => m.empresaId === e.id);
+    const totalUsos = membrosDaEmpresa.reduce((s, m) => s + (utilizacoesPorMembro[m.id] || 0), 0);
+    return { nome: e.nomeEmpresa, usos: totalUsos };
+  }).sort((a, b) => b.usos - a.usos);
+
+  const receitaMensalTotal = membrosAtivos.reduce((s, m) => s + Number(m.valorMensalCobrado || 0), 0);
+  const totalDescontosConcedidos = utilizacoes.reduce((s, u) => s + Number(u.valorDesconto || 0), 0);
+
+  const camposExport = [{ key: "nome", label: "Nome" }, { key: "funcionarios", label: "Funcionários" }, { key: "receitaMensal", label: "Receita mensal" }];
+
+  return (
+    <div>
+      <SectionHeader icon={Activity} title="Análise do Clube de Benefícios" subtitle="Empresas, planos, mensalidades e uso de serviços — visão de controle" tone="coral" />
+      <div className="grid gap-3 mb-6" style={{ gridTemplateColumns: "repeat(4, minmax(0,1fr))" }}>
+        <KpiCard label="Empresas com adesão" value={empresas.length} tone="coral" />
+        <KpiCard label="Membros ativos" value={membrosAtivos.length} tone="green" />
+        <KpiCard label="Receita mensal recorrente" value={fmtBRL(receitaMensalTotal)} tone="teal" />
+        <KpiCard label="Descontos concedidos (total)" value={fmtBRL(totalDescontosConcedidos)} tone="amber" />
+      </div>
+
+      <Card className="mb-5">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[11px] font-semibold uppercase" style={{ color: T.muted, letterSpacing: "0.06em" }}>Empresas — quantos funcionários e quanto pagam</p>
+          <Btn small variant="ghost" icon={Download} onClick={() => exportToExcel(camposExport, porEmpresa, "clube-por-empresa")}>Excel</Btn>
+        </div>
+        {porEmpresa.length === 0 ? <p className="text-sm text-center py-6" style={{ color: T.muted }}>Nenhuma empresa cadastrada ainda.</p> : (
+          <table className="w-full text-sm">
+            <thead><tr style={{ borderBottom: `1px solid ${T.border}` }}><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Empresa</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Funcionários ativos</th><th className="text-left py-2 px-2 text-[11px] uppercase" style={{ color: T.muted }}>Receita mensal</th></tr></thead>
+            <tbody>{porEmpresa.map((e) => (<tr key={e.nome} style={{ borderBottom: `1px solid ${T.border}` }}><td className="py-2 px-2 font-medium" style={{ color: T.text }}>{e.nome}</td><td className="py-2 px-2">{e.funcionarios}</td><td className="py-2 px-2" style={{ color: T.green, fontWeight: 600 }}>{fmtBRL(e.receitaMensal)}</td></tr>))}</tbody>
+          </table>
+        )}
+        {pessoasFisicas.length > 0 && <p className="text-xs mt-3" style={{ color: T.muted }}>+ {pessoasFisicas.length} membro(s) sem empresa (pessoa física direta)</p>}
+      </Card>
+
+      <div className="grid md:grid-cols-2 gap-5 mb-5">
+        <Card>
+          <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Membros por plano</p>
+          {porPlano.length === 0 ? <p className="text-sm text-center py-6" style={{ color: T.muted }}>Nenhum membro ativo ainda.</p> : (
+            <div className="flex flex-col gap-2">{porPlano.map((p) => (<div key={p.nome} className="flex justify-between text-sm py-1.5" style={{ borderBottom: `1px solid ${T.border}` }}><span style={{ color: T.text }}>{p.nome} <span style={{ color: T.muted }}>({p.membros})</span></span><span style={{ color: T.green, fontWeight: 600 }}>{fmtBRL(p.receitaMensal)}</span></div>))}</div>
+          )}
+        </Card>
+        <Card>
+          <p className="text-[11px] font-semibold uppercase mb-3" style={{ color: T.muted, letterSpacing: "0.06em" }}>Serviços utilizados por empresa</p>
+          {porEmpresaComUso.filter((e) => e.usos > 0).length === 0 ? <p className="text-sm text-center py-6" style={{ color: T.muted }}>Nenhuma utilização registrada ainda.</p> : (
+            <div className="flex flex-col gap-2">{porEmpresaComUso.filter((e) => e.usos > 0).map((e) => (<div key={e.nome} className="flex justify-between text-sm py-1.5" style={{ borderBottom: `1px solid ${T.border}` }}><span style={{ color: T.text }}>{e.nome}</span><span style={{ color: T.teal, fontWeight: 600 }}>{e.usos} uso(s)</span></div>))}</div>
+          )}
+        </Card>
+      </div>
+      <Card style={{ borderColor: `${T.muted}30` }}><p className="text-xs" style={{ color: T.muted }}>Cadastre primeiro os Planos, depois as Empresas (se for o caso), depois os Membros — essa análise se monta sozinha a partir desses cadastros e das Utilizações de Serviço registradas.</p></Card>
+    </div>
+  );
+}
+
 const ALL_MENU_OUTRO_NEGOCIO = [
-  { group: "Visão", items: [{ key: "visao", label: "Dashboard", icon: LayoutDashboard, tone: "coral" }] },
+  { group: "Visão", items: [{ key: "visao", label: "Dashboard", icon: LayoutDashboard, tone: "coral" }, { key: "painelCritico", label: "Painel Crítico", icon: AlertTriangle, tone: "coral" }, { key: "analiseFinanceira", label: "Análise Financeira Inteligente", icon: Activity, tone: "coral" }] },
   { group: "Financeiro", items: [{ key: "financeiro", label: "Fluxo de Caixa & DRE", icon: Wallet, tone: "coral" }, { key: "contas", label: "Contas a Pagar", icon: Receipt, tone: "coral" }, { key: "faturamento", label: "Contas a Receber", icon: ClipboardList, tone: "coral" }, { key: "importarOfx", label: "Importar Extrato (OFX)", icon: Upload, tone: "coral" }, { key: "relatorios", label: "Relatórios", icon: FileText, tone: "coral" }] },
+  { group: "Clube de Benefícios", items: [{ key: "clubeAnalise", label: "Análise do Clube", icon: Activity, tone: "teal" }, { key: "clubePlanos", label: "Planos", icon: ClipboardList, tone: "teal" }, { key: "clubeEmpresas", label: "Empresas Clientes", icon: Building2, tone: "teal" }, { key: "clubeMembros", label: "Membros", icon: Users, tone: "teal" }, { key: "clubeUtilizacoes", label: "Utilização de Serviços", icon: Stethoscope, tone: "teal" }] },
   { group: "Cadastros", items: [{ key: "cadContatos", label: "Contatos", icon: Users, tone: "ink" }, { key: "cadFornecedores", label: "Fornecedores", icon: Package, tone: "ink" }, { key: "cadBancos", label: "Bancos", icon: Wallet, tone: "ink" }, { key: "cadCategorias", label: "Categorias", icon: ClipboardList, tone: "ink" }, { key: "cadTiposPagamento", label: "Tipos de Pagamento", icon: Wallet, tone: "ink" }] },
   { group: "Pessoas", items: [{ key: "meurh", label: "Meu RH", icon: FileText, tone: "purple" }, { key: "chatInterno", label: "Chat Interno", icon: Megaphone, tone: "teal" }, { key: "bancoDocumentos", label: "Banco de Documentos", icon: FileText, tone: "purple" }] },
   { group: "Configurações", items: [{ key: "unidades", label: "Unidades", icon: Building2, tone: "ink" }, { key: "aparencia", label: "Aparência", icon: Sparkles, tone: "ink" }, { key: "alertas", label: "Alertas", icon: Bell, tone: "ink" }] },
@@ -5870,6 +6081,11 @@ function AppInner() {
       case "metasColaborador": return <MetasColaboradorModulo />;
       case "metasEquipe": return <MetasEquipeModulo />;
       case "relatorios": return <RelatoriosModulo />;
+      case "clubeAnalise": return <AnaliseClubeModulo />;
+      case "clubePlanos": return <CadastroPlanosClubeModulo />;
+      case "clubeEmpresas": return <CadastroEmpresasClubeModulo />;
+      case "clubeMembros": return <MembrosClubeModulo />;
+      case "clubeUtilizacoes": return <UtilizacaoServicosClubeModulo />;
       case "plantaoRegistro": return <PlantaoRegistroModulo />;
       case "plantaoValores": return <PlantaoValoresConvenioModulo />;
       case "plantaoResumo": return <PlantaoResumoModulo />;
