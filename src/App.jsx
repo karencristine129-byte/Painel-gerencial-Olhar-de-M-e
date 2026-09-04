@@ -494,7 +494,7 @@ function OnboardingPerfil({ onDone }) {
   const salvar = async () => {
     setBusy(true); setErro(null);
     try {
-      const unidadePadrao = unidadesIniciais[0];
+      const unidadePadrao = unidadesIniciais.find((u) => u.tipo === "clinica" || !u.tipo) || unidadesIniciais[0];
       await sbRest("perfis", { method: "POST", token: session.access_token, body: { id: session.user.id, nome, cargo, unidade_id: unidadePadrao ? unidadePadrao.id : null, papel: "colaborador", aprovado: false } });
       const unidadeId = unidadePadrao ? unidadePadrao.id : null;
       await sbRest("termos_aceites", { method: "POST", token: session.access_token, body: { unidade_id: unidadeId, colaborador_id: session.user.id, tipo: "Propriedade Intelectual" } });
